@@ -1,0 +1,28 @@
+<Application x:Class="TimetableScheduler.Wpf.App"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:TimetableScheduler.ViewModel.Pages;assembly=TimetableScheduler.ViewModel"
+             xmlns:views="clr-namespace:TimetableScheduler.Wpf.Views"
+             xmlns:conv="clr-namespace:TimetableScheduler.Wpf.Converters">
+    <Application.Resources>
+        <ResourceDictionary>
+            <conv:OccupiedToBgConverter x:Key="OccupiedToBgConverter" />
+            <conv:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+            <conv:GradeToBrushConverter x:Key="GradeToBrush" />
+            <conv:IntListToCsvConverter x:Key="IntListToCsv" />
+
+            <DataTemplate DataType="{x:Type vm:TimetableSelectionViewModel}">
+                <views:TimetableSelectionView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:DataInputViewModel}">
+                <views:DataInputView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:ResultsViewModel}">
+                <views:ResultsView />
+            </DataTemplate>
+            <DataTemplate DataType="{x:Type vm:ManualEditViewModel}">
+                <views:ManualEditView />
+            </DataTemplate>
+        </ResourceDictionary>
+    </Application.Resources>
+</Application>

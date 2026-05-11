@@ -1,0 +1,129 @@
+<UserControl x:Class="TimetableScheduler.Wpf.Views.ManualEditView"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:TimetableScheduler.ViewModel.Pages;assembly=TimetableScheduler.ViewModel"
+             xmlns:slv="clr-namespace:TimetableScheduler.Solver;assembly=TimetableScheduler.Solver"
+             xmlns:ctrl="clr-namespace:TimetableScheduler.Wpf.Controls"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:ManualEditViewModel}">
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="*" />
+            <ColumnDefinition Width="320" />
+        </Grid.ColumnDefinitions>
+
+        <!-- Center: Unified timetable -->
+        <Grid Grid.Column="0" Margin="12">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
+            </Grid.RowDefinitions>
+
+            <Border Grid.Row="0" Background="#F5F5F5" Padding="12" CornerRadius="4">
+                <StackPanel Orientation="Horizontal">
+                    <TextBlock Text="베이스 해:" VerticalAlignment="Center" FontWeight="Bold" />
+                    <TextBlock Text="{Binding BaseSolution.Score.Total, StringFormat=총점 {0:F3}}"
+                               Margin="8,0,0,0" VerticalAlignment="Center" Foreground="#005FB8" />
+                    <Button Content="🔄 초기화 (베이스로 되돌리기)"
+                            Command="{Binding ResetCommand}"
+                            Padding="8,4" Margin="20,0,0,0" />
+                </StackPanel>
+            </Border>
+
+            <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="1" Margin="0,8,0,0">
+                <ctrl:UnifiedTimetableControl x:Name="GridControl"
+                                              DataContext="{Binding Grid}" />
+            </Border>
+
+            <Border Grid.Row="2" Background="White" BorderBrush="#DDD" BorderThickness="1"
+                    Padding="12,8" Margin="0,8,0,0">
+                <TextBlock Text="{Binding StatusMessage}" Foreground="#444" />
+            </Border>
+        </Grid>
+
+        <!-- Right: Inspector + Conflicts -->
+        <Border Grid.Column="1" BorderBrush="#CCC" BorderThickness="1,0,0,0" Background="White">
+            <ScrollViewer VerticalScrollBarVisibility="Auto">
+                <StackPanel>
+                    <Border Background="#F8F9FA" Padding="16,12">
+                        <TextBlock Text="INSPECTOR &amp; PROPERTIES" FontSize="11"
+                                   FontWeight="Bold" Foreground="#005FB8" />
+                    </Border>
+
+                    <StackPanel Margin="16,12" IsEnabled="{Binding SelectedAssignment, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="선택된 과목" FontSize="10" Foreground="#999"
+                                   FontWeight="Bold" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding SelectedAssignment.CourseName}"
+                                   FontWeight="Bold" FontSize="14" />
+                        <TextBlock Text="{Binding SelectedAssignment.CourseId}"
+                                   FontSize="11" Foreground="#666" Margin="0,0,0,12" />
+
+                        <TextBlock Text="교수" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding SelectedAssignment.ProfessorId}"
+                                   FontSize="12" Margin="0,0,0,12" />
+
+                        <TextBlock Text="현재 강의실" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding SelectedAssignment.RoomsLabel}"
+                                   FontSize="12" Margin="0,0,0,12" />
+
+                        <TextBlock Text="새 강의실" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />
+                        <ComboBox ItemsSource="{Binding AvailableRoomIds}"
+                                  SelectedItem="{Binding NewRoomId, Mode=TwoWay}"
+                                  Margin="0,0,0,12" Padding="6,4" />
+
+                        <Button Content="✓ Apply Changes"
+                                Command="{Binding ApplyRoomChangeCommand}"
+                                Background="#005FB8" Foreground="White"
+                                Padding="8,8" FontWeight="Bold" />
+                    </StackPanel>
+
+                    <Border Background="#F8F9FA" Padding="16,12" Margin="0,8,0,0">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="VALIDATION &amp; CONSTRAINTS" FontSize="11"
+                                       FontWeight="Bold" Foreground="#005FB8" />
+                            <Border Background="#BA1A1A" CornerRadius="8" Padding="6,1" Margin="8,0,0,0">
+                                <TextBlock Text="{Binding Conflicts.Count}" Foreground="White"
+                                           FontSize="10" FontWeight="Bold" />
+                            </Border>
+                        </StackPanel>
+                    </Border>
+
+                    <ItemsControl ItemsSource="{Binding Conflicts}" Margin="16,8">
+                        <ItemsControl.ItemTemplate>
+                            <DataTemplate DataType="{x:Type slv:ConflictItem}">
+                                <Border Background="White" BorderBrush="#BA1A1A"
+                                        BorderThickness="0,0,0,0"
+                                        Padding="12,8" Margin="0,0,0,6">
+                                    <Border.Style>
+                                        <Style TargetType="Border">
+                                            <Setter Property="BorderThickness" Value="4,1,1,1" />
+                                            <Setter Property="BorderBrush" Value="#BA1A1A" />
+                                        </Style>
+                                    </Border.Style>
+                                    <StackPanel>
+                                        <TextBlock Text="{Binding Type}" FontWeight="Bold"
+                                                   Foreground="#BA1A1A" FontSize="11" />
+                                        <TextBlock Text="{Binding Description}" FontSize="11"
+                                                   TextWrapping="Wrap" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                </Border>
+                            </DataTemplate>
+                        </ItemsControl.ItemTemplate>
+                    </ItemsControl>
+
+                    <Border Background="#E8F5E9" Padding="12,8" Margin="16,8"
+                            Visibility="{Binding Conflicts.Count, Converter={StaticResource BoolToVisibility}, ConverterParameter=Zero}">
+                        <StackPanel Orientation="Horizontal">
+                            <TextBlock Text="✓" Foreground="#2E7D32" FontWeight="Bold" />
+                            <TextBlock Text=" NO CONFLICTS" Foreground="#2E7D32"
+                                       FontWeight="Bold" FontSize="11" />
+                        </StackPanel>
+                    </Border>
+                </StackPanel>
+            </ScrollViewer>
+        </Border>
+    </Grid>
+</UserControl>

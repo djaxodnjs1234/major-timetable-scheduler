@@ -1,0 +1,514 @@
+<!DOCTYPE html>
+
+<html class="light" lang="en"><head>
+<meta charset="utf-8"/>
+<meta content="width=device-width, initial-scale=1.0" name="viewport"/>
+<script src="https://cdn.tailwindcss.com?plugins=forms,container-queries"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800;900&amp;display=swap" rel="stylesheet"/>
+<link href="https://fonts.googleapis.com/css2?family=Material+Symbols+Outlined:wght,FILL@100..700,0..1&amp;display=swap" rel="stylesheet"/>
+<script id="tailwind-config">
+        tailwind.config = {
+            darkMode: "class",
+            theme: {
+                extend: {
+                    "colors": {
+                        "on-primary": "#ffffff",
+                        "on-error": "#ffffff",
+                        "primary-fixed": "#d6e3ff",
+                        "primary": "#00488d",
+                        "secondary": "#545f72",
+                        "on-primary-container": "#cadcff",
+                        "outline": "#727783",
+                        "on-secondary-container": "#586377",
+                        "outline-variant": "#c2c6d4",
+                        "error-container": "#ffdad6",
+                        "surface-container-highest": "#e1e2ea",
+                        "surface": "#f9f9ff",
+                        "on-secondary-fixed": "#111c2c",
+                        "primary-container": "#005fb8",
+                        "on-background": "#191c21",
+                        "surface-container-lowest": "#ffffff",
+                        "on-tertiary-container": "#ffd1bc",
+                        "on-surface-variant": "#424752",
+                        "tertiary-fixed-dim": "#ffb691",
+                        "inverse-surface": "#2e3036",
+                        "inverse-on-surface": "#eff0f8",
+                        "secondary-container": "#d5e0f7",
+                        "surface-container-high": "#e7e8f0",
+                        "on-tertiary": "#ffffff",
+                        "on-primary-fixed-variant": "#00468b",
+                        "surface-container": "#ecedf6",
+                        "tertiary": "#7b3200",
+                        "surface-bright": "#f9f9ff",
+                        "on-surface": "#191c21",
+                        "on-secondary-fixed-variant": "#3c475a",
+                        "on-error-container": "#93000a",
+                        "background": "#f9f9ff",
+                        "secondary-fixed": "#d8e3fa",
+                        "inverse-primary": "#a8c8ff",
+                        "on-primary-fixed": "#001b3d",
+                        "on-tertiary-fixed-variant": "#783100",
+                        "on-secondary": "#ffffff",
+                        "surface-dim": "#d8dae2",
+                        "tertiary-fixed": "#ffdbcb",
+                        "surface-tint": "#005db5",
+                        "secondary-fixed-dim": "#bcc7dd",
+                        "tertiary-container": "#a04401",
+                        "on-tertiary-fixed": "#341100",
+                        "surface-container-low": "#f2f3fb",
+                        "error": "#ba1a1a",
+                        "surface-variant": "#e1e2ea",
+                        "primary-fixed-dim": "#a8c8ff"
+                    },
+                    "borderRadius": {
+                        "DEFAULT": "0.125rem",
+                        "lg": "0.25rem",
+                        "xl": "0.5rem",
+                        "full": "0.75rem"
+                    },
+                    "spacing": {
+                        "toolbar-height": "48px",
+                        "grid-gutter": "1px",
+                        "container-padding": "24px",
+                        "form-element-spacing": "12px",
+                        "unit": "4px",
+                        "sidebar-width": "260px"
+                    },
+                    "fontFamily": {
+                        "label-caps": ["Inter"],
+                        "body-sm": ["Inter"],
+                        "h2": ["Inter"],
+                        "data-tabular": ["Inter"],
+                        "h1": ["Inter"],
+                        "body-base": ["Inter"]
+                    },
+                    "fontSize": {
+                        "label-caps": ["11px", {"lineHeight": "16px", "letterSpacing": "0.05em", "fontWeight": "700"}],
+                        "body-sm": ["13px", {"lineHeight": "18px", "fontWeight": "400"}],
+                        "h2": ["18px", {"lineHeight": "24px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "data-tabular": ["12px", {"lineHeight": "16px", "fontWeight": "500"}],
+                        "h1": ["24px", {"lineHeight": "32px", "letterSpacing": "-0.01em", "fontWeight": "600"}],
+                        "body-base": ["14px", {"lineHeight": "20px", "fontWeight": "400"}]
+                    }
+                },
+            },
+        }
+    </script>
+<style>
+        .material-symbols-outlined {
+            font-variation-settings: 'FILL' 0, 'wght' 400, 'GRAD' 0, 'opsz' 24;
+            vertical-align: middle;
+            font-size: 18px;
+        }
+        .custom-scrollbar::-webkit-scrollbar { width: 6px; height: 6px; }
+        .custom-scrollbar::-webkit-scrollbar-track { background: #f1f1f1; }
+        .custom-scrollbar::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 3px; }
+        .custom-scrollbar::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+        
+        .lane-border { border-right: 1px solid #e2e8f0; }
+        .lane-border:last-child { border-right: none; }
+        .year-1 { background-color: #FEF9C3; border-left: 3px solid #EAB308; }
+        .year-2 { background-color: #DCFCE7; border-left: 3px solid #22C55E; }
+        .year-3 { background-color: #DBEAFE; border-left: 3px solid #3B82F6; }
+        .year-4 { background-color: #FCE7F3; border-left: 3px solid #EC4899; }
+    </style>
+</head>
+<body class="bg-background font-body-base text-on-surface overflow-hidden">
+<!-- TopAppBar -->
+<header class="fixed top-0 w-full h-[48px] z-50 bg-white dark:bg-slate-900 border-b border-slate-300 dark:border-slate-700 flex items-center justify-between px-4">
+<div class="flex items-center gap-4">
+<span class="text-lg font-bold text-slate-900 dark:text-white uppercase tracking-wider font-label-caps">Academic Timetable Manager</span>
+<div class="h-6 w-px bg-slate-300 mx-2"></div>
+<span class="text-slate-600 dark:text-slate-400 font-sans text-sm font-medium">Manual Editor - Extended V2 (Compact)</span>
+</div>
+<div class="flex items-center gap-2">
+<div class="flex items-center bg-slate-100 dark:bg-slate-800 rounded px-2 py-1 mr-4">
+<span class="material-symbols-outlined text-slate-500 mr-1">search</span>
+<input class="bg-transparent border-none focus:ring-0 text-xs w-48 p-0" placeholder="Search resources..." type="text"/>
+</div>
+<button class="flex items-center gap-1 px-3 py-1 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer rounded">
+<span class="material-symbols-outlined">sync</span>
+</button>
+<button class="flex items-center gap-1 px-3 py-1 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer rounded">
+<span class="material-symbols-outlined">notifications</span>
+</button>
+<button class="flex items-center gap-1 px-3 py-1 text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition-colors cursor-pointer rounded">
+<span class="material-symbols-outlined">settings</span>
+</button>
+<div class="h-6 w-px bg-slate-300 mx-1"></div>
+<button class="px-4 py-1 text-sm font-medium text-slate-700 border border-slate-300 rounded hover:bg-slate-50 transition-colors">Export</button>
+<button class="px-4 py-1 text-sm font-medium text-white bg-primary-container rounded hover:opacity-90 transition-opacity">Save</button>
+</div>
+</header>
+<div class="flex pt-[48px] h-screen">
+<!-- Main Timetable Content (Expanded to left since side nav is removed) -->
+<main class="flex-1 mr-80 bg-slate-50 overflow-hidden flex flex-col">
+<!-- Grid Toolbar (Keeping from SCREEN_49) -->
+<div class="h-10 border-b border-slate-300 bg-white flex items-center px-4 justify-between">
+<div class="flex items-center gap-4">
+<div class="flex border rounded overflow-hidden">
+<button class="px-3 py-1 bg-primary text-white text-xs font-medium">Day View</button>
+<button class="px-3 py-1 bg-white text-slate-600 text-xs font-medium hover:bg-slate-50">Week View</button>
+<button class="px-3 py-1 bg-white text-slate-600 text-xs font-medium hover:bg-slate-50">Resource View</button>
+</div>
+<div class="h-4 w-px bg-slate-300"></div>
+<div class="flex items-center gap-4 text-[11px] font-bold uppercase tracking-wider">
+<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-yellow-400"></span> 1ST</span>
+<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-green-500"></span> 2ND</span>
+<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-blue-500"></span> 3RD</span>
+<span class="flex items-center gap-1.5"><span class="w-2.5 h-2.5 rounded-sm bg-pink-500"></span> 4TH</span>
+</div>
+</div>
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-slate-400 cursor-pointer hover:text-slate-600">zoom_in</span>
+<span class="material-symbols-outlined text-slate-400 cursor-pointer hover:text-slate-600">zoom_out</span>
+</div>
+</div>
+<!-- Matrix Content (Visual style from SCREEN_56) -->
+<div class="flex-1 overflow-auto custom-scrollbar bg-white">
+<div class="min-w-[1200px]">
+<!-- Table Header -->
+<div class="grid grid-cols-[100px_repeat(5,1fr)] border-b border-slate-200 bg-slate-50/80 sticky top-0 z-30">
+<div class="p-3 border-r border-slate-200 flex items-center justify-center font-bold text-[10px] text-slate-400 uppercase">Period</div>
+<div class="p-3 border-r border-slate-200 text-center font-bold text-xs text-slate-700">MONDAY</div>
+<div class="p-3 border-r border-slate-200 text-center font-bold text-xs text-slate-700">TUESDAY</div>
+<div class="p-3 border-r border-slate-200 text-center font-bold text-xs text-slate-700">WEDNESDAY</div>
+<div class="p-3 border-r border-slate-200 text-center font-bold text-xs text-slate-700">THURSDAY</div>
+<div class="p-3 text-center font-bold text-xs text-slate-700">FRIDAY</div>
+</div>
+<!-- Multi-Lane Subheader -->
+<div class="grid grid-cols-[100px_repeat(5,1fr)] border-b border-slate-200 bg-white sticky top-[40px] z-20">
+<div class="border-r border-slate-200"></div>
+<div class="grid grid-cols-4 border-r border-slate-200">
+<div class="text-[9px] font-bold text-center py-1 text-slate-400 lane-border">G1</div>
+<div class="text-[9px] font-bold text-center py-1 text-slate-400 lane-border">G2</div>
+<div class="text-[9px] font-bold text-center py-1 text-slate-400 lane-border">G3</div>
+<div class="text-[9px] font-bold text-center py-1 text-slate-400">G4</div>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200">
+<div class="text-[9px] font-bold text-center py-1 text-slate-400 lane-border">G1</div>
+<div class="text-[9px] font-bold text-center py-1 text-slate-400 lane-border">G2</div>
+<div class="text-[9px] font-bold text-center py-1 text-slate-400 lane-border">G3</div>
+<div class="text-[9px] font-bold text-center py-1 text-slate-400">G4</div>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200">
+<div class="text-[9px] font-bold text-center py-1 text-slate-400 lane-border">G1</div>
+<div class="text-[9px] font-bold text-center py-1 text-slate-400 lane-border">G2</div>
+<div class="text-[9px] font-bold text-center py-1 text-slate-400 lane-border">G3</div>
+<div class="text-[9px] font-bold text-center py-1 text-slate-400">G4</div>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200">
+<div class="text-[9px] font-bold text-center py-1 text-slate-400 lane-border">G1</div>
+<div class="text-[9px] font-bold text-center py-1 text-slate-400 lane-border">G2</div>
+<div class="text-[9px] font-bold text-center py-1 text-slate-400 lane-border">G3</div>
+<div class="text-[9px] font-bold text-center py-1 text-slate-400">G4</div>
+</div>
+<div class="grid grid-cols-4">
+<div class="text-[9px] font-bold text-center py-1 text-slate-400 lane-border">G1</div>
+<div class="text-[9px] font-bold text-center py-1 text-slate-400 lane-border">G2</div>
+<div class="text-[9px] font-bold text-center py-1 text-slate-400 lane-border">G3</div>
+<div class="text-[9px] font-bold text-center py-1 text-slate-400">G4</div>
+</div>
+</div>
+<!-- Rows -->
+<div class="grid grid-cols-[100px_repeat(5,1fr)] border-b border-slate-100">
+<div class="p-3 border-r border-slate-200 flex flex-col items-center justify-center bg-slate-50/30 h-16">
+<span class="text-sm font-bold text-slate-700">08:00</span>
+<span class="text-[10px] text-slate-400 font-medium">Period 1</span>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200">
+<div class="year-1 p-1.5 text-[9px] lane-border flex flex-col justify-between">
+<span class="font-bold truncate">CS101 Intro</span>
+<span class="text-slate-500">Hall A</span>
+</div>
+<div class="lane-border"></div>
+<div class="year-3 p-1.5 text-[9px] lane-border flex flex-col justify-between">
+<span class="font-bold truncate">ML402 DeepL</span>
+<span class="text-slate-500">Lab 4</span>
+</div>
+<div></div>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200">
+<div class="lane-border"></div>
+<div class="year-2 p-1.5 text-[9px] lane-border flex flex-col justify-between">
+<span class="font-bold truncate">DATA220</span>
+<span class="text-slate-500">Hall C</span>
+</div>
+<div class="lane-border"></div>
+<div class="year-4 p-1.5 text-[9px] flex flex-col justify-between">
+<span class="font-bold truncate">THESIS-I</span>
+<span class="text-slate-500">Conf. B</span>
+</div>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200">
+<div class="lane-border"></div>
+<div class="year-2 p-1.5 text-[9px] lane-border flex flex-col justify-between">
+<span class="font-bold truncate">OS442 Sys</span>
+<span class="text-slate-500">Lab 1</span>
+</div>
+<div class="lane-border"></div>
+<div></div>
+</div>
+<div class="grid grid-cols-4"><div></div><div></div><div></div><div></div></div>
+</div>
+<div class="grid grid-cols-[100px_repeat(5,1fr)] border-b border-slate-100">
+<div class="p-3 border-r border-slate-200 flex flex-col items-center justify-center bg-slate-50/30 h-16">
+<span class="text-sm font-bold text-slate-700">09:00</span>
+<span class="text-[10px] text-slate-400 font-medium">Period 2</span>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200 bg-red-50/10">
+<div class="year-1 p-1.5 text-[9px] lane-border"></div>
+<div class="year-2 p-1.5 text-[9px] lane-border flex flex-col justify-between ring-1 ring-red-400 -ring-offset-1">
+<span class="font-bold truncate">ALGO201</span>
+<span class="text-slate-500">Lab 2</span>
+</div>
+<div class="year-3 p-1.5 text-[9px] lane-border flex flex-col justify-between ring-1 ring-red-400 -ring-offset-1">
+<span class="font-bold truncate">MATH202</span>
+<span class="text-slate-500">Hall B</span>
+</div>
+<div class="lane-border"></div>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200">
+<div class="lane-border"></div>
+<div class="lane-border"></div>
+<div class="year-3 p-1.5 text-[9px] lane-border flex flex-col justify-between">
+<span class="font-bold truncate">DB505 Adv</span>
+<span class="text-slate-500">Room 12</span>
+</div>
+<div class="lane-border"></div>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200">
+<div class="year-1 p-1.5 text-[9px] lane-border flex flex-col justify-between">
+<span class="font-bold truncate">MATH101</span>
+<span class="text-slate-500">Hall A</span>
+</div>
+<div class="lane-border"></div><div class="lane-border"></div>
+<div class="year-4 p-1.5 text-[9px] flex flex-col justify-between">
+<span class="font-bold truncate">ENT901</span>
+<span class="text-slate-500">Seminar</span>
+</div>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4"><div></div><div></div><div></div><div></div></div>
+</div>
+<!-- Additional Rows placeholders matching screen 56's density -->
+<div class="grid grid-cols-[100px_repeat(5,1fr)] border-b border-slate-100">
+<div class="p-3 border-r border-slate-200 flex flex-col items-center justify-center bg-slate-50/30 h-16">
+<span class="text-sm font-bold text-slate-700">10:00</span>
+<span class="text-[10px] text-slate-400 font-medium">Period 3</span>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div class="year-4 p-1.5 text-[9px]">AI601 Robotics</div></div>
+<div class="grid grid-cols-4 border-r border-slate-200 outline outline-2 outline-primary -outline-offset-2 -outline-offset-1">
+<div class="year-1 p-1.5 text-[9px] lane-border">PROG102</div>
+<div class="lane-border"></div><div class="lane-border"></div><div></div>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div class="year-2 p-1.5 text-[9px] lane-border">GRAPH22</div><div class="lane-border"></div><div class="year-4 p-1.5 text-[9px]">CLOUD44</div></div>
+<div class="grid grid-cols-4 border-r border-slate-200">
+<div class="year-1 p-1.5 text-[9px] lane-border">PHY101</div>
+<div class="lane-border"></div><div class="lane-border"></div><div></div>
+</div>
+<div class="grid grid-cols-4"><div></div><div></div><div class="year-3 p-1.5 text-[9px] lane-border">SEC401</div><div></div></div>
+</div>
+<div class="grid grid-cols-[100px_repeat(5,1fr)] border-b border-slate-100">
+<div class="p-3 border-r border-slate-200 flex flex-col items-center justify-center bg-slate-50/30 h-14">
+<span class="text-sm font-bold text-slate-700">11:00</span>
+<span class="text-[10px] text-slate-400 font-medium">P4</span>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4"><div></div><div></div><div></div><div></div></div>
+</div><div class="grid grid-cols-[100px_repeat(5,1fr)] border-b border-slate-200 bg-slate-50/20">
+<div class="p-2 border-r border-slate-200 flex items-center justify-center italic text-[10px] text-slate-300 uppercase tracking-widest">LUNCH</div>
+<div class="border-r border-slate-200"></div><div class="border-r border-slate-200"></div><div class="border-r border-slate-200"></div><div class="border-r border-slate-200"></div><div></div>
+</div><div class="grid grid-cols-[100px_repeat(5,1fr)] border-b border-slate-100">
+<div class="p-3 border-r border-slate-200 flex flex-col items-center justify-center bg-slate-50/30 h-14">
+<span class="text-sm font-bold text-slate-700">13:00</span>
+<span class="text-[10px] text-slate-400 font-medium">P5</span>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div class="year-2 p-1.5 text-[9px] lane-border">BIO101</div><div class="lane-border"></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4"><div></div><div></div><div></div><div></div></div>
+</div>
+<div class="grid grid-cols-[100px_repeat(5,1fr)] border-b border-slate-100">
+<div class="p-3 border-r border-slate-200 flex flex-col items-center justify-center bg-slate-50/30 h-14">
+<span class="text-sm font-bold text-slate-700">14:00</span>
+<span class="text-[10px] text-slate-400 font-medium">P6</span>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div class="year-3 p-1.5 text-[9px] lane-border">ENG302</div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4"><div></div><div></div><div></div><div></div></div>
+</div>
+<div class="grid grid-cols-[100px_repeat(5,1fr)] border-b border-slate-100">
+<div class="p-3 border-r border-slate-200 flex flex-col items-center justify-center bg-slate-50/30 h-14">
+<span class="text-sm font-bold text-slate-700">15:00</span>
+<span class="text-[10px] text-slate-400 font-medium">P7</span>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4"><div></div><div></div><div></div><div></div></div>
+</div>
+<div class="grid grid-cols-[100px_repeat(5,1fr)] border-b border-slate-100">
+<div class="p-3 border-r border-slate-200 flex flex-col items-center justify-center bg-slate-50/30 h-14">
+<span class="text-sm font-bold text-slate-700">16:00</span>
+<span class="text-[10px] text-slate-400 font-medium">P8</span>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4"><div></div><div></div><div></div><div></div></div>
+</div>
+<div class="grid grid-cols-[100px_repeat(5,1fr)] border-b border-slate-100">
+<div class="p-3 border-r border-slate-200 flex flex-col items-center justify-center bg-slate-50/30 h-14">
+<span class="text-sm font-bold text-slate-700">17:00</span>
+<span class="text-[10px] text-slate-400 font-medium">P9</span>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4"><div></div><div></div><div></div><div></div></div>
+</div>
+<div class="grid grid-cols-[100px_repeat(5,1fr)] border-b border-slate-100">
+<div class="p-3 border-r border-slate-200 flex flex-col items-center justify-center bg-slate-50/30 h-14">
+<span class="text-sm font-bold text-slate-700">18:00</span>
+<span class="text-[10px] text-slate-400 font-medium">P10</span>
+</div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4 border-r border-slate-200"><div></div><div></div><div></div><div></div></div>
+<div class="grid grid-cols-4"><div></div><div></div><div></div><div></div></div>
+</div>
+</div>
+</div>
+<!-- Footer status bar (Keeping from SCREEN_49) -->
+<div class="h-10 bg-white border-t border-slate-200 flex items-center px-4 justify-between">
+<div class="flex items-center gap-4">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-green-600 text-sm">check_circle</span>
+<span class="text-[11px] font-bold text-green-700">SYSTEM OPTIMIZED</span>
+</div>
+<div class="h-4 w-px bg-slate-300"></div>
+<span class="text-[10px] text-slate-500 uppercase font-bold">144.0 Credits Scheduled</span>
+<span class="text-[10px] text-slate-500 uppercase font-bold">Utilization: 88.4%</span>
+</div>
+<button class="bg-slate-900 text-white text-[10px] font-bold px-3 py-1 rounded flex items-center gap-1.5">
+<span class="material-symbols-outlined text-xs">bolt</span> RUN GLOBAL OPTIMIZER
+                </button>
+</div>
+</main>
+<!-- Right Combined Panel (Accordion UI) -->
+<aside class="fixed right-0 top-[48px] w-80 h-[calc(100vh-48px)] bg-white dark:bg-slate-900 border-l border-slate-300 dark:border-slate-700 flex flex-col">
+<div class="flex-1 overflow-y-auto custom-scrollbar">
+<!-- Section 1: Inspector / Properties -->
+<div class="border-b border-slate-200">
+<button class="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors">
+<span class="text-xs font-bold uppercase tracking-wider text-slate-600">Inspector &amp; Properties</span>
+<span class="material-symbols-outlined text-slate-400">expand_more</span>
+</button>
+<div class="p-4 space-y-4">
+<div class="flex items-center justify-between mb-2">
+<div>
+<h2 class="font-h2 text-sm text-slate-900">Selection Details</h2>
+<p class="text-[10px] text-slate-500 uppercase tracking-wide">Course ID: CS202-SEC4</p>
+</div>
+<button class="text-slate-400 hover:text-slate-600">
+<span class="material-symbols-outlined">close</span>
+</button>
+</div>
+<div>
+<label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Course Name</label>
+<input class="w-full border border-slate-300 rounded px-2 py-1.5 text-xs focus:border-primary outline-none" type="text" value="PROG102: Adv Programming"/>
+</div>
+<div class="grid grid-cols-2 gap-3">
+<div>
+<label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Faculty</label>
+<select class="w-full border border-slate-300 rounded px-2 py-1.5 text-xs outline-none">
+<option>Grace Hopper</option>
+<option>Alan Turing</option>
+</select>
+</div>
+<div>
+<label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Room</label>
+<select class="w-full border border-slate-300 rounded px-2 py-1.5 text-xs outline-none">
+<option>Room 402 (L)</option>
+<option>Room 8</option>
+</select>
+</div>
+</div>
+<div class="grid grid-cols-2 gap-3">
+<div>
+<label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Start Time</label>
+<input class="w-full border border-slate-300 rounded px-2 py-1.5 text-xs outline-none" type="time" value="10:00"/>
+</div>
+<div>
+<label class="block text-[11px] font-bold text-slate-500 uppercase mb-1">Duration</label>
+<input class="w-full border border-slate-300 rounded px-2 py-1.5 text-xs outline-none" type="text" value="90 min"/>
+</div>
+</div>
+<div class="pt-2">
+<label class="flex items-center gap-2 cursor-pointer">
+<input checked="" class="rounded border-slate-300 text-primary focus:ring-primary w-3 h-3" type="checkbox"/>
+<span class="text-xs text-slate-700">Lock this session position</span>
+</label>
+</div>
+<button class="w-full py-2 bg-primary text-white text-xs font-bold rounded shadow-sm hover:opacity-90">APPLY CHANGES</button>
+</div>
+</div>
+<!-- Section 2: Validation / Constraints -->
+<div class="border-b border-slate-200">
+<button class="w-full flex items-center justify-between p-4 bg-slate-50 hover:bg-slate-100 transition-colors">
+<div class="flex items-center gap-2">
+<span class="text-xs font-bold uppercase tracking-wider text-slate-600">Validation &amp; Constraints</span>
+<span class="bg-error text-white text-[10px] px-1.5 py-0.5 rounded-full font-bold">12</span>
+</div>
+<span class="material-symbols-outlined text-slate-400 rotate-180">expand_more</span>
+</button>
+<div class="p-4 space-y-3 bg-white">
+<!-- Conflict Card 1 -->
+<div class="bg-white p-3 border border-error-container border-l-4 border-l-error rounded-sm shadow-sm">
+<div class="flex justify-between items-start mb-1">
+<span class="text-[11px] font-bold text-error uppercase">Room Conflict</span>
+<span class="material-symbols-outlined text-error text-sm">warning</span>
+</div>
+<p class="text-xs text-on-surface leading-tight mb-2">Room 402 is double-booked for CS101 and MATH202 on Monday 09:00.</p>
+<button class="text-[10px] font-bold text-primary hover:underline uppercase">Resolve Auto</button>
+</div>
+<!-- Conflict Card 2 -->
+<div class="bg-white p-3 border border-error-container border-l-4 border-l-error rounded-sm shadow-sm">
+<div class="flex justify-between items-start mb-1">
+<span class="text-[11px] font-bold text-error uppercase">Faculty Overload</span>
+<span class="material-symbols-outlined text-error text-sm">person_off</span>
+</div>
+<p class="text-xs text-on-surface leading-tight mb-2">Dr. Aris Thorne exceeds max daily hours (8.5/8.0 hrs).</p>
+</div>
+<!-- Warning Card -->
+<div class="bg-white p-3 border border-slate-200 border-l-4 border-l-amber-500 rounded-sm shadow-sm">
+<div class="flex justify-between items-start mb-1">
+<span class="text-[11px] font-bold text-amber-600 uppercase">Gap Warning</span>
+<span class="material-symbols-outlined text-amber-600 text-sm">hourglass_empty</span>
+</div>
+<p class="text-xs text-on-surface leading-tight mb-2">Class Section B has a 4-hour gap between lectures.</p>
+</div>
+</div>
+</div>
+</div>
+<div class="p-4 bg-slate-50 border-t border-slate-200">
+<div class="flex items-center gap-2">
+<span class="material-symbols-outlined text-green-600 text-sm">check_circle</span>
+<span class="text-[11px] font-bold text-green-700">NO CONFLICTS IN SELECTION</span>
+</div>
+</div>
+</aside>
+</div>
+</body></html>

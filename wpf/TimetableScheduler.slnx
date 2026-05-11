@@ -1,0 +1,9 @@
+<Solution>
+  <Project Path="TimetableScheduler.Data/TimetableScheduler.Data.csproj" />
+  <Project Path="TimetableScheduler.Domain/TimetableScheduler.Domain.csproj" />
+  <Project Path="TimetableScheduler.Scoring/TimetableScheduler.Scoring.csproj" />
+  <Project Path="TimetableScheduler.Solver/TimetableScheduler.Solver.csproj" />
+  <Project Path="TimetableScheduler.Tests/TimetableScheduler.Tests.csproj" />
+  <Project Path="TimetableScheduler.ViewModel/TimetableScheduler.ViewModel.csproj" />
+  <Project Path="TimetableScheduler.Wpf/TimetableScheduler.Wpf.csproj" />
+</Solution>

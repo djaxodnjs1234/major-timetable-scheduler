@@ -1,0 +1,23 @@
+<UserControl x:Class="TimetableScheduler.Wpf.Controls.CheckListPickerControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:ed="clr-namespace:TimetableScheduler.ViewModel.Editors;assembly=TimetableScheduler.ViewModel"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d">
+    <ItemsControl ItemsSource="{Binding}">
+        <ItemsControl.ItemsPanel>
+            <ItemsPanelTemplate>
+                <WrapPanel Orientation="Horizontal" />
+            </ItemsPanelTemplate>
+        </ItemsControl.ItemsPanel>
+        <ItemsControl.ItemTemplate>
+            <DataTemplate DataType="{x:Type ed:CheckListItem}">
+                <Border Padding="4,2" Margin="0,0,4,4">
+                    <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                              Content="{Binding Display}" FontSize="11" />
+                </Border>
+            </DataTemplate>
+        </ItemsControl.ItemTemplate>
+    </ItemsControl>
+</UserControl>

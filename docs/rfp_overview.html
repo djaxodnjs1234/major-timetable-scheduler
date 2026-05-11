@@ -1,0 +1,659 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<title>전공 시간표 자동 생성 시스템 — 프로젝트 개요</title>
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Noto+Sans+KR:wght@400;500;700;900&display=swap');
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  html, body {
+    font-family: 'Noto Sans KR', 'Malgun Gothic', sans-serif;
+    background: #DDE3EC;
+    color: #1E2A38;
+    -webkit-print-color-adjust: exact;
+    print-color-adjust: exact;
+  }
+  .page {
+    width: 1600px;
+    height: 1000px;
+    margin: 24px auto;
+    background: #FFFFFF;
+    padding: 28px 40px 28px;
+    box-shadow: 0 8px 40px rgba(0,0,0,0.12);
+    display: grid;
+    grid-template-rows: 90px 1fr 160px;
+    gap: 22px;
+  }
+
+  /* ===== HEADER ===== */
+  header {
+    text-align: center;
+    border-bottom: 3px solid #1E3A5F;
+    padding-bottom: 14px;
+  }
+  header h1 {
+    font-size: 38px;
+    font-weight: 900;
+    color: #1E3A5F;
+    letter-spacing: -1px;
+    line-height: 1.1;
+  }
+  header .sub {
+    font-size: 16px;
+    color: #4A5868;
+    font-weight: 500;
+    margin-top: 6px;
+  }
+
+  /* ===== 3-COLUMN FLOW ===== */
+  .flow {
+    display: grid;
+    grid-template-columns: 380px 70px 1fr 70px 380px;
+    gap: 0;
+    align-items: stretch;
+  }
+  .col {
+    display: grid;
+    grid-template-rows: 40px 1fr;
+    gap: 6px;
+  }
+
+  .col-tab {
+    color: white;
+    font-size: 16px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 6px;
+  }
+  .col-1 .col-tab { background: #3498DB; }
+  .col-2 .col-tab { background: #1E3A5F; }
+  .col-3 .col-tab { background: #27AE60; }
+
+  .col-body {
+    border: 2.5px solid;
+    border-radius: 8px;
+    padding: 16px 18px 18px;
+    display: flex;
+    flex-direction: column;
+    background: white;
+  }
+  .col-1 .col-body { border-color: #3498DB; }
+  .col-2 .col-body { border-color: #1E3A5F; }
+  .col-3 .col-body { border-color: #27AE60; }
+
+  .col-title {
+    text-align: center;
+    margin-bottom: 14px;
+    padding-bottom: 10px;
+    border-bottom: 1px dashed #D0D7DE;
+  }
+  .col-title .ko {
+    font-size: 17px;
+    font-weight: 900;
+    color: #1E2A38;
+    line-height: 1.2;
+  }
+  .col-title .en {
+    font-size: 11px;
+    font-weight: 500;
+    color: #6A7886;
+    margin-top: 3px;
+    letter-spacing: 0.3px;
+  }
+
+  /* ===== Column 1: Domain entities ===== */
+  .entities { display: flex; flex-direction: column; gap: 10px; flex: 1; }
+  .entity {
+    display: grid;
+    grid-template-columns: 54px 1fr;
+    gap: 12px;
+    align-items: center;
+    padding: 9px 10px;
+    background: #F4FAFE;
+    border-left: 4px solid #3498DB;
+    border-radius: 5px;
+  }
+  .entity .e-icon {
+    width: 50px;
+    height: 50px;
+    border-radius: 50%;
+    background: white;
+    border: 2px solid #3498DB;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 26px;
+  }
+  .entity .e-text .e-name {
+    font-size: 15px;
+    font-weight: 900;
+    color: #1E2A38;
+    line-height: 1.2;
+  }
+  .entity .e-text .e-num {
+    font-size: 18px;
+    font-weight: 900;
+    color: #3498DB;
+    margin-left: 6px;
+  }
+  .entity .e-text .e-detail {
+    font-size: 11.5px;
+    color: #4A5868;
+    font-weight: 500;
+    margin-top: 3px;
+    line-height: 1.35;
+  }
+
+  /* ===== Arrow ===== */
+  .arrow {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    position: relative;
+  }
+  .arrow-shape {
+    width: 60px;
+    height: 70px;
+    clip-path: polygon(0 30%, 60% 30%, 60% 0, 100% 50%, 60% 100%, 60% 70%, 0 70%);
+  }
+  .arrow-1 .arrow-shape { background: linear-gradient(90deg, #5DADE2, #2980B9); }
+  .arrow-2 .arrow-shape { background: linear-gradient(90deg, #58D68D, #1E8449); }
+  .arrow-label {
+    position: absolute;
+    top: 50%;
+    left: 50%;
+    transform: translate(-50%, -170%);
+    background: white;
+    border: 2px solid #1E3A5F;
+    border-radius: 14px;
+    padding: 4px 12px;
+    font-size: 11px;
+    font-weight: 800;
+    color: #1E3A5F;
+    white-space: nowrap;
+    text-align: center;
+    line-height: 1.2;
+  }
+
+  /* ===== Column 2: Core Engine ===== */
+  .engine { flex: 1; display: flex; flex-direction: column; gap: 12px; }
+  .engine-section {
+    background: #F4F6F8;
+    border-radius: 8px;
+    border: 1.5px solid #C5CDD8;
+    overflow: hidden;
+  }
+  .es-head {
+    background: linear-gradient(90deg, #2C3E50, #1E3A5F);
+    color: white;
+    padding: 9px 14px;
+    font-size: 15px;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+  }
+  .es-head .es-tag {
+    background: #FFC940;
+    color: #1E3A5F;
+    font-size: 10px;
+    font-weight: 900;
+    padding: 2px 9px;
+    border-radius: 10px;
+  }
+  .es-head .es-en {
+    margin-left: auto;
+    font-size: 10.5px;
+    font-weight: 500;
+    opacity: 0.85;
+  }
+  .es-body {
+    padding: 10px 14px 12px;
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 8px;
+  }
+  .es-card {
+    background: white;
+    border: 1px solid #D0D7DE;
+    border-radius: 5px;
+    padding: 8px 10px;
+    display: flex;
+    flex-direction: column;
+    gap: 3px;
+  }
+  .es-card .es-i {
+    font-size: 18px;
+    color: #1E3A5F;
+  }
+  .es-card .es-t {
+    font-size: 13.5px;
+    font-weight: 800;
+    color: #1E2A38;
+    line-height: 1.2;
+  }
+  .es-card .es-d {
+    font-size: 11px;
+    color: #6A7886;
+    font-weight: 500;
+    line-height: 1.35;
+  }
+
+  /* ===== Column 3: Result ===== */
+  .result { flex: 1; display: flex; flex-direction: column; gap: 10px; }
+  .result-grid-wrap {
+    background: #F4F9F4;
+    border: 1.5px solid #27AE60;
+    border-radius: 6px;
+    padding: 8px;
+    flex: 0 0 235px;
+  }
+  .result-grid-label {
+    font-size: 10.5px;
+    color: #1E8449;
+    font-weight: 700;
+    text-align: center;
+    margin-bottom: 4px;
+  }
+  .mini-table {
+    width: 100%;
+    height: calc(100% - 16px);
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+  .mt-row {
+    display: grid;
+    grid-template-columns: repeat(5, 1fr);
+    gap: 2px;
+    flex: 1;
+  }
+  .mt-header { flex: 0 0 18px; }
+  .mt-th {
+    background: #27AE60;
+    color: white;
+    font-size: 11px;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+  }
+  .mt-cell {
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 800;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    padding: 1px;
+    overflow: hidden;
+    text-align: center;
+  }
+  .mt-empty {
+    background: repeating-linear-gradient(
+      45deg, #FFFFFF, #FFFFFF 3px, #E8EBEE 3px, #E8EBEE 6px);
+  }
+  .mt-lunch { flex: 0 0 14px; }
+  .mt-lunch-cell {
+    grid-column: 1 / 6;
+    background: #FFF4E5;
+    color: #B8651F;
+    font-size: 10px;
+    font-weight: 900;
+    letter-spacing: 4px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 3px;
+  }
+  .result-features {
+    display: flex;
+    flex-direction: column;
+    gap: 7px;
+    flex: 1;
+  }
+  .rf {
+    display: grid;
+    grid-template-columns: 42px 1fr;
+    gap: 10px;
+    align-items: center;
+    padding: 7px 10px;
+    background: #F4FAF5;
+    border-left: 4px solid #27AE60;
+    border-radius: 5px;
+  }
+  .rf .rf-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 50%;
+    background: white;
+    border: 2px solid #27AE60;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    color: #27AE60;
+    font-weight: 900;
+  }
+  .rf .rf-text .rf-name {
+    font-size: 14px;
+    font-weight: 900;
+    color: #1E2A38;
+    line-height: 1.15;
+  }
+  .rf .rf-text .rf-d {
+    font-size: 11px;
+    color: #4A5868;
+    font-weight: 500;
+    margin-top: 3px;
+  }
+
+  /* ===== BOTTOM TECH ROW (3 badges) ===== */
+  .tech-row {
+    border-top: 3px solid #1E3A5F;
+    padding-top: 14px;
+    display: grid;
+    grid-template-rows: 24px 1fr;
+    gap: 12px;
+  }
+  .tech-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .tech-header .th-bar {
+    width: 6px;
+    height: 22px;
+    background: #FFC940;
+    border-radius: 2px;
+  }
+  .tech-header .th-ko {
+    font-size: 19px;
+    font-weight: 900;
+    color: #1E3A5F;
+  }
+  .tech-header .th-en {
+    font-size: 11px;
+    color: #6A7886;
+    font-weight: 600;
+    letter-spacing: 2px;
+  }
+  .tech-badges {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 16px;
+  }
+  .badge {
+    border: 2px solid #1E3A5F;
+    border-radius: 10px;
+    padding: 12px 16px 14px;
+    display: grid;
+    grid-template-columns: 44px 1fr;
+    gap: 14px;
+    align-items: start;
+    background: white;
+  }
+  .badge .b-num {
+    width: 42px;
+    height: 42px;
+    border-radius: 50%;
+    background: #1E3A5F;
+    color: #FFC940;
+    font-size: 17px;
+    font-weight: 900;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+  }
+  .badge .b-name {
+    font-size: 15px;
+    font-weight: 900;
+    color: #1E2A38;
+    line-height: 1.2;
+  }
+  .badge .b-en {
+    font-size: 10px;
+    color: #3498DB;
+    font-weight: 700;
+    margin-top: 2px;
+    letter-spacing: 0.3px;
+  }
+  .badge .b-desc {
+    font-size: 11.5px;
+    color: #4A5868;
+    font-weight: 500;
+    margin-top: 6px;
+    line-height: 1.45;
+  }
+
+  @media print {
+    body { background: white; }
+    .page { box-shadow: none; margin: 0; }
+  }
+</style>
+</head>
+<body>
+<div class="page">
+
+  <!-- HEADER -->
+  <header>
+    <h1>전공 시간표 자동 생성 시스템 개발</h1>
+    <div class="sub">복잡한 학과 시간표를 컴퓨터가 자동으로 만들어 충돌 없이 완성</div>
+  </header>
+
+  <!-- 3-COLUMN FLOW -->
+  <div class="flow">
+
+    <!-- COL 1: INPUT -->
+    <div class="col col-1">
+      <div class="col-tab">INPUT · 입력 데이터</div>
+      <div class="col-body">
+        <div class="col-title">
+          <div class="ko">학과 시간표 정보</div>
+        </div>
+        <div class="entities">
+          <div class="entity">
+            <div class="e-icon">📚</div>
+            <div class="e-text">
+              <div class="e-name">과목<span class="e-num">27</span></div>
+              <div class="e-detail">여러 반으로 분반 · 한 번에 2~3시간 연속 수업 · 특정 시간 고정도 가능</div>
+            </div>
+          </div>
+          <div class="entity">
+            <div class="e-icon">👤</div>
+            <div class="e-text">
+              <div class="e-name">교수<span class="e-num">15</span></div>
+              <div class="e-detail">수업 못 하는 시간 · 선호 강의실 · 여러 교수 공동 강의(팀티칭)</div>
+            </div>
+          </div>
+          <div class="entity">
+            <div class="e-icon">🏛</div>
+            <div class="e-text">
+              <div class="e-name">강의실<span class="e-num">10</span></div>
+              <div class="e-detail">공용/전용 구분 · 한 과목이 여러 방을 동시에 쓰는 경우도 처리</div>
+            </div>
+          </div>
+          <div class="entity">
+            <div class="e-icon">📋</div>
+            <div class="e-text">
+              <div class="e-name">운영 규칙</div>
+              <div class="e-detail">여러 학년 합반 · 재수강생 분반 분리 · 학과 회의/캡스톤 시간 고정</div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Arrow 1 -->
+    <div class="arrow arrow-1">
+      <div class="arrow-label">조건<br>정리</div>
+      <div class="arrow-shape"></div>
+    </div>
+
+    <!-- COL 2: ENGINE -->
+    <div class="col col-2">
+      <div class="col-tab">AUTO ENGINE · 자동 시간표 엔진</div>
+      <div class="col-body">
+        <div class="col-title">
+          <div class="ko">조건 검증 + 가장 좋은 안 추천</div>
+        </div>
+        <div class="engine">
+
+          <!-- Step 1: 필수 조건 -->
+          <div class="engine-section">
+            <div class="es-head">
+              <span class="es-tag">1단계</span>
+              꼭 지켜야 할 조건 자동 검증
+            </div>
+            <div class="es-body">
+              <div class="es-card">
+                <div class="es-i">⚙</div>
+                <div class="es-t">필수 조건 21가지 자동 검사</div>
+                <div class="es-d">시간 충돌·점심시간 보호·수업 시수·연속 수업</div>
+              </div>
+              <div class="es-card">
+                <div class="es-i">🚪</div>
+                <div class="es-t">여러 방 동시 사용</div>
+                <div class="es-d">한 과목이 N개 방을 동시에 점유해도 자동 처리</div>
+              </div>
+              <div class="es-card">
+                <div class="es-i">🤝</div>
+                <div class="es-t">특수 분반 처리</div>
+                <div class="es-d">학년 합반 · 재수강생이 겹치지 않게 분반 배정</div>
+              </div>
+              <div class="es-card">
+                <div class="es-i">👥</div>
+                <div class="es-t">공동 강의 처리</div>
+                <div class="es-d">여러 교수가 함께 가르치는 수업(팀티칭) 지원</div>
+              </div>
+            </div>
+          </div>
+
+          <!-- Step 2: 선호 사항 -->
+          <div class="engine-section">
+            <div class="es-head">
+              <span class="es-tag">2단계</span>
+              더 좋게 만들기 (선호 사항)
+            </div>
+            <div class="es-body">
+              <div class="es-card">
+                <div class="es-i">📊</div>
+                <div class="es-t">우선순위 단계별 적용</div>
+                <div class="es-d">중요한 것부터 순서대로, 한 단계씩 더 좋게</div>
+              </div>
+              <div class="es-card">
+                <div class="es-i">🎯</div>
+                <div class="es-t">학생·교수 편의 반영</div>
+                <div class="es-d">월 오전·금 오후 수업 줄이기 · 교수 강의일 분산 · 수업 간격 확보</div>
+              </div>
+              <div class="es-card">
+                <div class="es-i">🔁</div>
+                <div class="es-t">다양한 후보 시간표 생성</div>
+                <div class="es-d">매번 다른 패턴의 시간표를 여러 개 자동 생성</div>
+              </div>
+              <div class="es-card">
+                <div class="es-i">🏆</div>
+                <div class="es-t">결과 자동 순위 매기기</div>
+                <div class="es-d">가장 좋은 시간표를 위에서부터 추천</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- Arrow 2 -->
+    <div class="arrow arrow-2">
+      <div class="arrow-label">최적<br>시간표</div>
+      <div class="arrow-shape"></div>
+    </div>
+
+    <!-- COL 3: OUTPUT -->
+    <div class="col col-3">
+      <div class="col-tab">OUTPUT · 완성된 시간표</div>
+      <div class="col-body">
+        <div class="col-title">
+          <div class="ko">사용자가 즉시 확인 · 편집</div>
+        </div>
+        <div class="result">
+
+          <div class="result-grid-wrap">
+            <div class="result-grid-label">▶ 실제 자동 생성 결과 (3학년 시간표)</div>
+            <div class="mini-table"><div class="mt-row mt-header"><div class="mt-th">월</div><div class="mt-th">화</div><div class="mt-th">수</div><div class="mt-th">목</div><div class="mt-th">금</div></div><div class="mt-row"><div class="mt-cell" style="background:hsl(350, 65%, 75%);color:hsl(350, 50%, 28%)">웹서버</div><div class="mt-cell" style="background:hsl(166, 65%, 75%);color:hsl(166, 50%, 28%)">인공지</div><div class="mt-cell" style="background:hsl(235, 65%, 75%);color:hsl(235, 50%, 28%)">모바일</div><div class="mt-cell" style="background:hsl(265, 65%, 75%);color:hsl(265, 50%, 28%)">객체지</div><div class="mt-cell" style="background:hsl(182, 65%, 75%);color:hsl(182, 50%, 28%)">윈도우</div></div><div class="mt-row"><div class="mt-cell mt-empty"></div><div class="mt-cell" style="background:hsl(166, 65%, 75%);color:hsl(166, 50%, 28%)">인공지</div><div class="mt-cell" style="background:hsl(235, 65%, 75%);color:hsl(235, 50%, 28%)">모바일</div><div class="mt-cell" style="background:hsl(265, 65%, 75%);color:hsl(265, 50%, 28%)">객체지</div><div class="mt-cell" style="background:hsl(182, 65%, 75%);color:hsl(182, 50%, 28%)">윈도우</div></div><div class="mt-row"><div class="mt-cell mt-empty"></div><div class="mt-cell" style="background:hsl(265, 65%, 75%);color:hsl(265, 50%, 28%)">객체지</div><div class="mt-cell" style="background:hsl(337, 65%, 75%);color:hsl(337, 50%, 28%)">컴퓨터</div><div class="mt-cell" style="background:hsl(265, 65%, 75%);color:hsl(265, 50%, 28%)">객체지</div><div class="mt-cell" style="background:hsl(337, 65%, 75%);color:hsl(337, 50%, 28%)">컴퓨터</div></div><div class="mt-row"><div class="mt-cell" style="background:hsl(235, 65%, 75%);color:hsl(235, 50%, 28%)">모바일</div><div class="mt-cell" style="background:hsl(265, 65%, 75%);color:hsl(265, 50%, 28%)">객체지</div><div class="mt-cell mt-empty"></div><div class="mt-cell" style="background:hsl(265, 65%, 75%);color:hsl(265, 50%, 28%)">객체지</div><div class="mt-cell" style="background:hsl(337, 65%, 75%);color:hsl(337, 50%, 28%)">컴퓨터</div></div><div class="mt-row mt-lunch"><div class="mt-lunch-cell">점 심 시 간</div></div><div class="mt-row"><div class="mt-cell mt-empty"></div><div class="mt-cell mt-empty"></div><div class="mt-cell" style="background:hsl(357, 65%, 75%);color:hsl(357, 50%, 28%)">임베디</div><div class="mt-cell" style="background:hsl(166, 65%, 75%);color:hsl(166, 50%, 28%)">인공지</div><div class="mt-cell" style="background:hsl(307, 65%, 75%);color:hsl(307, 50%, 28%)">창의프</div></div><div class="mt-row"><div class="mt-cell mt-empty"></div><div class="mt-cell mt-empty"></div><div class="mt-cell" style="background:hsl(182, 65%, 75%);color:hsl(182, 50%, 28%)">윈도우</div><div class="mt-cell" style="background:hsl(166, 65%, 75%);color:hsl(166, 50%, 28%)">인공지</div><div class="mt-cell" style="background:hsl(307, 65%, 75%);color:hsl(307, 50%, 28%)">창의프</div></div><div class="mt-row"><div class="mt-cell" style="background:hsl(357, 65%, 75%);color:hsl(357, 50%, 28%)">임베디</div><div class="mt-cell mt-empty"></div><div class="mt-cell" style="background:hsl(350, 65%, 75%);color:hsl(350, 50%, 28%)">웹서버</div><div class="mt-cell" style="background:hsl(166, 65%, 75%);color:hsl(166, 50%, 28%)">인공지</div><div class="mt-cell" style="background:hsl(307, 65%, 75%);color:hsl(307, 50%, 28%)">창의프</div></div><div class="mt-row"><div class="mt-cell" style="background:hsl(357, 65%, 75%);color:hsl(357, 50%, 28%)">임베디</div><div class="mt-cell mt-empty"></div><div class="mt-cell" style="background:hsl(350, 65%, 75%);color:hsl(350, 50%, 28%)">웹서버</div><div class="mt-cell" style="background:hsl(166, 65%, 75%);color:hsl(166, 50%, 28%)">인공지</div><div class="mt-cell" style="background:hsl(307, 65%, 75%);color:hsl(307, 50%, 28%)">창의프</div></div></div>
+          </div>
+
+          <div class="result-features">
+            <div class="rf">
+              <div class="rf-icon">✓</div>
+              <div class="rf-text">
+                <div class="rf-name">충돌 없는 시간표</div>
+                <div class="rf-d">필수 조건 21가지를 모두 만족한 안전한 결과</div>
+              </div>
+            </div>
+            <div class="rf">
+              <div class="rf-icon">✏</div>
+              <div class="rf-text">
+                <div class="rf-name">수동 편집 + 안전 장치</div>
+                <div class="rf-d">규칙 위반 시 즉시 알림 · 되돌리기/다시하기 · 편집 중 임시 저장</div>
+              </div>
+            </div>
+            <div class="rf">
+              <div class="rf-icon">📤</div>
+              <div class="rf-text">
+                <div class="rf-name">엑셀로 내보내기</div>
+                <div class="rf-d">완성된 시간표를 엑셀 파일로 즉시 저장 가능</div>
+              </div>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- BOTTOM: 핵심 기술 3개 -->
+  <div class="tech-row">
+    <div class="tech-header">
+      <div class="th-bar"></div>
+      <div class="th-ko">핵심 기술</div>
+    </div>
+    <div class="tech-badges">
+      <div class="badge">
+        <div class="b-num">01</div>
+        <div>
+          <div class="b-name">검증된 최적화 엔진 활용</div>
+          <div class="b-desc">
+            구글이 만든 세계 표준 시간표·일정 최적화 엔진을 내부에 탑재하여 안정성과 성능을 동시에 확보
+          </div>
+        </div>
+      </div>
+      <div class="badge">
+        <div class="b-num">02</div>
+        <div>
+          <div class="b-name">단계별 우선순위 최적화</div>
+          <div class="b-desc">
+            꼭 지켜야 할 조건을 먼저 만족시킨 뒤, 학생·교수 편의 사항을 단계별로 차근차근 적용해 점점 더 좋은 시간표로 개선
+          </div>
+        </div>
+      </div>
+      <div class="badge">
+        <div class="b-num">03</div>
+        <div>
+          <div class="b-name">여러 후보 자동 생성·비교</div>
+          <div class="b-desc">
+            한 번 실행으로 서로 다른 패턴의 시간표를 여러 개 자동 생성. 사용자가 비교한 뒤 가장 좋은 안을 선택
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+</div>
+</body>
+</html>

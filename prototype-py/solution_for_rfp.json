@@ -1,0 +1,951 @@
+{
+  "status": "OPTIMAL",
+  "assignment": [
+    {
+      "course_id": "GA1004-01",
+      "day": 0,
+      "period": 8,
+      "room_id": "D438"
+    },
+    {
+      "course_id": "GA1004-01",
+      "day": 0,
+      "period": 9,
+      "room_id": "D438"
+    },
+    {
+      "course_id": "GA1004-01",
+      "day": 2,
+      "period": 8,
+      "room_id": "D438"
+    },
+    {
+      "course_id": "GA1004-01",
+      "day": 2,
+      "period": 9,
+      "room_id": "D438"
+    },
+    {
+      "course_id": "GA1004-02",
+      "day": 0,
+      "period": 6,
+      "room_id": "D438"
+    },
+    {
+      "course_id": "GA1004-02",
+      "day": 0,
+      "period": 7,
+      "room_id": "D438"
+    },
+    {
+      "course_id": "GA1004-02",
+      "day": 2,
+      "period": 6,
+      "room_id": "D438"
+    },
+    {
+      "course_id": "GA1004-02",
+      "day": 2,
+      "period": 7,
+      "room_id": "D438"
+    },
+    {
+      "course_id": "GA1005-01",
+      "day": 1,
+      "period": 6,
+      "room_id": "D327"
+    },
+    {
+      "course_id": "GA1005-01",
+      "day": 1,
+      "period": 7,
+      "room_id": "D327"
+    },
+    {
+      "course_id": "GA1005-01",
+      "day": 3,
+      "period": 8,
+      "room_id": "D327"
+    },
+    {
+      "course_id": "GA1005-02",
+      "day": 1,
+      "period": 8,
+      "room_id": "D327"
+    },
+    {
+      "course_id": "GA1005-02",
+      "day": 1,
+      "period": 9,
+      "room_id": "D327"
+    },
+    {
+      "course_id": "GA1005-02",
+      "day": 3,
+      "period": 9,
+      "room_id": "D327"
+    },
+    {
+      "course_id": "GA1006-01",
+      "day": 1,
+      "period": 8,
+      "room_id": "D440"
+    },
+    {
+      "course_id": "GA1006-01",
+      "day": 1,
+      "period": 9,
+      "room_id": "D440"
+    },
+    {
+      "course_id": "GA1006-01",
+      "day": 3,
+      "period": 9,
+      "room_id": "D440"
+    },
+    {
+      "course_id": "GA1006-02",
+      "day": 1,
+      "period": 6,
+      "room_id": "D440"
+    },
+    {
+      "course_id": "GA1006-02",
+      "day": 1,
+      "period": 7,
+      "room_id": "D440"
+    },
+    {
+      "course_id": "GA1006-02",
+      "day": 3,
+      "period": 8,
+      "room_id": "D440"
+    },
+    {
+      "course_id": "GA1007-01",
+      "day": 1,
+      "period": 3,
+      "room_id": "D331-1"
+    },
+    {
+      "course_id": "GA1007-01",
+      "day": 1,
+      "period": 4,
+      "room_id": "D331-1"
+    },
+    {
+      "course_id": "GA1007-02",
+      "day": 0,
+      "period": 1,
+      "room_id": "D331"
+    },
+    {
+      "course_id": "GA1007-02",
+      "day": 0,
+      "period": 2,
+      "room_id": "D331"
+    },
+    {
+      "course_id": "GA1014-01",
+      "day": 1,
+      "period": 4,
+      "room_id": "K313"
+    },
+    {
+      "course_id": "GA1014-01",
+      "day": 3,
+      "period": 1,
+      "room_id": "K313"
+    },
+    {
+      "course_id": "GA1014-01",
+      "day": 3,
+      "period": 2,
+      "room_id": "K313"
+    },
+    {
+      "course_id": "GA1014-02",
+      "day": 1,
+      "period": 3,
+      "room_id": "K313"
+    },
+    {
+      "course_id": "GA1014-02",
+      "day": 3,
+      "period": 3,
+      "room_id": "K313"
+    },
+    {
+      "course_id": "GA1014-02",
+      "day": 3,
+      "period": 4,
+      "room_id": "K313"
+    },
+    {
+      "course_id": "GA1015-01",
+      "day": 4,
+      "period": 8,
+      "room_id": "D440"
+    },
+    {
+      "course_id": "GA1015-01",
+      "day": 4,
+      "period": 9,
+      "room_id": "D440"
+    },
+    {
+      "course_id": "GA1015-02",
+      "day": 4,
+      "period": 6,
+      "room_id": "D440"
+    },
+    {
+      "course_id": "GA1015-02",
+      "day": 4,
+      "period": 7,
+      "room_id": "D440"
+    },
+    {
+      "course_id": "GA1016-01",
+      "day": 0,
+      "period": 8,
+      "room_id": "D331"
+    },
+    {
+      "course_id": "GA1016-01",
+      "day": 0,
+      "period": 9,
+      "room_id": "D331"
+    },
+    {
+      "course_id": "GA1016-01",
+      "day": 2,
+      "period": 6,
+      "room_id": "D331"
+    },
+    {
+      "course_id": "GA1017-01",
+      "day": 1,
+      "period": 1,
+      "room_id": "DB134"
+    },
+    {
+      "course_id": "GA1017-01",
+      "day": 3,
+      "period": 6,
+      "room_id": "DB134"
+    },
+    {
+      "course_id": "GA1017-01",
+      "day": 3,
+      "period": 7,
+      "room_id": "DB134"
+    },
+    {
+      "course_id": "GA1017-02",
+      "day": 1,
+      "period": 2,
+      "room_id": "DB134"
+    },
+    {
+      "course_id": "GA1017-02",
+      "day": 3,
+      "period": 8,
+      "room_id": "DB134"
+    },
+    {
+      "course_id": "GA1017-02",
+      "day": 3,
+      "period": 9,
+      "room_id": "DB134"
+    },
+    {
+      "course_id": "GA1018",
+      "day": 0,
+      "period": 4,
+      "room_id": "D330"
+    },
+    {
+      "course_id": "GA1018",
+      "day": 2,
+      "period": 1,
+      "room_id": "D330"
+    },
+    {
+      "course_id": "GA1018",
+      "day": 2,
+      "period": 2,
+      "room_id": "D330"
+    },
+    {
+      "course_id": "GA1019-01",
+      "day": 2,
+      "period": 3,
+      "room_id": "D331-1"
+    },
+    {
+      "course_id": "GA1019-01",
+      "day": 4,
+      "period": 3,
+      "room_id": "D331-1"
+    },
+    {
+      "course_id": "GA1019-01",
+      "day": 4,
+      "period": 4,
+      "room_id": "D331-1"
+    },
+    {
+      "course_id": "GA1020-01",
+      "day": 2,
+      "period": 7,
+      "room_id": "D331-1"
+    },
+    {
+      "course_id": "GA1020-01",
+      "day": 4,
+      "period": 1,
+      "room_id": "D331-1"
+    },
+    {
+      "course_id": "GA1020-01",
+      "day": 4,
+      "period": 2,
+      "room_id": "D331-1"
+    },
+    {
+      "course_id": "GA1021-01",
+      "day": 0,
+      "period": 1,
+      "room_id": "D330"
+    },
+    {
+      "course_id": "GA1021-01",
+      "day": 2,
+      "period": 8,
+      "room_id": "D330"
+    },
+    {
+      "course_id": "GA1021-01",
+      "day": 2,
+      "period": 9,
+      "room_id": "D330"
+    },
+    {
+      "course_id": "GA1029",
+      "day": 2,
+      "period": 1,
+      "room_id": "D327"
+    },
+    {
+      "course_id": "GA1029",
+      "day": 2,
+      "period": 2,
+      "room_id": "D327"
+    },
+    {
+      "course_id": "GA1029",
+      "day": 2,
+      "period": 3,
+      "room_id": "D327"
+    },
+    {
+      "course_id": "GA1030-01",
+      "day": 1,
+      "period": 3,
+      "room_id": "D438"
+    },
+    {
+      "course_id": "GA1030-01",
+      "day": 1,
+      "period": 4,
+      "room_id": "D438"
+    },
+    {
+      "course_id": "GA1030-01",
+      "day": 3,
+      "period": 3,
+      "room_id": "D438"
+    },
+    {
+      "course_id": "GA1031-01",
+      "day": 0,
+      "period": 6,
+      "room_id": "D330"
+    },
+    {
+      "course_id": "GA1031-01",
+      "day": 2,
+      "period": 6,
+      "room_id": "D330"
+    },
+    {
+      "course_id": "GA1031-01",
+      "day": 2,
+      "period": 7,
+      "room_id": "D330"
+    },
+    {
+      "course_id": "GA1033-01",
+      "day": 0,
+      "period": 1,
+      "room_id": "D331-1"
+    },
+    {
+      "course_id": "GA1033-01",
+      "day": 0,
+      "period": 2,
+      "room_id": "D331-1"
+    },
+    {
+      "course_id": "GA1033-01",
+      "day": 2,
+      "period": 8,
+      "room_id": "D331-1"
+    },
+    {
+      "course_id": "GA1034-01",
+      "day": 2,
+      "period": 9,
+      "room_id": "DB134"
+    },
+    {
+      "course_id": "GA1034-01",
+      "day": 4,
+      "period": 1,
+      "room_id": "DB134"
+    },
+    {
+      "course_id": "GA1034-01",
+      "day": 4,
+      "period": 2,
+      "room_id": "DB134"
+    },
+    {
+      "course_id": "USR001",
+      "day": 0,
+      "period": 6,
+      "room_id": "D332"
+    },
+    {
+      "course_id": "USR001",
+      "day": 2,
+      "period": 8,
+      "room_id": "D332"
+    },
+    {
+      "course_id": "USR001",
+      "day": 2,
+      "period": 9,
+      "room_id": "D332"
+    },
+    {
+      "course_id": "USR002",
+      "day": 1,
+      "period": 2,
+      "room_id": "D440"
+    },
+    {
+      "course_id": "USR002",
+      "day": 3,
+      "period": 6,
+      "room_id": "D440"
+    },
+    {
+      "course_id": "USR002",
+      "day": 3,
+      "period": 7,
+      "room_id": "D440"
+    },
+    {
+      "course_id": "USR003",
+      "day": 2,
+      "period": 4,
+      "room_id": "D327"
+    }
+  ],
+  "courses": {
+    "GA1006-01": {
+      "name": "데이터베이스",
+      "grade": 2,
+      "professor_id": "김선명",
+      "course_type": "전필",
+      "section": 1,
+      "department": "소프트웨어전공 2학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1006-02": {
+      "name": "데이터베이스",
+      "grade": 2,
+      "professor_id": "김선명",
+      "course_type": "전필",
+      "section": 2,
+      "department": "소프트웨어전공 2학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1007-01": {
+      "name": "프로그래밍응용",
+      "grade": 2,
+      "professor_id": "김시관",
+      "course_type": "전필",
+      "section": 1,
+      "department": "소프트웨어전공 2학년",
+      "hours_per_week": 2,
+      "block_structure": [
+        2
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1007-02": {
+      "name": "프로그래밍응용",
+      "grade": 2,
+      "professor_id": "전태수",
+      "course_type": "전필",
+      "section": 2,
+      "department": "소프트웨어전공 2학년",
+      "hours_per_week": 2,
+      "block_structure": [
+        2
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1014-01": {
+      "name": "객체지향소프트웨어공학",
+      "grade": 3,
+      "professor_id": "이종열",
+      "course_type": "전필",
+      "section": 1,
+      "department": "소프트웨어전공 3학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1014-02": {
+      "name": "객체지향소프트웨어공학",
+      "grade": 3,
+      "professor_id": "이종열",
+      "course_type": "전필",
+      "section": 2,
+      "department": "소프트웨어전공 3학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1015-01": {
+      "name": "창의프로젝트",
+      "grade": 3,
+      "professor_id": "이규원",
+      "course_type": "전필",
+      "section": 1,
+      "department": "소프트웨어전공 3학년",
+      "hours_per_week": 2,
+      "block_structure": [
+        2
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1015-02": {
+      "name": "창의프로젝트",
+      "grade": 3,
+      "professor_id": "이규원",
+      "course_type": "전필",
+      "section": 2,
+      "department": "소프트웨어전공 3학년",
+      "hours_per_week": 2,
+      "block_structure": [
+        2
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1016-01": {
+      "name": "임베디드컴퓨팅",
+      "grade": 3,
+      "professor_id": "전태수",
+      "course_type": "전선",
+      "section": 1,
+      "department": "소프트웨어전공 3학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1017-01": {
+      "name": "인공지능",
+      "grade": 3,
+      "professor_id": "김영우",
+      "course_type": "전선",
+      "section": 1,
+      "department": "소프트웨어전공 3학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1017-02": {
+      "name": "인공지능",
+      "grade": 3,
+      "professor_id": "김영우",
+      "course_type": "전선",
+      "section": 2,
+      "department": "소프트웨어전공 3학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1019-01": {
+      "name": "컴퓨터그래픽스",
+      "grade": 3,
+      "professor_id": "김영원",
+      "course_type": "전선",
+      "section": 1,
+      "department": "소프트웨어전공 3학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1020-01": {
+      "name": "윈도우즈프로그래밍",
+      "grade": 3,
+      "professor_id": "김영원",
+      "course_type": "전선",
+      "section": 1,
+      "department": "소프트웨어전공 3학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1021-01": {
+      "name": "웹서버프로그래밍",
+      "grade": 3,
+      "professor_id": "김성렬",
+      "course_type": "전선",
+      "section": 1,
+      "department": "소프트웨어전공 3학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1030-01": {
+      "name": "알고리즘",
+      "grade": 4,
+      "professor_id": "이현아",
+      "course_type": "전선",
+      "section": 1,
+      "department": "소프트웨어전공 4학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1031-01": {
+      "name": "웹프로젝트실무",
+      "grade": 4,
+      "professor_id": "김성렬",
+      "course_type": "전선",
+      "section": 1,
+      "department": "소프트웨어전공 4학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1033-01": {
+      "name": "4차산업핵심기술",
+      "grade": 4,
+      "professor_id": "김시관",
+      "course_type": "전선",
+      "section": 1,
+      "department": "소프트웨어전공 4학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1034-01": {
+      "name": "빅데이터",
+      "grade": 4,
+      "professor_id": "이광희",
+      "course_type": "전선",
+      "section": 1,
+      "department": "소프트웨어전공 4학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1004-01": {
+      "name": "자료구조",
+      "grade": 2,
+      "professor_id": "이현아",
+      "course_type": "전필",
+      "section": 1,
+      "department": "소프트웨어전공 2학년",
+      "hours_per_week": 4,
+      "block_structure": [
+        2,
+        2
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1004-02": {
+      "name": "자료구조",
+      "grade": 2,
+      "professor_id": "이현아",
+      "course_type": "전필",
+      "section": 2,
+      "department": "소프트웨어전공 2학년",
+      "hours_per_week": 4,
+      "block_structure": [
+        2,
+        2
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1005-01": {
+      "name": "컴퓨터구조",
+      "grade": 2,
+      "professor_id": "이해연",
+      "course_type": "전필",
+      "section": 1,
+      "department": "소프트웨어전공 2학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1005-02": {
+      "name": "컴퓨터구조",
+      "grade": 2,
+      "professor_id": "이해연",
+      "course_type": "전필",
+      "section": 2,
+      "department": "소프트웨어전공 2학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "GA1029": {
+      "name": "캡스톤디자인2",
+      "grade": 4,
+      "professor_id": "김병만",
+      "course_type": "전필",
+      "section": 1,
+      "department": "소프트웨어전공 4학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        3
+      ],
+      "fixed_rooms": [],
+      "is_fixed": true,
+      "coteach_profs": [
+        "김성렬",
+        "김영우",
+        "이광희",
+        "이해연",
+        "전태수"
+      ]
+    },
+    "USR001": {
+      "name": "이산수학",
+      "grade": 1,
+      "professor_id": "이미영",
+      "course_type": "교양",
+      "section": 1,
+      "department": "",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "USR002": {
+      "name": "디지털문해력",
+      "grade": 1,
+      "professor_id": "김선명",
+      "course_type": "전필",
+      "section": 1,
+      "department": "",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": false,
+      "coteach_profs": []
+    },
+    "USR003": {
+      "name": "학과회의",
+      "grade": 4,
+      "professor_id": "김병만",
+      "course_type": "전필",
+      "section": 1,
+      "department": "",
+      "hours_per_week": 1,
+      "block_structure": [
+        1
+      ],
+      "fixed_rooms": [],
+      "is_fixed": true,
+      "coteach_profs": [
+        "김선명",
+        "김성렬",
+        "김시관",
+        "김영우",
+        "김영원",
+        "이광희",
+        "이규원",
+        "이종열",
+        "이해연",
+        "이현아",
+        "전태수"
+      ]
+    },
+    "GA1018": {
+      "name": "모바일프로그래밍",
+      "grade": 3,
+      "professor_id": "김시관",
+      "course_type": "전선",
+      "section": 1,
+      "department": "소프트웨어전공 3학년",
+      "hours_per_week": 3,
+      "block_structure": [
+        2,
+        1
+      ],
+      "fixed_rooms": [
+        "D330"
+      ],
+      "is_fixed": false,
+      "coteach_profs": []
+    }
+  },
+  "rooms": [
+    "D327",
+    "D330",
+    "D331",
+    "D331-1",
+    "D332",
+    "D438",
+    "D440",
+    "DB116",
+    "DB134",
+    "K313"
+  ],
+  "professors": [
+    "김병만",
+    "김선명",
+    "김성렬",
+    "김시관",
+    "김영우",
+    "김영원",
+    "이광희",
+    "이규원",
+    "이미영",
+    "이종열",
+    "이해연",
+    "이현아",
+    "이혜숙",
+    "전태수",
+    "엄교수"
+  ],
+  "stats": {
+    "n_courses": 27,
+    "n_professors": 15,
+    "n_rooms": 10,
+    "n_crosses": 1,
+    "n_retakes": 13
+  }
+}

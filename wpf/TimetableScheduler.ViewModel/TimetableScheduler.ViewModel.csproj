@@ -1,0 +1,21 @@
+﻿<Project Sdk="Microsoft.NET.Sdk">
+
+  <ItemGroup>
+    <ProjectReference Include="..\TimetableScheduler.Domain\TimetableScheduler.Domain.csproj" />
+    <ProjectReference Include="..\TimetableScheduler.Solver\TimetableScheduler.Solver.csproj" />
+    <ProjectReference Include="..\TimetableScheduler.Scoring\TimetableScheduler.Scoring.csproj" />
+    <ProjectReference Include="..\TimetableScheduler.Data\TimetableScheduler.Data.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <PackageReference Include="CommunityToolkit.Mvvm" Version="8.4.2" />
+    <PackageReference Include="Microsoft.Extensions.DependencyInjection" Version="8.0.1" />
+  </ItemGroup>
+
+  <PropertyGroup>
+    <TargetFramework>net8.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+  </PropertyGroup>
+
+</Project>
