@@ -215,15 +215,16 @@ public static class ConflictDetector
             }
         }
 
-        // HC-11: same grade cannot overlap, excluding same base-id and cross-group pairs.
+        // HC-11: same grade cannot overlap, except same base-id or members of the same cross group.
         bool SameCrossGroup(string b1, string b2)
         {
             if (crosses == null) return false;
-            foreach (var g in crosses)
-                if (g.BaseIds.Contains(b1) && g.BaseIds.Contains(b2))
+            foreach (var cross in crosses)
+                if (cross.BaseIds.Contains(b1) && cross.BaseIds.Contains(b2))
                     return true;
             return false;
         }
+
         foreach (var g in assignment.GroupBy(a => (a.Day, a.Period)))
         {
             var cids = g.Select(a => a.CourseId).Distinct().ToList();
@@ -232,8 +233,7 @@ public static class ConflictDetector
                 {
                     if (!courseMap.TryGetValue(cids[i], out var c1)) continue;
                     if (!courseMap.TryGetValue(cids[j], out var c2)) continue;
-                    if (c1.Grade <= 0 || c2.Grade <= 0) continue;
-                    if (c1.Grade != c2.Grade) continue;
+                    if (c1.Grade <= 0 || c2.Grade <= 0 || c1.Grade != c2.Grade) continue;
                     var b1 = DomainHelpers.BaseId(c1.Id);
                     var b2 = DomainHelpers.BaseId(c2.Id);
                     if (b1 == b2 || SameCrossGroup(b1, b2)) continue;

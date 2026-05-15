@@ -17,7 +17,7 @@ public partial class ManualEditView : UserControl
     private void OnCellClicked(object? sender, UnifiedTimetableControl.CellClickedEventArgs e)
     {
         if (DataContext is ManualEditViewModel vm)
-            vm.HandleCellClick(e.Day, e.Period, e.Assignment);
+            vm.HandleCellClick(e.Day, e.Period, e.Grade, e.SubColumnIdx, e.Assignment);
     }
 
     protected override void OnKeyDown(KeyEventArgs e)

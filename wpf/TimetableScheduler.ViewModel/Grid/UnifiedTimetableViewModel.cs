@@ -21,7 +21,21 @@ public sealed record DayGroup(int Day, IReadOnlyList<GradeColumn> Grades)
 public sealed record UnifiedCell(
     int Day, int Period, int Grade, int SubColumnIdx, CellAssignment Assignment);
 
-public sealed record EditCellState(bool CanMove, string Reason);
+public enum ManualMoveCellState
+{
+    Normal,
+    Selected,
+    Movable,
+    Warning,
+    Blocked,
+}
+
+public sealed record UnifiedCellKey(int Day, int Period, int Grade, int SubColumnIdx);
+
+public sealed record EditCellState(ManualMoveCellState State, string Reason)
+{
+    public bool CanMove => State is ManualMoveCellState.Movable or ManualMoveCellState.Warning;
+}
 
 public sealed partial class UnifiedTimetableViewModel : ObservableObject
 {
@@ -32,10 +46,10 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
 
     public IReadOnlyList<UnifiedCell> Cells { get; private set; } = Array.Empty<UnifiedCell>();
 
-    public (int Day, int Period)? SelectedCell { get; private set; }
+    public UnifiedCellKey? SelectedCell { get; private set; }
 
-    public IReadOnlyDictionary<(int Day, int Period), EditCellState> EditStates { get; private set; } =
-        new Dictionary<(int Day, int Period), EditCellState>();
+    public IReadOnlyDictionary<UnifiedCellKey, EditCellState> EditStates { get; private set; } =
+        new Dictionary<UnifiedCellKey, EditCellState>();
 
     public IReadOnlyList<int> Periods => Constants.Periods;
 
@@ -150,8 +164,8 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
     }
 
     public void SetEditState(
-        (int Day, int Period)? selectedCell,
-        IReadOnlyDictionary<(int Day, int Period), EditCellState> editStates)
+        UnifiedCellKey? selectedCell,
+        IReadOnlyDictionary<UnifiedCellKey, EditCellState> editStates)
     {
         SelectedCell = selectedCell;
         EditStates = editStates;
@@ -159,5 +173,5 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
     }
 
     public void ClearEditState() =>
-        SetEditState(null, new Dictionary<(int Day, int Period), EditCellState>());
+        SetEditState(null, new Dictionary<UnifiedCellKey, EditCellState>());
 }
