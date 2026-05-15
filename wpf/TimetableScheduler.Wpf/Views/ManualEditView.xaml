@@ -7,6 +7,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
+             Focusable="True"
              d:DataContext="{d:DesignInstance Type=vm:ManualEditViewModel}">
     <Grid>
         <Grid.ColumnDefinitions>
@@ -30,6 +31,12 @@
                     <Button Content="🔄 초기화 (베이스로 되돌리기)"
                             Command="{Binding ResetCommand}"
                             Padding="8,4" Margin="20,0,0,0" />
+                    <Button Content="↶ 직전 이동 취소"
+                            Command="{Binding UndoLastMoveCommand}"
+                            Padding="8,4" Margin="8,0,0,0" />
+                    <Button Content="선택 해제"
+                            Command="{Binding ClearSelectionCommand}"
+                            Padding="8,4" Margin="8,0,0,0" />
                 </StackPanel>
             </Border>
 
@@ -53,21 +60,57 @@
                                    FontWeight="Bold" Foreground="#005FB8" />
                     </Border>
 
-                    <StackPanel Margin="16,12" IsEnabled="{Binding SelectedAssignment, Converter={StaticResource BoolToVisibility}}">
-                        <TextBlock Text="선택된 과목" FontSize="10" Foreground="#999"
+                    <Border Margin="16,12"
+                            Padding="12"
+                            Background="#F8F9FA"
+                            BorderBrush="#DDD"
+                            BorderThickness="1"
+                            Visibility="{Binding HasNoSelection, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="수업을 선택하세요."
+                                   Foreground="#666"
+                                   FontSize="12" />
+                    </Border>
+
+                    <StackPanel Margin="16,12" Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}">
+                        <TextBlock Text="선택 수업" FontSize="10" Foreground="#999"
                                    FontWeight="Bold" Margin="0,0,0,4" />
                         <TextBlock Text="{Binding SelectedAssignment.CourseName}"
                                    FontWeight="Bold" FontSize="14" />
                         <TextBlock Text="{Binding SelectedAssignment.CourseId}"
-                                   FontSize="11" Foreground="#666" Margin="0,0,0,12" />
-
-                        <TextBlock Text="교수" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />
-                        <TextBlock Text="{Binding SelectedAssignment.ProfessorId}"
+                                   FontSize="11" Foreground="#666" Margin="0,0,0,8" />
+                        <TextBlock Text="{Binding SelectedLocationText}"
+                                   FontSize="12" Margin="0,0,0,2" />
+                        <TextBlock Text="{Binding SelectedSlotLabel}"
+                                   FontSize="12" Margin="0,0,0,2" />
+                        <TextBlock Text="{Binding SelectedOccupiedSlotsText, StringFormat=점유 교시: {0}}"
                                    FontSize="12" Margin="0,0,0,12" />
 
-                        <TextBlock Text="현재 강의실" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />
-                        <TextBlock Text="{Binding SelectedAssignment.RoomsLabel}"
+                        <TextBlock Text="수업 속성" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding SelectedProfessorName, StringFormat=교수: {0}}"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding SelectedDurationText, StringFormat=수업 길이: {0}}"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding SelectedBlockText, StringFormat=블록: {0}}"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding SelectedFixedText, StringFormat=고정 수업: {0}}"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding SelectedCoteachText, StringFormat=공동강의 교수: {0}}"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding SelectedMultiRoomText, StringFormat=복수 강의실: {0}}"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding SelectedAllowedRoomsText, StringFormat=허용 강의실: {0}}"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding SelectedCrossGroupText, StringFormat=크로스 그룹: {0}}"
                                    FontSize="12" Margin="0,0,0,12" />
+
+                        <TextBlock Text="이동 상태" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding SelectedMoveStateText}"
+                                   FontSize="12" FontWeight="Bold" />
+                        <TextBlock Text="{Binding SelectedBlockedReasonText, StringFormat=이동 불가 사유: {0}}"
+                                   FontSize="12" Foreground="#BA1A1A" TextWrapping="Wrap" />
+                        <TextBlock Text="{Binding SelectedWarningReasonText, StringFormat=주의 사유: {0}}"
+                                   FontSize="12" Foreground="#A05A00" TextWrapping="Wrap"
+                                   Margin="0,0,0,12" />
 
                         <TextBlock Text="새 강의실" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />
                         <ComboBox ItemsSource="{Binding AvailableRoomIds}"

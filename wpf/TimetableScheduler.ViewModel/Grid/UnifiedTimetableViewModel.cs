@@ -21,6 +21,22 @@ public sealed record DayGroup(int Day, IReadOnlyList<GradeColumn> Grades)
 public sealed record UnifiedCell(
     int Day, int Period, int Grade, int SubColumnIdx, CellAssignment Assignment);
 
+public enum ManualMoveCellState
+{
+    Normal,
+    Selected,
+    Movable,
+    Warning,
+    Blocked,
+}
+
+public sealed record UnifiedCellKey(int Day, int Period, int Grade, int SubColumnIdx);
+
+public sealed record EditCellState(ManualMoveCellState State, string Reason)
+{
+    public bool CanMove => State is ManualMoveCellState.Movable or ManualMoveCellState.Warning;
+}
+
 public sealed partial class UnifiedTimetableViewModel : ObservableObject
 {
     [ObservableProperty]
@@ -29,6 +45,11 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
     public IReadOnlyList<DayGroup> DayGroups { get; private set; } = Array.Empty<DayGroup>();
 
     public IReadOnlyList<UnifiedCell> Cells { get; private set; } = Array.Empty<UnifiedCell>();
+
+    public UnifiedCellKey? SelectedCell { get; private set; }
+
+    public IReadOnlyDictionary<UnifiedCellKey, EditCellState> EditStates { get; private set; } =
+        new Dictionary<UnifiedCellKey, EditCellState>();
 
     public IReadOnlyList<int> Periods => Constants.Periods;
 
@@ -141,4 +162,16 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
 
         Rebuilt?.Invoke(this, EventArgs.Empty);
     }
+
+    public void SetEditState(
+        UnifiedCellKey? selectedCell,
+        IReadOnlyDictionary<UnifiedCellKey, EditCellState> editStates)
+    {
+        SelectedCell = selectedCell;
+        EditStates = editStates;
+        Rebuilt?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void ClearEditState() =>
+        SetEditState(null, new Dictionary<UnifiedCellKey, EditCellState>());
 }

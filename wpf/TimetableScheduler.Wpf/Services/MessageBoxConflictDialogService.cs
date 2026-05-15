@@ -39,7 +39,11 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         ConflictType.ProfUnavailable => "HC-03 교수 불가시간",
         ConflictType.LunchConflict => "HC-12 점심시간 금지",
         ConflictType.SectionConflict => "HC-08 분반 중복",
+        ConflictType.GradeConflict => "HC-11 학년 충돌",
         ConflictType.FixedRoomViolation => "HC-14 고정 강의실 위반",
+        ConflictType.FixedTimeViolation => "HC-13 고정 시간표",
+        ConflictType.BlockStartViolation => "HC-19 블록 시작 교시",
+        ConflictType.ProfAllowedRoomViolation => "HC-21 허용 강의실",
         ConflictType.ProfRoomInconsistent => "HC-21 교수 강의실 일관성",
         _ => type.ToString(),
     };
