@@ -9,7 +9,9 @@ public sealed record CellAssignment(
     int Grade,
     int Section,
     IReadOnlyList<string> Rooms,
-    int RowSpan)
+    int RowSpan,
+    int HoursPerWeek,
+    bool IsFixed)
 {
     public string SectionLabel => Section >= 1 ? ((char)('A' + Section - 1)).ToString() : "";
 
@@ -31,5 +33,6 @@ public sealed record CellAssignment(
         => new(
             course.Id, course.Name, course.ProfessorId,
             course.Grade, course.Section,
-            rooms.ToList(), rowSpan);
+            rooms.ToList(), rowSpan,
+            course.HoursPerWeek, course.IsFixed);
 }

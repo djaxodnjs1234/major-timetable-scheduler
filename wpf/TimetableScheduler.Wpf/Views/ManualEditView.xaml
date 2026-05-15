@@ -7,6 +7,7 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
+             Focusable="True"
              d:DataContext="{d:DesignInstance Type=vm:ManualEditViewModel}">
     <Grid>
         <Grid.ColumnDefinitions>
@@ -30,6 +31,12 @@
                     <Button Content="🔄 초기화 (베이스로 되돌리기)"
                             Command="{Binding ResetCommand}"
                             Padding="8,4" Margin="20,0,0,0" />
+                    <Button Content="↶ 직전 이동 취소"
+                            Command="{Binding UndoLastMoveCommand}"
+                            Padding="8,4" Margin="8,0,0,0" />
+                    <Button Content="선택 해제"
+                            Command="{Binding ClearSelectionCommand}"
+                            Padding="8,4" Margin="8,0,0,0" />
                 </StackPanel>
             </Border>
 
@@ -53,7 +60,7 @@
                                    FontWeight="Bold" Foreground="#005FB8" />
                     </Border>
 
-                    <StackPanel Margin="16,12" IsEnabled="{Binding SelectedAssignment, Converter={StaticResource BoolToVisibility}}">
+                    <StackPanel Margin="16,12" Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}">
                         <TextBlock Text="선택된 과목" FontSize="10" Foreground="#999"
                                    FontWeight="Bold" Margin="0,0,0,4" />
                         <TextBlock Text="{Binding SelectedAssignment.CourseName}"
@@ -61,8 +68,24 @@
                         <TextBlock Text="{Binding SelectedAssignment.CourseId}"
                                    FontSize="11" Foreground="#666" Margin="0,0,0,12" />
 
+                        <TextBlock Text="학년 / 분반" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding SelectedAssignment.Grade, StringFormat={}{0}학년}"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding SelectedAssignment.SectionLabel, StringFormat=분반 {0}}"
+                                   FontSize="12" Margin="0,0,0,12" />
+
                         <TextBlock Text="교수" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />
                         <TextBlock Text="{Binding SelectedAssignment.ProfessorId}"
+                                   FontSize="12" Margin="0,0,0,12" />
+
+                        <TextBlock Text="현재 시간" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding SelectedSlotLabel}"
+                                   FontSize="12" Margin="0,0,0,12" />
+
+                        <TextBlock Text="요구 시수 / 고정 여부" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />
+                        <TextBlock Text="{Binding SelectedAssignment.HoursPerWeek, StringFormat=주 {0}시간}"
+                                   FontSize="12" />
+                        <TextBlock Text="{Binding SelectedAssignment.IsFixed, StringFormat=고정 수업: {0}}"
                                    FontSize="12" Margin="0,0,0,12" />
 
                         <TextBlock Text="현재 강의실" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />

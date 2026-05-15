@@ -12,12 +12,18 @@ public partial class UnifiedTimetableControl : UserControl
     private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
     private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
     private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC));
+    private static readonly Brush MoveAllowedBg = new SolidColorBrush(Color.FromRgb(0xE8, 0xF5, 0xE9));
+    private static readonly Brush MoveBlockedBg = new SolidColorBrush(Color.FromRgb(0xF5, 0xF5, 0xF5));
+    private static readonly Brush SelectedBorder = new SolidColorBrush(Color.FromRgb(0x00, 0x5F, 0xB8));
 
     static UnifiedTimetableControl()
     {
         LunchBg.Freeze();
         HeaderBg.Freeze();
         CellBorder.Freeze();
+        MoveAllowedBg.Freeze();
+        MoveBlockedBg.Freeze();
+        SelectedBorder.Freeze();
     }
 
     public sealed class CellClickedEventArgs : EventArgs
@@ -149,7 +155,7 @@ public partial class UnifiedTimetableControl : UserControl
                         var match = coursesHere.FirstOrDefault(c => c.SubColumnIdx == k);
                         if (match == null)
                         {
-                            var emptyBorder = MakeEmptyClickableBorder(dg.Day, p);
+                            var emptyBorder = MakeEmptyClickableBorder(vm, dg.Day, p);
                             Grid.SetRow(emptyBorder, row);
                             Grid.SetColumn(emptyBorder, targetCol);
                             RootGrid.Children.Add(emptyBorder);
@@ -158,6 +164,11 @@ public partial class UnifiedTimetableControl : UserControl
                         {
                             var bg = GradeToBrushConverter.BrushFor(g);
                             var border = MakeChipBorder(match.Assignment, bg);
+                            if (vm.SelectedCell == (dg.Day, p))
+                            {
+                                border.BorderBrush = SelectedBorder;
+                                border.BorderThickness = new Thickness(2);
+                            }
                             border.Tag = (dg.Day, p, match.Assignment);
                             border.MouseLeftButtonDown += OnCellClicked;
                             border.Cursor = System.Windows.Input.Cursors.Hand;
@@ -238,15 +249,23 @@ public partial class UnifiedTimetableControl : UserControl
         };
     }
 
-    private Border MakeEmptyClickableBorder(int day, int period)
+    private Border MakeEmptyClickableBorder(UnifiedTimetableViewModel vm, int day, int period)
     {
+        var bg = EmptyBg;
+        string? tooltip = null;
+        if (vm.EditStates.TryGetValue((day, period), out var state))
+        {
+            bg = state.CanMove ? MoveAllowedBg : MoveBlockedBg;
+            tooltip = state.Reason;
+        }
         var border = new Border
         {
             BorderBrush = CellBorder,
             BorderThickness = new Thickness(0.5),
-            Background = EmptyBg,
+            Background = bg,
             Tag = (day, period, (CellAssignment?)null),
             Cursor = System.Windows.Input.Cursors.Hand,
+            ToolTip = tooltip,
         };
         border.MouseLeftButtonDown += OnCellClicked;
         return border;

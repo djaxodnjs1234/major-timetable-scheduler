@@ -147,4 +147,55 @@ public class ConflictDetectorTests
         var conflicts = ConflictDetector.Detect(assignment, courses);
         Assert.Contains(conflicts, c => c.Type == ConflictType.ProfRoomInconsistent);
     }
+
+    [Fact]
+    public void GradeOverlap_DetectsConflict()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "A-01", Name = "A", Grade = 2 },
+            new() { Id = "B-01", Name = "B", Grade = 2 },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("A-01", 0, 1, "R1"),
+            new("B-01", 0, 1, "R2"),
+        };
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+        Assert.Contains(conflicts, c => c.Type == ConflictType.GradeConflict);
+    }
+
+    [Fact]
+    public void FixedCourseMovedOffFixedSlot_DetectsConflict()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "X",
+                Name = "X",
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1) },
+            },
+        };
+        var assignment = new List<SolutionAssignment> { new("X", 1, 1, "R1") };
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+        Assert.Contains(conflicts, c => c.Type == ConflictType.FixedTimeViolation);
+    }
+
+    [Fact]
+    public void Len2BlockWrongStart_DetectsConflict()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "X", Name = "X", HoursPerWeek = 2, BlockStructure = new List<int> { 2 } },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("X", 0, 2, "R1"),
+            new("X", 0, 3, "R1"),
+        };
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+        Assert.Contains(conflicts, c => c.Type == ConflictType.BlockStartViolation);
+    }
 }

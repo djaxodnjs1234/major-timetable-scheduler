@@ -9,8 +9,12 @@ public enum ConflictType
     ProfessorConflict,
     LunchConflict,
     SectionConflict,
+    GradeConflict,
     ProfUnavailable,
+    FixedTimeViolation,
     FixedRoomViolation,
+    BlockStartViolation,
+    ProfAllowedRoomViolation,
     ProfRoomInconsistent,
 }
 
@@ -26,7 +30,8 @@ public static class ConflictDetector
     public static IReadOnlyList<ConflictItem> Detect(
         IReadOnlyList<SolutionAssignment> assignment,
         IReadOnlyList<Course> courses,
-        IReadOnlyList<Professor>? professors = null)
+        IReadOnlyList<Professor>? professors = null,
+        IReadOnlyList<CrossGroup>? crosses = null)
     {
         var list = new List<ConflictItem>();
         var courseMap = courses.ToDictionary(c => c.Id);
@@ -67,6 +72,24 @@ public static class ConflictDetector
                 if (!profSlots.TryGetValue(key, out var set))
                     profSlots[key] = set = new HashSet<string>();
                 set.Add(a.CourseId);
+            }
+        }
+
+        // HC-13: fixed courses must stay on their exact fixed slots.
+        foreach (var c in courses.Where(c => c.IsFixed))
+        {
+            var actual = assignment
+                .Where(a => a.CourseId == c.Id)
+                .Select(a => new TimeSlot(a.Day, a.Period))
+                .Distinct()
+                .ToHashSet();
+            var expected = c.FixedSlots.ToHashSet();
+            if (!actual.SetEquals(expected))
+            {
+                list.Add(new ConflictItem(
+                    ConflictType.FixedTimeViolation, ConflictSeverity.Error,
+                    $"{c.Name}({c.Id})은 고정 시간표를 벗어날 수 없습니다.",
+                    actual.FirstOrDefault().Day, actual.FirstOrDefault().Period));
             }
         }
         foreach (var ((pid, d, p), cids) in profSlots)
@@ -116,6 +139,26 @@ public static class ConflictDetector
             }
         }
 
+        // HC-19: length-2 blocks must start at 1/3/6/8.
+        var runs = TimetableRuns.ComputeRuns(assignment);
+        foreach (var c in courses)
+        {
+            if (c.IsFixed) continue;
+            var blockLengths = c.BlockStructure.Count > 0
+                ? c.BlockStructure
+                : new List<int> { c.HoursPerWeek };
+            if (!blockLengths.Contains(2)) continue;
+            foreach (var ((cid, d, p), len) in runs.RunLen)
+            {
+                if (cid != c.Id || len != 2) continue;
+                if (Constants.Len2StartPeriods.Contains(p)) continue;
+                list.Add(new ConflictItem(
+                    ConflictType.BlockStartViolation, ConflictSeverity.Error,
+                    $"{c.Name}({c.Id})의 2시간 수업은 1, 3, 6, 8교시에만 시작할 수 있습니다.",
+                    d, p));
+            }
+        }
+
         // HC-21: professor's auto-placed courses (no FixedRooms) should all share one room
         var autoRoomsByProf = new Dictionary<string, HashSet<string>>();
         foreach (var a in assignment)
@@ -137,6 +180,20 @@ public static class ConflictDetector
                 0, 0));
         }
 
+        // HC-21 candidate-room subset for auto-assigned courses.
+        foreach (var a in assignment)
+        {
+            if (!courseMap.TryGetValue(a.CourseId, out var c)) continue;
+            if (c.FixedRooms.Count > 0) continue;
+            if (!profMap.TryGetValue(c.ProfessorId, out var prof)) continue;
+            if (prof.AllowedRooms.Count == 0) continue;
+            if (prof.AllowedRooms.Contains(a.RoomId)) continue;
+            list.Add(new ConflictItem(
+                ConflictType.ProfAllowedRoomViolation, ConflictSeverity.Error,
+                $"{c.Name}({c.Id})은 교수 {c.ProfessorId}의 허용 강의실 [{string.Join(",", prof.AllowedRooms)}] 안에서만 배정할 수 있습니다.",
+                a.Day, a.Period));
+        }
+
         // HC-08: same baseId different sections at same slot
         foreach (var g in assignment.GroupBy(a => (a.Day, a.Period)))
         {
@@ -156,6 +213,35 @@ public static class ConflictDetector
                     $"{bid}의 분반이 {DayName(g.Key.Day)} {g.Key.Period}교시에 중복: {string.Join(", ", cids)}",
                     g.Key.Day, g.Key.Period));
             }
+        }
+
+        // HC-11: same grade cannot overlap, excluding same base-id and cross-group pairs.
+        bool SameCrossGroup(string b1, string b2)
+        {
+            if (crosses == null) return false;
+            foreach (var g in crosses)
+                if (g.BaseIds.Contains(b1) && g.BaseIds.Contains(b2))
+                    return true;
+            return false;
+        }
+        foreach (var g in assignment.GroupBy(a => (a.Day, a.Period)))
+        {
+            var cids = g.Select(a => a.CourseId).Distinct().ToList();
+            for (int i = 0; i < cids.Count; i++)
+                for (int j = i + 1; j < cids.Count; j++)
+                {
+                    if (!courseMap.TryGetValue(cids[i], out var c1)) continue;
+                    if (!courseMap.TryGetValue(cids[j], out var c2)) continue;
+                    if (c1.Grade <= 0 || c2.Grade <= 0) continue;
+                    if (c1.Grade != c2.Grade) continue;
+                    var b1 = DomainHelpers.BaseId(c1.Id);
+                    var b2 = DomainHelpers.BaseId(c2.Id);
+                    if (b1 == b2 || SameCrossGroup(b1, b2)) continue;
+                    list.Add(new ConflictItem(
+                        ConflictType.GradeConflict, ConflictSeverity.Error,
+                        $"{c1.Grade}학년 과목이 {DayName(g.Key.Day)} {g.Key.Period}교시에 중복: {c1.Name}, {c2.Name}",
+                        g.Key.Day, g.Key.Period));
+                }
         }
 
         return list;

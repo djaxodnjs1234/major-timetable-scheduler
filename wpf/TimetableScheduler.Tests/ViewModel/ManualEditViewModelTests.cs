@@ -77,7 +77,7 @@ public class ManualEditViewModelTests : IDisposable
         vm.LoadFromSolution(sol);
 
         var assignment = new TimetableScheduler.ViewModel.Grid.CellAssignment(
-            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1);
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1, 2, false);
         vm.SelectCell(0, 1, assignment);
 
         Assert.NotNull(vm.SelectedAssignment);
@@ -93,7 +93,7 @@ public class ManualEditViewModelTests : IDisposable
         vm.LoadFromSolution(sol);
 
         var assignment = new TimetableScheduler.ViewModel.Grid.CellAssignment(
-            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1);
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1, 2, false);
         vm.SelectCell(0, 1, assignment);
         vm.NewRoomId = "R2";
         vm.ApplyRoomChangeCommand.Execute(null);
@@ -117,7 +117,7 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Empty(vm.Conflicts);  // start clean
 
         var assignment = new TimetableScheduler.ViewModel.Grid.CellAssignment(
-            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1);
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1, 2, false);
         vm.SelectCell(0, 1, assignment);
         vm.NewRoomId = "R2";
         _dialog.ResponseToReturn = true;
@@ -144,7 +144,7 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Empty(vm.Conflicts);  // start clean
 
         var assignment = new TimetableScheduler.ViewModel.Grid.CellAssignment(
-            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1);
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1, 2, false);
         vm.SelectCell(0, 1, assignment);
         vm.NewRoomId = "R2";
         _dialog.ResponseToReturn = false;
@@ -183,7 +183,7 @@ public class ManualEditViewModelTests : IDisposable
         vm.LoadFromSolution(sol);
 
         var assignment = new TimetableScheduler.ViewModel.Grid.CellAssignment(
-            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1);
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1, 2, false);
         vm.SelectCell(0, 1, assignment);
         vm.NewRoomId = "R2";
         _dialog.ResponseToReturn = true;
@@ -193,5 +193,40 @@ public class ManualEditViewModelTests : IDisposable
 
         Assert.Null(vm.SelectedAssignment);
         Assert.Empty(vm.Conflicts);
+    }
+
+    [Fact]
+    public void HandleCellClick_EmptyValidTarget_MovesSelectedRunAndClearsSelection()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var sol = MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 2, "R1"));
+        vm.LoadFromSolution(sol);
+
+        var assignment = new TimetableScheduler.ViewModel.Grid.CellAssignment(
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 2, 2, false);
+        vm.HandleCellClick(0, 1, assignment);
+        vm.HandleCellClick(1, 1, null);
+
+        Assert.Null(vm.SelectedAssignment);
+        Assert.Contains("이동 완료", vm.StatusMessage);
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+    }
+
+    [Fact]
+    public void HandleCellClick_LunchTarget_DoesNotMoveAndShowsReason()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var sol = MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1"));
+        vm.LoadFromSolution(sol);
+
+        var assignment = new TimetableScheduler.ViewModel.Grid.CellAssignment(
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1, 2, false);
+        vm.HandleCellClick(0, 1, assignment);
+        vm.HandleCellClick(1, 5, null);
+
+        Assert.NotNull(vm.SelectedAssignment);
+        Assert.Contains("HC-12", vm.StatusMessage);
     }
 }
