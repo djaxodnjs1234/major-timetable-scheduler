@@ -12,9 +12,28 @@ namespace TimetableScheduler.ViewModel.Pages;
 
 public sealed partial class ManualEditViewModel : PageViewModelBase
 {
+    public sealed record ManualCrossLink(
+        string CourseIdA,
+        string CourseIdB,
+        int Day,
+        int PeriodA,
+        int RowSpanA,
+        int PeriodB,
+        int RowSpanB)
+    {
+        public bool MatchesPair(string left, string right) =>
+            (CourseIdA == left && CourseIdB == right)
+            || (CourseIdA == right && CourseIdB == left);
+
+        public bool Covers(string left, string right, int day, int period) =>
+            MatchesPair(left, right);
+    }
+
     private readonly WorkspaceService _workspace;
     private readonly IConflictDialogService _dialog;
     private List<SolutionAssignment> _working = new();
+    private List<CrossGroup> _workingCrossGroups = new();
+    private readonly List<ManualCrossLink> _workingCrossLinks = new();
     private List<SolutionAssignment>? _undoSnapshot;
     private UnifiedCellKey? _selectedGridCell;
 
@@ -23,6 +42,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     public UnifiedTimetableViewModel Grid { get; } = new();
 
     public ObservableCollection<ConflictItem> Conflicts { get; } = new();
+    public IReadOnlyList<ManualCrossLink> WorkingCrossLinks => _workingCrossLinks;
+    public IReadOnlyList<CrossGroup> WorkingCrossGroups => _workingCrossGroups;
+    public IReadOnlyList<string> PendingCrossExportLabels =>
+        _workingCrossLinks.Select(FormatCrossLink).ToList();
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ExportXlsxCommand))]
@@ -142,9 +165,12 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         get
         {
-            if (SelectedCourse == null) return "-";
-            var group = _workspace.CrossGroups.FirstOrDefault(g => g.BaseIds.Contains(SelectedCourse.Id));
-            return group?.Id ?? "없음";
+            if (SelectedAssignment == null) return "-";
+            var labels = _workingCrossLinks
+                .Where(l => l.CourseIdA == SelectedAssignment.CourseId || l.CourseIdB == SelectedAssignment.CourseId)
+                .Select(FormatCrossLink)
+                .ToList();
+            return labels.Count == 0 ? "없음" : string.Join("; ", labels);
         }
     }
 
@@ -170,6 +196,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         BaseSolution = solution;
         _working = solution.Assignment.ToList();
+        _workingCrossGroups = _workspace.CrossGroups
+            .Select(g => new CrossGroup { Id = g.Id, BaseIds = g.BaseIds.ToList() })
+            .ToList();
+        _workingCrossLinks.Clear();
         _undoSnapshot = null;
         Rerender();
         ClearSelectionCore();
@@ -180,11 +210,88 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         if (SelectedAssignment != null && assignment == null)
         {
-            TryMoveSelectedTo(day, period, grade, subColumnIdx);
+            var selectedCourseId = SelectedAssignment.CourseId;
+            if (TryMoveSelectedTo(day, period, grade, subColumnIdx))
+                RemoveCrossForCourse(selectedCourseId, "빈 칸 이동으로 기존 크로스가 해제되었습니다.");
+            return;
+        }
+
+        if (SelectedAssignment != null
+            && assignment != null
+            && SelectedDay is int selectedDay
+            && SelectedPeriod is int selectedPeriod
+            && !IsSameMovingCell(
+                new UnifiedCell(day, period, grade, subColumnIdx, assignment),
+                SelectedAssignment,
+                selectedDay,
+                selectedPeriod))
+        {
+            RemoveCrossForCourse(SelectedAssignment.CourseId, "다른 수업을 선택하여 기존 크로스가 해제되었습니다.");
+            SelectCell(day, period, grade, subColumnIdx, assignment);
             return;
         }
 
         SelectCell(day, period, grade, subColumnIdx, assignment);
+    }
+
+    public CrossHoverState EvaluateCrossHover(
+        int day,
+        int period,
+        int grade,
+        int subColumnIdx,
+        CellAssignment? target)
+    {
+        if (SelectedAssignment == null || SelectedDay is not int selectedDay || SelectedPeriod is not int selectedPeriod)
+            return CrossHoverState.Hidden();
+        if (target == null)
+            return CrossHoverState.Hidden();
+        if (IsSameMovingCell(
+                new UnifiedCell(day, period, grade, subColumnIdx, target),
+                SelectedAssignment,
+                selectedDay,
+                selectedPeriod))
+            return CrossHoverState.Hidden("현재 선택한 수업입니다.");
+        if (target.Grade != SelectedAssignment.Grade)
+            return CrossHoverState.Hidden("같은 학년 수업끼리만 크로스를 만들 수 있습니다.");
+
+        var selectedCourse = _workspace.Courses.FirstOrDefault(c => c.Id == SelectedAssignment.CourseId);
+        var targetCourse = _workspace.Courses.FirstOrDefault(c => c.Id == target.CourseId);
+        if (selectedCourse == null || targetCourse == null)
+            return CrossHoverState.Hidden("수업 정보를 확인할 수 없습니다.");
+        var existingLink = GetCrossLinkForCourse(SelectedAssignment.CourseId);
+        if (IsAlreadyCrossed(SelectedAssignment, target))
+            return CrossHoverState.Hidden("이미 크로스가 설정된 수업입니다.");
+        if (IsCourseAlreadyCrossedExcept(SelectedAssignment.CourseId, existingLink)
+            || IsCourseAlreadyCrossedExcept(target.CourseId, existingLink))
+            return CrossHoverState.Hidden("이미 다른 수업과 크로스된 과목입니다. 크로스는 두 과목끼리만 설정할 수 있습니다.");
+
+        var reasons = ValidateCrossMoveWithProvisionalLink(SelectedAssignment, target, day, period, grade, subColumnIdx, existingLink);
+        if (reasons.Count > 0)
+            return CrossHoverState.Hidden(reasons[0]);
+
+        return CrossHoverState.Available();
+    }
+
+    public void HandleCrossAddRequested(
+        int day,
+        int period,
+        int grade,
+        int subColumnIdx,
+        CellAssignment target)
+    {
+        var state = EvaluateCrossHover(day, period, grade, subColumnIdx, target);
+        if (!state.CanCreate || SelectedAssignment == null)
+        {
+            if (!string.IsNullOrWhiteSpace(state.Reason))
+                StatusMessage = state.Reason;
+            return;
+        }
+
+        if (!TryCreateOrReplaceCrossAndMove(SelectedAssignment, target, day, period, grade, subColumnIdx, out var reason))
+        {
+            StatusMessage = reason;
+            return;
+        }
     }
 
     public void SelectCell(int day, int period, int grade, int subColumnIdx, CellAssignment? assignment)
@@ -250,6 +357,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     [RelayCommand(CanExecute = nameof(CanClearSelection))]
     private void ClearSelection()
     {
+        if (SelectedAssignment != null)
+            RemoveCrossForCourse(SelectedAssignment.CourseId, null);
         ClearSelectionCore();
         StatusMessage = "선택이 해제되었습니다.";
     }
@@ -292,9 +401,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private bool CanExport() => BaseSolution != null;
 
-    private void TryMoveSelectedTo(int targetDay, int targetPeriod, int targetGrade, int targetSubColumnIdx)
+    private bool TryMoveSelectedTo(int targetDay, int targetPeriod, int targetGrade, int targetSubColumnIdx)
     {
-        if (SelectedAssignment == null || SelectedDay == null || SelectedPeriod == null) return;
+        if (SelectedAssignment == null || SelectedDay == null || SelectedPeriod == null) return false;
 
         if (!TryMoveAssignment(
                 SelectedAssignment,
@@ -308,7 +417,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 out var reasons))
         {
             StatusMessage = reasons.FirstOrDefault() ?? "이동할 수 없는 칸입니다.";
-            return;
+            return false;
         }
 
         var snapshot = _working.ToList();
@@ -320,11 +429,19 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         UndoLastMoveCommand.NotifyCanExecuteChanged();
         SelectedDay = targetDay;
         SelectedPeriod = targetPeriod;
-        _selectedGridCell = new UnifiedCellKey(targetDay, targetPeriod, targetGrade, targetSubColumnIdx);
+        _selectedGridCell = FindGridCellKey(movedCourseId, targetDay, targetPeriod, targetGrade)
+            ?? new UnifiedCellKey(targetDay, targetPeriod, targetGrade, targetSubColumnIdx);
         OnPropertyChanged(nameof(SelectedSlotLabel));
         NotifySelectionDetailChanged();
         Grid.SetEditState(_selectedGridCell, BuildMoveStates(SelectedAssignment, targetDay, targetPeriod));
-        StatusMessage = $"{movedCourseId} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시";
+        var removedLinks = RemoveInvalidCrossesAfterMove();
+        var warning = GetSoftWarning(targetDay, targetPeriod);
+        StatusMessage = removedLinks > 0
+            ? $"{movedCourseId} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시. 수업 식별 또는 학년 조건 변경으로 크로스 관계가 해제되었습니다."
+            : warning == null
+            ? $"{movedCourseId} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시"
+            : $"{movedCourseId} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시. {warning}";
+        return true;
     }
 
     private IReadOnlyDictionary<UnifiedCellKey, EditCellState> BuildMoveStates(
@@ -469,9 +586,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private static string? GetSoftWarning(int day, int period)
     {
         if (day == 0 && period is >= 1 and <= 4)
-            return "이동 가능하지만 권장되지 않는 조건이 있습니다: 월요일 오전 배정입니다.";
+            return "이동은 가능하지만 주의가 필요합니다: 월요일 오전은 권장되지 않는 시간대입니다.";
         if (day == 4 && period is >= 6 and <= 9)
-            return "이동 가능하지만 권장되지 않는 조건이 있습니다: 금요일 오후 배정입니다.";
+            return "이동은 가능하지만 주의가 필요합니다: 금요일 오후는 권장되지 않는 시간대입니다.";
         return null;
     }
 
@@ -484,17 +601,21 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         int targetGrade,
         int targetSubColumnIdx)
     {
-        var occupiedCourseIds = Grid.Cells
+        var occupiedCells = Grid.Cells
             .Where(c => c.Day == targetDay
                 && c.Grade == targetGrade
                 && c.SubColumnIdx == targetSubColumnIdx
                 && targetPeriods.Any(p => p >= c.Period && p < c.Period + c.Assignment.RowSpan))
             .Where(c => !IsSameMovingCell(c, assignment, sourceDay, sourcePeriod))
+            .ToList();
+
+        var blockedCourseIds = occupiedCells
+            .Where(c => !CanShareSlotByCross(assignment, c.Assignment))
             .Select(c => c.Assignment.CourseId)
             .ToHashSet();
 
         return _working
-            .Where(a => occupiedCourseIds.Contains(a.CourseId))
+            .Where(a => blockedCourseIds.Contains(a.CourseId))
             .Where(a => a.Day == targetDay && targetPeriods.Contains(a.Period))
             .ToList();
     }
@@ -570,7 +691,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private void Rerender()
     {
+        Grid.SetCrossParallelOrder(BuildCrossParallelOrder());
         Grid.Render(_working, _workspace.Courses);
+        Grid.SetCrossLinkLabels(BuildCrossLinkLabels());
         Conflicts.Clear();
         foreach (var c in DetectConflicts(_working))
             Conflicts.Add(c);
@@ -581,7 +704,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             assignment,
             _workspace.Courses,
             _workspace.Professors,
-            _workspace.CrossGroups);
+            _workingCrossGroups,
+            IsManualGradeOverlapAllowed);
 
     private void ClearSelectionCore()
     {
@@ -620,6 +744,370 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         OnPropertyChanged(nameof(SelectedBlockedReasonText));
         OnPropertyChanged(nameof(SelectedWarningReasonText));
         OnPropertyChanged(nameof(SelectedCrossGroupText));
+    }
+
+    public IReadOnlyList<CrossGroup> CommitWorkingCrossGroupsPreview() =>
+        _workingCrossGroups.Select(g => new CrossGroup { Id = g.Id, BaseIds = g.BaseIds.ToList() }).ToList();
+
+    private bool TryCreateOrReplaceCrossAndMove(
+        CellAssignment selected,
+        CellAssignment target,
+        int day,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx,
+        out string reason)
+    {
+        var existingLink = GetCrossLinkForCourse(selected.CourseId);
+        if (existingLink != null)
+            return TryReplaceCrossAndMove(selected, target, day, targetPeriod, targetGrade, targetSubColumnIdx, existingLink, out reason);
+        return TryCreateCrossAndMove(selected, target, day, targetPeriod, targetGrade, targetSubColumnIdx, out reason);
+    }
+
+    private bool TryCreateCrossAndMove(
+        CellAssignment selected,
+        CellAssignment target,
+        int day,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx,
+        out string reason)
+    {
+        if (SelectedPeriod is not int selectedPeriod)
+        {
+            reason = "선택한 수업의 시간을 확인할 수 없습니다.";
+            return false;
+        }
+        if (IsAlreadyCrossed(selected, target))
+        {
+            reason = "이미 크로스가 설정된 수업입니다.";
+            return false;
+        }
+        if (IsCourseAlreadyCrossed(selected.CourseId) || IsCourseAlreadyCrossed(target.CourseId))
+        {
+            reason = "이미 다른 수업과 크로스된 과목입니다. 크로스는 두 과목끼리만 설정할 수 있습니다.";
+            return false;
+        }
+
+        var reasons = ValidateCrossMoveWithProvisionalLink(
+            selected, target, day, targetPeriod, targetGrade, targetSubColumnIdx, null);
+        if (reasons.Count > 0)
+        {
+            reason = reasons[0];
+            return false;
+        }
+
+        var provisionalLink = new ManualCrossLink(
+            selected.CourseId,
+            target.CourseId,
+            day,
+            selectedPeriod,
+            selected.RowSpan,
+            targetPeriod,
+            target.RowSpan);
+        var snapshot = _working.ToList();
+        _workingCrossLinks.Add(provisionalLink);
+
+        if (!TryMoveAssignment(
+                selected,
+                SelectedDay!.Value,
+                selectedPeriod,
+                day,
+                targetPeriod,
+                targetGrade,
+                targetSubColumnIdx,
+                out var candidate,
+                out var moveReasons))
+        {
+            _workingCrossLinks.Remove(provisionalLink);
+            reason = moveReasons.FirstOrDefault() ?? "크로스 이동을 완료할 수 없습니다.";
+            return false;
+        }
+
+        _working = candidate;
+        Rerender();
+        _undoSnapshot = snapshot;
+        UndoLastMoveCommand.NotifyCanExecuteChanged();
+        SelectedDay = day;
+        SelectedPeriod = targetPeriod;
+        _selectedGridCell = FindGridCellKey(selected.CourseId, day, targetPeriod, targetGrade)
+            ?? new UnifiedCellKey(day, targetPeriod, targetGrade, targetSubColumnIdx);
+        OnPropertyChanged(nameof(SelectedSlotLabel));
+        NotifySelectionDetailChanged();
+        Grid.SetEditState(_selectedGridCell, BuildMoveStates(selected, day, targetPeriod));
+        StatusMessage = $"크로스가 설정되었습니다: {selected.CourseName} ({selected.CourseId}) ↔ "
+            + $"{target.CourseName} ({target.CourseId})";
+        reason = "";
+        return true;
+    }
+
+    private bool TryReplaceCrossAndMove(
+        CellAssignment selected,
+        CellAssignment target,
+        int day,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx,
+        ManualCrossLink existingLink,
+        out string reason)
+    {
+        if (SelectedPeriod is not int selectedPeriod)
+        {
+            reason = "선택한 수업의 시간을 확인할 수 없습니다.";
+            return false;
+        }
+        if (existingLink.MatchesPair(selected.CourseId, target.CourseId))
+        {
+            reason = "이미 크로스가 설정된 수업입니다.";
+            return false;
+        }
+        if (IsCourseAlreadyCrossedExcept(target.CourseId, existingLink))
+        {
+            reason = "이미 다른 수업과 크로스된 과목입니다. 크로스는 두 과목끼리만 설정할 수 있습니다.";
+            return false;
+        }
+
+        var reasons = ValidateCrossMoveWithProvisionalLink(
+            selected, target, day, targetPeriod, targetGrade, targetSubColumnIdx, existingLink);
+        if (reasons.Count > 0)
+        {
+            reason = reasons[0];
+            return false;
+        }
+
+        var crossSnapshot = _workingCrossLinks.ToList();
+        var workingSnapshot = _working.ToList();
+        var replacementLink = new ManualCrossLink(
+            selected.CourseId,
+            target.CourseId,
+            day,
+            selectedPeriod,
+            selected.RowSpan,
+            targetPeriod,
+            target.RowSpan);
+
+        _workingCrossLinks.Remove(existingLink);
+        _workingCrossLinks.Add(replacementLink);
+        if (!TryMoveAssignment(
+                selected,
+                SelectedDay!.Value,
+                selectedPeriod,
+                day,
+                targetPeriod,
+                targetGrade,
+                targetSubColumnIdx,
+                out var candidate,
+                out var moveReasons))
+        {
+            RestoreCrossLinks(crossSnapshot);
+            _working = workingSnapshot;
+            reason = moveReasons.FirstOrDefault() ?? "크로스 교체를 완료할 수 없습니다.";
+            return false;
+        }
+
+        _working = candidate;
+        Rerender();
+        _undoSnapshot = workingSnapshot;
+        UndoLastMoveCommand.NotifyCanExecuteChanged();
+        SelectedDay = day;
+        SelectedPeriod = targetPeriod;
+        _selectedGridCell = FindGridCellKey(selected.CourseId, day, targetPeriod, targetGrade)
+            ?? new UnifiedCellKey(day, targetPeriod, targetGrade, targetSubColumnIdx);
+        OnPropertyChanged(nameof(SelectedSlotLabel));
+        NotifySelectionDetailChanged();
+        Grid.SetEditState(_selectedGridCell, BuildMoveStates(selected, day, targetPeriod));
+        StatusMessage = $"크로스가 변경되었습니다: {selected.CourseName} ({selected.CourseId}) ↔ "
+            + $"{target.CourseName} ({target.CourseId})";
+        reason = "";
+        return true;
+    }
+
+    private bool IsAlreadyCrossed(CellAssignment left, CellAssignment right) =>
+        _workingCrossLinks.Any(l => l.MatchesPair(left.CourseId, right.CourseId));
+
+    private bool IsCourseAlreadyCrossed(string courseId) =>
+        _workingCrossLinks.Any(l => l.CourseIdA == courseId || l.CourseIdB == courseId);
+
+    private bool IsCourseAlreadyCrossedExcept(string courseId, ManualCrossLink? ignoredLink) =>
+        _workingCrossLinks.Any(l => !ReferenceEquals(l, ignoredLink)
+            && (l.CourseIdA == courseId || l.CourseIdB == courseId));
+
+    private ManualCrossLink? GetCrossLinkForCourse(string courseId) =>
+        _workingCrossLinks.FirstOrDefault(l => l.CourseIdA == courseId || l.CourseIdB == courseId);
+
+    private bool IsCrossPair(CellAssignment left, CellAssignment right) =>
+        left.Grade == right.Grade && IsAlreadyCrossed(left, right);
+
+    private bool CanShareSlotByCross(CellAssignment left, CellAssignment right)
+    {
+        if (!IsCrossPair(left, right)) return false;
+        var rightCourse = _workspace.Courses.FirstOrDefault(c => c.Id == right.CourseId);
+        return rightCourse != null && !rightCourse.IsFixed;
+    }
+
+    private bool IsManualGradeOverlapAllowed(string left, string right, int day, int period) =>
+        _workingCrossLinks.Any(l => l.Covers(left, right, day, period));
+
+    private int RemoveInvalidCrossesAfterMove()
+    {
+        var before = _workingCrossLinks.Count;
+        _workingCrossLinks.RemoveAll(link => !IsCrossLinkStillValid(link));
+        if (before != _workingCrossLinks.Count)
+        {
+            Grid.SetCrossLinkLabels(BuildCrossLinkLabels());
+            NotifySelectionDetailChanged();
+        }
+        return before - _workingCrossLinks.Count;
+    }
+
+    private IReadOnlyList<string> ValidateCrossMoveWithProvisionalLink(
+        CellAssignment selected,
+        CellAssignment target,
+        int day,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx,
+        ManualCrossLink? replacedLink)
+    {
+        if (SelectedPeriod is not int selectedPeriod)
+            return new[] { "선택한 수업의 시간을 확인할 수 없습니다." };
+
+        var snapshot = _workingCrossLinks.ToList();
+        var provisional = new ManualCrossLink(
+            selected.CourseId,
+            target.CourseId,
+            day,
+            selectedPeriod,
+            selected.RowSpan,
+            targetPeriod,
+            target.RowSpan);
+        if (replacedLink != null)
+            _workingCrossLinks.Remove(replacedLink);
+        _workingCrossLinks.Add(provisional);
+        var reasons = ValidateCrossMove(selected, target, day, targetPeriod, targetGrade, targetSubColumnIdx);
+        RestoreCrossLinks(snapshot);
+        return reasons;
+    }
+
+    private void RemoveCrossForCourse(string courseId, string? statusMessage)
+    {
+        var removed = _workingCrossLinks.RemoveAll(l => l.CourseIdA == courseId || l.CourseIdB == courseId);
+        if (removed == 0) return;
+        Grid.SetCrossLinkLabels(BuildCrossLinkLabels());
+        Rerender();
+        NotifySelectionDetailChanged();
+        if (!string.IsNullOrWhiteSpace(statusMessage))
+            StatusMessage = statusMessage;
+    }
+
+    private void RestoreCrossLinks(IEnumerable<ManualCrossLink> snapshot)
+    {
+        _workingCrossLinks.Clear();
+        _workingCrossLinks.AddRange(snapshot);
+    }
+
+    private bool IsCrossLinkStillValid(ManualCrossLink link)
+    {
+        var c1 = _workspace.Courses.FirstOrDefault(c => c.Id == link.CourseIdA);
+        var c2 = _workspace.Courses.FirstOrDefault(c => c.Id == link.CourseIdB);
+        return c1 != null
+            && c2 != null
+            && c1.Grade == c2.Grade
+            && _working.Any(a => a.CourseId == link.CourseIdA)
+            && _working.Any(a => a.CourseId == link.CourseIdB);
+    }
+
+    private IReadOnlyDictionary<string, string> BuildCrossLinkLabels()
+    {
+        var labels = new Dictionary<string, List<string>>();
+        foreach (var link in _workingCrossLinks)
+        {
+            AddLabel(link.CourseIdA, link.CourseIdB);
+            AddLabel(link.CourseIdB, link.CourseIdA);
+        }
+        return labels.ToDictionary(kv => kv.Key, kv => string.Join(", ", kv.Value));
+
+        void AddLabel(string sourceId, string targetId)
+        {
+            if (!labels.TryGetValue(sourceId, out var list))
+                labels[sourceId] = list = new List<string>();
+            list.Add(CourseDisplayName(targetId));
+        }
+    }
+
+    private string FormatCrossLink(ManualCrossLink link) =>
+        $"{CourseDisplayName(link.CourseIdA)} ↔ {CourseDisplayName(link.CourseIdB)}";
+
+    private string CourseDisplayName(string id) =>
+        _workspace.Courses.FirstOrDefault(c => c.Id == id)?.Name ?? id;
+
+    private IReadOnlyDictionary<string, int> BuildCrossParallelOrder()
+    {
+        var order = new Dictionary<string, int>();
+        foreach (var link in _workingCrossLinks)
+        {
+            order[link.CourseIdB] = 0;
+            order[link.CourseIdA] = 1;
+        }
+        return order;
+    }
+
+    private IReadOnlyList<string> ValidateCrossMove(
+        CellAssignment selected,
+        CellAssignment target,
+        int targetDay,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx)
+    {
+        if (targetGrade != selected.Grade || target.Grade != selected.Grade)
+            return new[] { "같은 학년 수업끼리만 크로스를 만들 수 있습니다." };
+
+        var targetPeriods = GetOccupiedPeriods(targetPeriod, selected.RowSpan);
+        var assignmentsAtTarget = Grid.Cells
+            .Where(c => c.Day == targetDay
+                && c.Grade == targetGrade
+                && targetPeriods.Any(p => p >= c.Period && p < c.Period + c.Assignment.RowSpan))
+            .Where(c => c.Assignment.CourseId != selected.CourseId)
+            .ToList();
+        var distinctTargetCourses = assignmentsAtTarget
+            .Select(c => c.Assignment.CourseId)
+            .Distinct()
+            .ToList();
+        if (distinctTargetCourses.Any(cid => cid != target.CourseId))
+            return new[] { "3개 이상의 과목 크로스는 허용되지 않습니다." };
+
+        var selectedDay = SelectedDay ?? targetDay;
+        var selectedPeriod = SelectedPeriod ?? targetPeriod;
+        var provisional = new ManualCrossLink(
+            selected.CourseId,
+            target.CourseId,
+            targetDay,
+            selectedPeriod,
+            selected.RowSpan,
+            targetPeriod,
+            target.RowSpan);
+        _workingCrossLinks.Add(provisional);
+        var reasons = ValidateManualMove(
+            selected,
+            selectedDay,
+            selectedPeriod,
+            targetDay,
+            targetPeriod,
+            targetGrade,
+            targetSubColumnIdx);
+        _workingCrossLinks.Remove(provisional);
+        return reasons;
+    }
+
+    private UnifiedCellKey? FindGridCellKey(string courseId, int day, int period, int grade)
+    {
+        var cell = Grid.Cells.FirstOrDefault(c =>
+            c.Day == day
+            && c.Period == period
+            && c.Grade == grade
+            && c.Assignment.CourseId == courseId);
+        return cell == null ? null : new UnifiedCellKey(cell.Day, cell.Period, cell.Grade, cell.SubColumnIdx);
     }
 
     private bool CanApplyRoomChange() =>

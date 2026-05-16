@@ -37,6 +37,12 @@ public sealed record EditCellState(ManualMoveCellState State, string Reason)
     public bool CanMove => State is ManualMoveCellState.Movable or ManualMoveCellState.Warning;
 }
 
+public sealed record CrossHoverState(bool CanCreate, string Reason)
+{
+    public static CrossHoverState Hidden(string reason = "") => new(false, reason);
+    public static CrossHoverState Available(string reason = "크로스 생성 가능") => new(true, reason);
+}
+
 public sealed partial class UnifiedTimetableViewModel : ObservableObject
 {
     [ObservableProperty]
@@ -50,6 +56,12 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
 
     public IReadOnlyDictionary<UnifiedCellKey, EditCellState> EditStates { get; private set; } =
         new Dictionary<UnifiedCellKey, EditCellState>();
+
+    public IReadOnlyDictionary<string, string> CrossLinkLabels { get; private set; } =
+        new Dictionary<string, string>();
+
+    public IReadOnlyDictionary<string, int> CrossParallelOrder { get; private set; } =
+        new Dictionary<string, int>();
 
     public IReadOnlyList<int> Periods => Constants.Periods;
 
@@ -141,7 +153,8 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
                     if (col.Grade is not int g) continue;
                     var coursesHere = roomsBySlot
                         .Where(kv => kv.Key.Day == d && kv.Key.Period == p && courseMap[kv.Key.Cid].Grade == g)
-                        .OrderBy(kv => courseMap[kv.Key.Cid].Section)
+                        .OrderBy(kv => CrossParallelOrder.GetValueOrDefault(kv.Key.Cid, int.MaxValue))
+                        .ThenBy(kv => courseMap[kv.Key.Cid].Section)
                         .ToList();
 
                     int subIdx = 0;
@@ -174,4 +187,17 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
 
     public void ClearEditState() =>
         SetEditState(null, new Dictionary<UnifiedCellKey, EditCellState>());
+
+    public void SetCrossLinkLabels(IReadOnlyDictionary<string, string> labels)
+    {
+        CrossLinkLabels = labels;
+        Rebuilt?.Invoke(this, EventArgs.Empty);
+    }
+
+    public void SetCrossParallelOrder(IReadOnlyDictionary<string, int> order)
+    {
+        CrossParallelOrder = order;
+        if (_lastAssignment != null && _lastCourses != null)
+            Render(_lastAssignment, _lastCourses);
+    }
 }

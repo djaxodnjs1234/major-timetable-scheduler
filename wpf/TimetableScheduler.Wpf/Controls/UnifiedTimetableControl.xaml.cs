@@ -44,6 +44,10 @@ public partial class UnifiedTimetableControl : UserControl
     }
 
     public event EventHandler<CellClickedEventArgs>? CellClicked;
+    public event EventHandler<CellClickedEventArgs>? CrossAddRequested;
+
+    public bool EnableCrossHover { get; set; }
+    public Func<CellClickedEventArgs, CrossHoverState>? CrossHoverEvaluator { get; set; }
 
     public UnifiedTimetableControl()
     {
@@ -169,7 +173,10 @@ public partial class UnifiedTimetableControl : UserControl
                         else
                         {
                             var bg = GradeToBrushConverter.BrushFor(g);
-                            var border = MakeChipBorder(match.Assignment, bg);
+                            var border = MakeChipBorder(
+                                match.Assignment,
+                                bg,
+                                vm.CrossLinkLabels.GetValueOrDefault(match.Assignment.CourseId));
                             if (vm.SelectedCell == new UnifiedCellKey(dg.Day, p, g, k))
                             {
                                 border.BorderBrush = SelectedBorder;
@@ -177,6 +184,11 @@ public partial class UnifiedTimetableControl : UserControl
                             }
                             border.Tag = (dg.Day, p, g, k, match.Assignment);
                             border.MouseLeftButtonDown += OnCellClicked;
+                            if (EnableCrossHover)
+                            {
+                                border.MouseEnter += OnCourseMouseEnter;
+                                border.MouseLeave += OnCourseMouseLeave;
+                            }
                             border.Cursor = System.Windows.Input.Cursors.Hand;
                             Grid.SetRow(border, row);
                             Grid.SetColumn(border, targetCol);
@@ -218,8 +230,9 @@ public partial class UnifiedTimetableControl : UserControl
         RootGrid.Children.Add(border);
     }
 
-    private static Border MakeChipBorder(CellAssignment a, Brush bg)
+    private static Border MakeChipBorder(CellAssignment a, Brush bg, string? crossLabel)
     {
+        var root = new Grid();
         var panel = new StackPanel { Margin = new Thickness(1) };
         var nameText = string.IsNullOrEmpty(a.SectionLabel)
             ? a.CourseName
@@ -246,12 +259,14 @@ public partial class UnifiedTimetableControl : UserControl
                 TextAlignment = TextAlignment.Center,
                 Foreground = Brushes.DarkSlateGray,
             });
+        root.Children.Add(panel);
         return new Border
         {
             BorderBrush = CellBorder,
             BorderThickness = new Thickness(0.5),
             Background = bg,
-            Child = panel,
+            Child = root,
+            ToolTip = string.IsNullOrWhiteSpace(crossLabel) ? null : $"크로스: {crossLabel}",
         };
     }
 
@@ -291,6 +306,60 @@ public partial class UnifiedTimetableControl : UserControl
         if (sender is not Border b || b.Tag is not ValueTuple<int, int, int, int, CellAssignment?> tup) return;
         CellClicked?.Invoke(this, new CellClickedEventArgs(tup.Item1, tup.Item2, tup.Item3, tup.Item4, tup.Item5));
         e.Handled = true;
+    }
+
+    private void OnCourseMouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (sender is not Border border
+            || border.Tag is not ValueTuple<int, int, int, int, CellAssignment?> tup
+            || tup.Item5 == null
+            || border.Child is not Grid root)
+            return;
+
+        RemoveCrossBadge(root);
+        var args = new CellClickedEventArgs(tup.Item1, tup.Item2, tup.Item3, tup.Item4, tup.Item5);
+        var state = CrossHoverEvaluator?.Invoke(args) ?? CrossHoverState.Hidden();
+        border.ToolTip = string.IsNullOrWhiteSpace(state.Reason) ? null : state.Reason;
+        if (!state.CanCreate) return;
+
+        var badge = new Button
+        {
+            Content = "+",
+            Width = 18,
+            Height = 18,
+            Padding = new Thickness(0),
+            FontSize = 12,
+            FontWeight = FontWeights.Bold,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Top,
+            Margin = new Thickness(0, 2, 2, 0),
+            Background = new SolidColorBrush(Color.FromRgb(0x00, 0x5F, 0xB8)),
+            Foreground = Brushes.White,
+            BorderThickness = new Thickness(0),
+            Tag = args,
+        };
+        badge.Click += OnCrossBadgeClick;
+        root.Children.Add(badge);
+    }
+
+    private static void OnCourseMouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (sender is Border border && border.Child is Grid root)
+            RemoveCrossBadge(root);
+    }
+
+    private void OnCrossBadgeClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not Button button || button.Tag is not CellClickedEventArgs args) return;
+        CrossAddRequested?.Invoke(this, args);
+        e.Handled = true;
+    }
+
+    private static void RemoveCrossBadge(Grid root)
+    {
+        var badge = root.Children.OfType<Button>().FirstOrDefault();
+        if (badge != null)
+            root.Children.Remove(badge);
     }
 
     private static string DayName(int day) => day switch

@@ -31,7 +31,8 @@ public static class ConflictDetector
         IReadOnlyList<SolutionAssignment> assignment,
         IReadOnlyList<Course> courses,
         IReadOnlyList<Professor>? professors = null,
-        IReadOnlyList<CrossGroup>? crosses = null)
+        IReadOnlyList<CrossGroup>? crosses = null,
+        Func<string, string, int, int, bool>? isManualGradeOverlapAllowed = null)
     {
         var list = new List<ConflictItem>();
         var courseMap = courses.ToDictionary(c => c.Id);
@@ -236,7 +237,10 @@ public static class ConflictDetector
                     if (c1.Grade <= 0 || c2.Grade <= 0 || c1.Grade != c2.Grade) continue;
                     var b1 = DomainHelpers.BaseId(c1.Id);
                     var b2 = DomainHelpers.BaseId(c2.Id);
-                    if (b1 == b2 || SameCrossGroup(b1, b2)) continue;
+                    if (b1 == b2
+                        || SameCrossGroup(b1, b2)
+                        || isManualGradeOverlapAllowed?.Invoke(c1.Id, c2.Id, g.Key.Day, g.Key.Period) == true)
+                        continue;
                     list.Add(new ConflictItem(
                         ConflictType.GradeConflict, ConflictSeverity.Error,
                         $"{c1.Grade}학년 과목이 {DayName(g.Key.Day)} {g.Key.Period}교시에 중복: {c1.Name}, {c2.Name}",
