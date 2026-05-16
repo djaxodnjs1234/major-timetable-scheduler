@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using TimetableScheduler.Data;
 using TimetableScheduler.Domain;
+using TimetableScheduler.Solver;
 
 namespace TimetableScheduler.ViewModel;
 
@@ -13,6 +14,7 @@ public sealed class WorkspaceService
     public ObservableCollection<Room> Rooms { get; } = new();
     public ObservableCollection<CrossGroup> CrossGroups { get; } = new();
     public ObservableCollection<RetakeScenario> RetakeScenarios { get; } = new();
+    public ObservableCollection<SavedTimetableRecord> SavedTimetables { get; } = new();
 
     public event EventHandler? Changed;
 
@@ -36,7 +38,34 @@ public sealed class WorkspaceService
         foreach (var g in data.CrossGroups) CrossGroups.Add(g);
         RetakeScenarios.Clear();
         foreach (var r in data.RetakeScenarios) RetakeScenarios.Add(r);
+        SavedTimetables.Clear();
+        foreach (var t in _repo.LoadSavedTimetables()) SavedTimetables.Add(t);
         RaiseChanged();
+    }
+
+    public void SaveTimetable(string name, IReadOnlyList<SolutionAssignment> assignments)
+    {
+        var rows = assignments
+            .Select(a => new TimetableAssignmentRow(a.CourseId, a.Day, a.Period, a.RoomId))
+            .ToList();
+        var record = new SavedTimetableRecord(Guid.NewGuid().ToString(), name, DateTime.Now, rows);
+        _repo.UpsertSavedTimetable(record);
+        SavedTimetables.Insert(0, record);
+    }
+
+    public void DeleteSavedTimetable(string id)
+    {
+        _repo.DeleteSavedTimetable(id);
+        var item = SavedTimetables.FirstOrDefault(t => t.Id == id);
+        if (item != null) SavedTimetables.Remove(item);
+    }
+
+    public void ExportDatabase(string destPath) => _repo.ExportTo(destPath);
+
+    public void ImportDatabase(string sourcePath)
+    {
+        _repo.ReplaceWith(sourcePath);
+        Reload();
     }
 
     public void ImportFromXlsx(string path)

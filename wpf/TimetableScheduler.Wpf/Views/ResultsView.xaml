@@ -39,9 +39,6 @@
                         </DataTemplate>
                     </ComboBox.ItemTemplate>
                 </ComboBox>
-                <CheckBox Content="모든 학년 펼침"
-                          IsChecked="{Binding ExpandAllGrades}"
-                          VerticalAlignment="Center" Margin="20,0,0,0" />
             </StackPanel>
         </Border>
 

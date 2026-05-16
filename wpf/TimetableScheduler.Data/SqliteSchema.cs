@@ -41,5 +41,12 @@ CREATE TABLE IF NOT EXISTS RetakeScenarios (
     RetakeBaseId  TEXT NOT NULL,
     PRIMARY KEY (CurrentGrade, RetakeBaseId)
 );
+
+CREATE TABLE IF NOT EXISTS SavedTimetables (
+    Id              TEXT PRIMARY KEY,
+    Name            TEXT NOT NULL,
+    CreatedAt       TEXT NOT NULL,
+    AssignmentsJson TEXT NOT NULL
+);
 ";
 }

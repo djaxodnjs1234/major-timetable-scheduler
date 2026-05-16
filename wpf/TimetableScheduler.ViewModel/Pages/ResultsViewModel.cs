@@ -24,9 +24,6 @@ public sealed partial class ResultsViewModel : PageViewModelBase
     [ObservableProperty]
     private RankedSolution? selectedSolution;
 
-    [ObservableProperty]
-    private bool expandAllGrades;
-
     public ResultsViewModel(WorkspaceService workspace)
     {
         _workspace = workspace;
@@ -40,10 +37,6 @@ public sealed partial class ResultsViewModel : PageViewModelBase
     }
 
     partial void OnSelectedSolutionChanged(RankedSolution? value) => RenderCurrent();
-    partial void OnExpandAllGradesChanged(bool value)
-    {
-        Unified.ExpandAllGrades = value;
-    }
 
     private void RenderCurrent()
     {

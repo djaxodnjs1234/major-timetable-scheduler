@@ -281,9 +281,20 @@
 
                 <Border DockPanel.Dock="Bottom" Padding="16,12" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="0,1,0,0">
                     <StackPanel>
-                        <Button Content="📥 xlsx 가져오기"
+                        <Button Content="📥 교과목 편람 불러오기 (.xlsx)"
                                 Click="OnImportXlsxClick"
                                 Padding="8,6" Margin="0,0,0,4"
+                                HorizontalContentAlignment="Left"
+                                Background="White" BorderBrush="{StaticResource OutlineVariant}" />
+                        <Separator Margin="0,4" />
+                        <Button Content="💾 전체 설정 백업하기"
+                                Click="OnExportDbClick"
+                                Padding="8,6" Margin="0,0,0,4"
+                                HorizontalContentAlignment="Left"
+                                Background="White" BorderBrush="{StaticResource OutlineVariant}" />
+                        <Button Content="📂 백업 파일로 복원하기"
+                                Click="OnImportDbClick"
+                                Padding="8,6"
                                 HorizontalContentAlignment="Left"
                                 Background="White" BorderBrush="{StaticResource OutlineVariant}" />
                     </StackPanel>
@@ -457,6 +468,10 @@
                                 <Button Content="취소" Command="{Binding CancelCommand}"
                                         Padding="14,10"
                                         IsEnabled="{Binding IsSolving}" />
+                                <Button Content="다음으로 넘어가기 →"
+                                        Command="{Binding GoToSelectionCommand}"
+                                        Padding="14,10" Margin="8,0,0,0"
+                                        Background="#2E7D32" Foreground="White" />
                             </StackPanel>
                         </StackPanel>
                     </Grid>

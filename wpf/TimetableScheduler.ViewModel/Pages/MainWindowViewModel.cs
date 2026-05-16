@@ -31,10 +31,9 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         _input.SolveCompleted += (_, ranked) =>
         {
-            _selection.SetSolutions(ranked);
             _results.SetSolutions(ranked);
-            NavigateTo(_selection);
         };
+        _input.GoToSelectionRequested += (_, _) => NavigateTo(_results);
 
         currentPage = _selection;
     }

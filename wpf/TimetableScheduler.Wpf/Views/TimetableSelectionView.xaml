@@ -7,43 +7,85 @@
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=vm:TimetableSelectionViewModel}">
-    <Grid Margin="16">
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
+    <Grid>
+        <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="300" />
+            <ColumnDefinition Width="*" />
+        </Grid.ColumnDefinitions>
 
-        <Border Grid.Row="0" Background="#F5F5F5" Padding="12" CornerRadius="4">
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="시간표 선택:" VerticalAlignment="Center"
-                           Margin="0,0,8,0" FontWeight="Bold" />
-                <ComboBox Width="500"
-                          ItemsSource="{Binding Solutions}"
-                          SelectedItem="{Binding SelectedSolution, Mode=TwoWay}">
-                    <ComboBox.ItemTemplate>
+        <!-- Left: saved timetable list -->
+        <Border Grid.Column="0" BorderBrush="#CCC" BorderThickness="0,0,1,0">
+            <DockPanel>
+                <!-- Header -->
+                <Border DockPanel.Dock="Top" Background="#F5F5F5" Padding="12,10"
+                        BorderBrush="#CCC" BorderThickness="0,0,0,1">
+                    <StackPanel Orientation="Horizontal">
+                        <TextBlock Text="저장된 시간표" FontWeight="Bold"
+                                   VerticalAlignment="Center" Margin="0,0,8,0" />
+                        <Button Content="📤 xlsx 내보내기"
+                                Click="OnExportXlsxClick"
+                                Padding="6,3" FontSize="11" />
+                    </StackPanel>
+                </Border>
+
+                <!-- Empty state -->
+                <Border DockPanel.Dock="Top" Background="#FAFAFA" Padding="16,24"
+                        Visibility="{Binding HasNoTimetable, Converter={StaticResource BoolToVisibility}}">
+                    <TextBlock Foreground="#888" TextWrapping="Wrap" LineHeight="20">
+                        저장된 시간표가 없습니다.<LineBreak />
+                        수동 편집 화면에서 시간표를 저장하세요.
+                    </TextBlock>
+                </Border>
+
+                <!-- List -->
+                <ListBox ItemsSource="{Binding SavedTimetables}"
+                         SelectedItem="{Binding SelectedTimetable, Mode=TwoWay}"
+                         BorderThickness="0" Background="White">
+                    <ListBox.ItemContainerStyle>
+                        <Style TargetType="ListBoxItem">
+                            <Setter Property="Padding" Value="0" />
+                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                        </Style>
+                    </ListBox.ItemContainerStyle>
+                    <ListBox.ItemTemplate>
                         <DataTemplate>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="총점 " />
-                                <TextBlock Text="{Binding Score.Total, StringFormat=F3}" FontWeight="Bold" />
-                                <TextBlock Text="  (SC01=" />
-                                <TextBlock Text="{Binding Score.Sc01, StringFormat=F2}" />
-                                <TextBlock Text=" SC02=" />
-                                <TextBlock Text="{Binding Score.Sc02, StringFormat=F2}" />
-                                <TextBlock Text=" SC03=" />
-                                <TextBlock Text="{Binding Score.Sc03, StringFormat=F2}" />
-                                <TextBlock Text=")" />
-                            </StackPanel>
+                            <Border Padding="12,10" BorderBrush="#EEE" BorderThickness="0,0,0,1">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <StackPanel Grid.Column="0" VerticalAlignment="Center">
+                                        <TextBlock Text="{Binding Name}" FontWeight="SemiBold"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding CreatedAt, StringFormat={}{0:yyyy-MM-dd HH:mm}}"
+                                                   FontSize="11" Foreground="#888" Margin="0,2,0,0" />
+                                    </StackPanel>
+                                    <Button Grid.Column="1" Content="삭제"
+                                            Command="{Binding DataContext.DeleteTimetableCommand,
+                                                      RelativeSource={RelativeSource AncestorType=ListBox}}"
+                                            CommandParameter="{Binding}"
+                                            Padding="6,3" Margin="8,0,0,0"
+                                            Background="#BA1A1A" Foreground="White"
+                                            FontSize="11" VerticalAlignment="Center" />
+                                </Grid>
+                            </Border>
                         </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
-                <TextBlock Text="{Binding Solutions.Count, StringFormat={}총 {0}개 후보}"
-                           VerticalAlignment="Center" Margin="16,0,0,0"
-                           Foreground="#666" />
-            </StackPanel>
+                    </ListBox.ItemTemplate>
+                </ListBox>
+            </DockPanel>
         </Border>
 
-        <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="1" Margin="0,8,0,0">
-            <ctrl:TimetableGridControl DataContext="{Binding Preview}" />
-        </Border>
+        <!-- Right: preview -->
+        <Grid Grid.Column="1">
+            <Border Background="#FAFAFA" BorderBrush="#DDD" BorderThickness="0"
+                    Visibility="{Binding HasNoSelection, Converter={StaticResource BoolToVisibility}}">
+                <TextBlock Text="시간표를 선택하면 미리보기가 표시됩니다."
+                           Foreground="#888" FontSize="13"
+                           VerticalAlignment="Center" HorizontalAlignment="Center" />
+            </Border>
+            <ctrl:UnifiedTimetableControl DataContext="{Binding Preview}"
+                                          Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}" />
+        </Grid>
     </Grid>
 </UserControl>

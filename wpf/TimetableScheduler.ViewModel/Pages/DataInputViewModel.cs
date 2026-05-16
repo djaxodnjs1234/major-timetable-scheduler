@@ -117,7 +117,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     }
 
     [ObservableProperty]
-    private int totalSolutions = 500;
+    private int totalSolutions = 3;
 
     [ObservableProperty]
     private int timeLimitSec = 120;
@@ -147,9 +147,18 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     [NotifyCanExecuteChangedFor(nameof(SolveCommand))]
     private bool isSolving;
 
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(GoToSelectionCommand))]
+    private bool isSolveComplete;
+
     public ObservableCollection<RankedSolution> RankedResults { get; } = new();
 
     public event EventHandler<IReadOnlyList<RankedSolution>>? SolveCompleted;
+    public event EventHandler? GoToSelectionRequested;
+
+    [RelayCommand(CanExecute = nameof(CanGoToSelection))]
+    private void GoToSelection() => GoToSelectionRequested?.Invoke(this, EventArgs.Empty);
+    private bool CanGoToSelection() => IsSolveComplete;
 
     public DataInputViewModel(WorkspaceService workspace, SolverService solver)
     {
@@ -162,6 +171,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private async Task SolveAsync()
     {
         IsSolving = true;
+        IsSolveComplete = false;
         StatusMessage = "솔버 시작";
         ProgressCurrent = 0;
         ProgressTotal = TotalSolutions;
@@ -191,6 +201,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             RankedResults.Clear();
             foreach (var r in ranked) RankedResults.Add(r);
             StatusMessage = $"완료: {result.Status}, {result.Solutions.Count}개 해, top {ranked.Count}";
+            IsSolveComplete = true;
             SolveCompleted?.Invoke(this, ranked);
         }
         catch (OperationCanceledException)

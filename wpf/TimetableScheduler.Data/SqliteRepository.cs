@@ -9,8 +9,11 @@ public sealed class SqliteRepository
 {
     private readonly string _connStr;
 
+    public string DbPath { get; }
+
     public SqliteRepository(string dbPath)
     {
+        DbPath = dbPath;
         _connStr = new SqliteConnectionStringBuilder { DataSource = dbPath }.ToString();
     }
 
@@ -18,6 +21,19 @@ public sealed class SqliteRepository
     {
         var dir = AppContext.BaseDirectory;
         return new SqliteRepository(Path.Combine(dir, fileName));
+    }
+
+    public void ExportTo(string destPath)
+    {
+        SqliteConnection.ClearAllPools();
+        File.Copy(DbPath, destPath, overwrite: true);
+    }
+
+    public void ReplaceWith(string sourcePath)
+    {
+        SqliteConnection.ClearAllPools();
+        File.Copy(sourcePath, DbPath, overwrite: true);
+        EnsureCreated();
     }
 
     public void EnsureCreated()
@@ -74,6 +90,48 @@ public sealed class SqliteRepository
                 r, tx);
 
         tx.Commit();
+    }
+
+    private sealed class SavedTimetableRow
+    {
+        public string Id { get; set; } = "";
+        public string Name { get; set; } = "";
+        public string CreatedAt { get; set; } = "";
+        public string AssignmentsJson { get; set; } = "[]";
+    }
+
+    public List<SavedTimetableRecord> LoadSavedTimetables()
+    {
+        using var conn = Open();
+        return conn.Query<SavedTimetableRow>(
+                "SELECT * FROM SavedTimetables ORDER BY CreatedAt DESC")
+            .Select(r => new SavedTimetableRecord(
+                r.Id,
+                r.Name,
+                DateTime.Parse(r.CreatedAt),
+                JsonSerializer.Deserialize<List<TimetableAssignmentRow>>(r.AssignmentsJson) ?? new()))
+            .ToList();
+    }
+
+    public void UpsertSavedTimetable(SavedTimetableRecord t)
+    {
+        using var conn = Open();
+        conn.Execute(
+            @"INSERT OR REPLACE INTO SavedTimetables (Id, Name, CreatedAt, AssignmentsJson)
+              VALUES (@Id, @Name, @CreatedAt, @AssignmentsJson)",
+            new
+            {
+                t.Id,
+                t.Name,
+                CreatedAt = t.CreatedAt.ToString("O"),
+                AssignmentsJson = JsonSerializer.Serialize(t.Assignments),
+            });
+    }
+
+    public void DeleteSavedTimetable(string id)
+    {
+        using var conn = Open();
+        conn.Execute("DELETE FROM SavedTimetables WHERE Id = @Id", new { Id = id });
     }
 
     private SqliteConnection Open()

@@ -26,6 +26,38 @@ public partial class DataInputView : UserControl
             Vm.ImportXlsxCommand.Execute(dlg.FileName);
     }
 
+    private void OnExportDbClick(object sender, RoutedEventArgs e)
+    {
+        if (Vm == null) return;
+        var dlg = new SaveFileDialog
+        {
+            Filter = "SQLite database (*.db)|*.db|All files (*.*)|*.*",
+            Title = "워크스페이스 DB 저장",
+            FileName = "timetable_backup.db",
+        };
+        if (dlg.ShowDialog() == true)
+            Vm.Workspace.ExportDatabase(dlg.FileName);
+    }
+
+    private void OnImportDbClick(object sender, RoutedEventArgs e)
+    {
+        if (Vm == null) return;
+        var result = MessageBox.Show(
+            "백업 파일로 복원하면 현재 모든 설정과 저장된 시간표가 백업 파일의 내용으로 교체됩니다.\n계속하시겠습니까?",
+            "백업 파일로 복원",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        if (result != MessageBoxResult.Yes) return;
+
+        var dlg = new OpenFileDialog
+        {
+            Filter = "SQLite database (*.db)|*.db|All files (*.*)|*.*",
+            Title = "워크스페이스 DB 선택",
+        };
+        if (dlg.ShowDialog() == true)
+            Vm.Workspace.ImportDatabase(dlg.FileName);
+    }
+
     private void OnProfessorExpanded(object sender, RoutedEventArgs e)
     {
         if (sender is not Expander expander || expander.DataContext is not Professor prof || Vm == null) return;

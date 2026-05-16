@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using TimetableScheduler.Data;
 using TimetableScheduler.Domain;
 using TimetableScheduler.Scoring;
 using TimetableScheduler.Solver;
@@ -24,7 +25,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     public ObservableCollection<ConflictItem> Conflicts { get; } = new();
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ExportXlsxCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveTimetableCommand))]
     private RankedSolution? baseSolution;
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(SaveTimetableCommand))]
+    private string saveName = "";
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ApplyRoomChangeCommand))]
@@ -264,6 +271,26 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         if (BaseSolution != null) LoadFromSolution(BaseSolution);
     }
+
+    [RelayCommand(CanExecute = nameof(CanSaveTimetable))]
+    private void SaveTimetable()
+    {
+        _workspace.SaveTimetable(SaveName.Trim(), _working);
+        StatusMessage = $"'{SaveName.Trim()}' 저장 완료";
+        SaveName = "";
+    }
+
+    private bool CanSaveTimetable() => !string.IsNullOrWhiteSpace(SaveName) && BaseSolution != null;
+
+    [RelayCommand(CanExecute = nameof(CanExport))]
+    private void ExportXlsx(string path)
+    {
+        var rows = _working.Select(a => new TimetableAssignmentRow(a.CourseId, a.Day, a.Period, a.RoomId)).ToList();
+        var name = string.IsNullOrWhiteSpace(SaveName) ? "시간표" : SaveName.Trim();
+        FormattedTimetableExporter.Export(name, rows, _workspace.Courses, _workspace.Professors, path);
+    }
+
+    private bool CanExport() => BaseSolution != null;
 
     private void TryMoveSelectedTo(int targetDay, int targetPeriod, int targetGrade, int targetSubColumnIdx)
     {
