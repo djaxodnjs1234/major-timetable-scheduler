@@ -17,11 +17,12 @@ public static class FormattedTimetableExporter
         XLColor.FromHtml("#F2DBDB"), // 4학년: light pink
     };
 
-    private static readonly XLColor HeaderBg = XLColor.FromHtml("#4F81BD");
-    private static readonly XLColor LunchBg  = XLColor.FromHtml("#F2F2F2");
+    private static readonly XLColor HeaderBg  = XLColor.FromHtml("#4F81BD");
+    private static readonly XLColor LunchBg   = XLColor.FromHtml("#F2F2F2");
+    private static readonly XLColor SubHdrBg  = XLColor.FromHtml("#D9D9D9");
 
-    // period → Excel row (period 1 = row 5 ... period 9 = row 13)
-    private static int PeriodRow(int p) => p + 4;
+    // Row 4 = day headers, row 5 = grade sub-headers, period 1 starts at row 6
+    private static int PeriodRow(int p) => p + 5;
 
     public static void Export(
         string timetableName,
@@ -30,15 +31,13 @@ public static class FormattedTimetableExporter
         IReadOnlyList<Professor> professors,
         string path)
     {
-        var aList  = assignments.ToList();
-        var cMap   = courses.ToDictionary(c => c.Id);
-        var pMap   = professors.ToDictionary(p => p.Id);
+        var aList = assignments.ToList();
+        var cMap  = courses.ToDictionary(c => c.Id);
+        var pMap  = professors.ToDictionary(p => p.Id);
 
-        // --- 1. per-day layout calculation ---
         var dayLayouts = BuildDayLayouts(aList, cMap);
 
-        // --- 2. column offsets ---
-        // col 1 = A (period label), then day columns, then last col (period label)
+        // col 1 = A (period label), day columns, last col (period label)
         int[] dayStart = new int[5];
         int col = 2;
         for (int d = 0; d < 5; d++)
@@ -49,23 +48,22 @@ public static class FormattedTimetableExporter
         int lastLabelCol = col;
         int totalCols    = lastLabelCol;
 
-        // --- 3. build workbook ---
         using var wb = new XLWorkbook();
         var ws = wb.AddWorksheet("시간표");
 
         SetColumnWidths(ws, dayStart, dayLayouts, lastLabelCol);
         SetRowHeights(ws);
 
-        // title
         WriteTitleRow(ws, timetableName, totalCols);
 
-        // date
-        ws.Cell(2, lastLabelCol).Value    = DateTime.Today.ToString("yyyy-MM-dd");
+        ws.Cell(2, lastLabelCol).Value = DateTime.Today.ToString("yyyy-MM-dd");
         ws.Cell(2, lastLabelCol).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
         ws.Range(2, 1, 2, lastLabelCol).Merge();
 
+        // outer border: day headers (row 4) + grade row (row 5) + all period rows (rows 6-14)
+        ApplyOuterBorder(ws.Range(4, 1, 14, totalCols));
+
         // day headers (row 4)
-        ApplyOuterBorder(ws.Range(4, 1, 13, totalCols));
         for (int d = 0; d < 5; d++)
         {
             int sc = dayStart[d];
@@ -81,11 +79,14 @@ public static class FormattedTimetableExporter
             ApplyThinBorder(hdr);
         }
 
-        // period label column (A) and last column
+        // grade sub-headers (row 5)
+        WriteGradeHeaders(ws, dayStart, dayLayouts, lastLabelCol);
+
+        // period label columns
         WritePeriodLabels(ws, lastLabelCol);
 
-        // lunch row (period 5 = row 9)
-        var lunchRange = ws.Range(9, 1, 9, totalCols).Merge();
+        // lunch row (period 5 = row 10)
+        var lunchRange = ws.Range(10, 1, 10, totalCols).Merge();
         lunchRange.Value = "점 심 시 간";
         lunchRange.Style.Font.Bold = true;
         lunchRange.Style.Font.FontSize = 11;
@@ -94,30 +95,20 @@ public static class FormattedTimetableExporter
         lunchRange.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
         ApplyThinBorder(lunchRange);
 
-        // empty course cells (placeholder borders)
+        // empty cell borders
         for (int d = 0; d < 5; d++)
-        {
             for (int sub = 0; sub < dayLayouts[d].SubColCount; sub++)
             {
                 int c2 = dayStart[d] + sub;
                 foreach (int p in ValidPeriods)
-                {
-                    var cell = ws.Cell(PeriodRow(p), c2);
-                    ApplyThinBorder(cell.AsRange());
-                }
+                    ApplyThinBorder(ws.Cell(PeriodRow(p), c2).AsRange());
             }
-        }
 
-        // course cells
         WriteCourses(ws, aList, cMap, pMap, courses, dayStart, dayLayouts);
-
-        // 비고 row
         WriteRemarks(ws, aList, cMap, dayStart, dayLayouts, totalCols);
-
-        // legend
         WriteLegend(ws);
 
-        ws.SheetView.Freeze(4, 1); // freeze row 4 and col A
+        ws.SheetView.Freeze(5, 1);
 
         wb.SaveAs(path);
     }
@@ -132,37 +123,90 @@ public static class FormattedTimetableExporter
         for (int d = 0; d < 5; d++)
         {
             var dayA = aList.Where(a => a.Day == d).ToList();
+            var gradeLayouts = new List<GradeLayout>();
+            var courseSubColGlobal = new Dictionary<string, int>();
+            int globalOffset = 0;
 
-            // unique course blocks: (courseId, startPeriod, endPeriod)
-            var blocks = dayA
-                .GroupBy(a => a.CourseId)
-                .Select(g => new CourseBlock(
-                    g.Key,
-                    g.Min(a => a.Period),
-                    g.Max(a => a.Period),
-                    g.First().RoomId))
-                .OrderBy(b => GradeOf(b.CourseId, cMap))
-                .ThenBy(b => b.StartPeriod)
-                .ToList();
-
-            // greedy interval coloring → assign sub-column per course
-            var endPeriods      = new List<int>();
-            var courseSubColMap = new Dictionary<string, int>();
-
-            foreach (var block in blocks)
+            foreach (int grade in new[] { 1, 2, 3, 4 })
             {
-                int sub = endPeriods.FindIndex(end => end < block.StartPeriod);
-                if (sub < 0) { sub = endPeriods.Count; endPeriods.Add(0); }
-                courseSubColMap[block.CourseId] = sub;
-                endPeriods[sub] = block.EndPeriod;
+                var gradeBlocks = dayA
+                    .Where(a => cMap.TryGetValue(a.CourseId, out var c) && c.Grade == grade)
+                    .GroupBy(a => a.CourseId)
+                    .Select(g => new CourseBlock(
+                        g.Key,
+                        g.Min(a => a.Period),
+                        g.Max(a => a.Period),
+                        g.First().RoomId))
+                    .OrderBy(b => b.StartPeriod)
+                    .ToList();
+
+                if (gradeBlocks.Count == 0) continue;
+
+                // greedy interval coloring within this grade only
+                var endPeriods = new List<int>();
+                foreach (var block in gradeBlocks)
+                {
+                    int sub = endPeriods.FindIndex(end => end < block.StartPeriod);
+                    if (sub < 0) { sub = endPeriods.Count; endPeriods.Add(0); }
+                    courseSubColGlobal[block.CourseId] = globalOffset + sub;
+                    endPeriods[sub] = block.EndPeriod;
+                }
+
+                int gradeWidth = endPeriods.Count;
+                gradeLayouts.Add(new GradeLayout(grade, globalOffset, gradeWidth, gradeBlocks));
+                globalOffset += gradeWidth;
             }
 
             layouts[d] = new DayLayout(
-                Math.Max(1, endPeriods.Count),
-                blocks,
-                courseSubColMap);
+                Math.Max(1, globalOffset),
+                gradeLayouts,
+                courseSubColGlobal);
         }
         return layouts;
+    }
+
+    private static void WriteGradeHeaders(
+        IXLWorksheet ws,
+        int[] dayStart,
+        DayLayout[] layouts,
+        int lastLabelCol)
+    {
+        // period label column in row 5
+        var left = ws.Cell(5, 1).AsRange();
+        left.Style.Fill.BackgroundColor = SubHdrBg;
+        ApplyThinBorder(left);
+
+        var right = ws.Cell(5, lastLabelCol).AsRange();
+        right.Style.Fill.BackgroundColor = SubHdrBg;
+        ApplyThinBorder(right);
+
+        for (int d = 0; d < 5; d++)
+        {
+            var layout = layouts[d];
+            if (layout.GradeLayouts.Count == 0)
+            {
+                var blank = ws.Cell(5, dayStart[d]).AsRange();
+                blank.Style.Fill.BackgroundColor = SubHdrBg;
+                ApplyThinBorder(blank);
+                continue;
+            }
+
+            foreach (var gl in layout.GradeLayouts)
+            {
+                int sc = dayStart[d] + gl.SubColStart;
+                int ec = sc + gl.SubColCount - 1;
+                var gradeRange = gl.SubColCount > 1
+                    ? ws.Range(5, sc, 5, ec).Merge()
+                    : ws.Cell(5, sc).AsRange();
+                gradeRange.Value = $"{gl.Grade}학년";
+                gradeRange.Style.Font.Bold = true;
+                gradeRange.Style.Font.FontSize = 9;
+                gradeRange.Style.Fill.BackgroundColor = GradeFills[gl.Grade];
+                gradeRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                gradeRange.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
+                ApplyThinBorder(gradeRange);
+            }
+        }
     }
 
     private static void WriteCourses(
@@ -174,7 +218,6 @@ public static class FormattedTimetableExporter
         int[] dayStart,
         DayLayout[] layouts)
     {
-        // pre-compute which course names have multiple sections
         var multiSectionNames = allCourses
             .GroupBy(c => (c.Name, c.Grade))
             .Where(g => g.Count() > 1)
@@ -183,11 +226,11 @@ public static class FormattedTimetableExporter
 
         for (int d = 0; d < 5; d++)
         {
-            foreach (var block in layouts[d].CourseBlocks)
+            foreach (var block in layouts[d].AllBlocks)
             {
                 if (!cMap.TryGetValue(block.CourseId, out var course)) continue;
+                if (!layouts[d].CourseSubCol.TryGetValue(block.CourseId, out int sub)) continue;
 
-                int sub      = layouts[d].CourseSubCol[block.CourseId];
                 int xlCol    = dayStart[d] + sub;
                 int startRow = PeriodRow(block.StartPeriod);
                 int endRow   = PeriodRow(block.EndPeriod);
@@ -211,11 +254,11 @@ public static class FormattedTimetableExporter
                 cellRange.Value = BuildCellText(
                     course.Name, section, profName, course.Grade, block.RoomId);
 
-                cellRange.Style.Fill.BackgroundColor    = fill;
-                cellRange.Style.Alignment.WrapText      = true;
-                cellRange.Style.Alignment.Horizontal    = XLAlignmentHorizontalValues.Center;
-                cellRange.Style.Alignment.Vertical      = XLAlignmentVerticalValues.Center;
-                cellRange.Style.Font.FontSize           = 9;
+                cellRange.Style.Fill.BackgroundColor = fill;
+                cellRange.Style.Alignment.WrapText   = true;
+                cellRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                cellRange.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
+                cellRange.Style.Font.FontSize        = 9;
                 ApplyThinBorder(cellRange);
             }
         }
@@ -229,14 +272,13 @@ public static class FormattedTimetableExporter
         DayLayout[] layouts,
         int totalCols)
     {
-        // Row 14: 비고
-        var remarksCol = ws.Cell(14, 1);
+        // Row 15: 비고
+        var remarksCol = ws.Cell(15, 1);
         remarksCol.Value = "비고";
         remarksCol.Style.Font.Bold = true;
         remarksCol.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         remarksCol.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
 
-        // collect special notes (fixed courses, graduate courses, etc.)
         var notes = new List<string>();
         foreach (var a in aList)
         {
@@ -245,25 +287,24 @@ public static class FormattedTimetableExporter
                 notes.Add($"{c.Name} ({DayNames[a.Day]}{a.Period}교시, {a.RoomId})");
         }
 
-        var notesRange = ws.Range(14, 2, 14, totalCols).Merge();
+        var notesRange = ws.Range(15, 2, 15, totalCols).Merge();
         if (notes.Count > 0)
             notesRange.Value = string.Join("  |  ", notes.Distinct());
-        notesRange.Style.Alignment.WrapText   = true;
-        notesRange.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
-        notesRange.Style.Font.FontSize        = 9;
-        ApplyThinBorder(ws.Range(14, 1, 14, totalCols));
+        notesRange.Style.Alignment.WrapText = true;
+        notesRange.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+        notesRange.Style.Font.FontSize      = 9;
+        ApplyThinBorder(ws.Range(15, 1, 15, totalCols));
     }
 
     private static void WriteLegend(IXLWorksheet ws)
     {
-        // Row 16: 범례 header
-        ws.Cell(16, 1).Value = "범례";
-        ws.Cell(16, 1).Style.Font.Bold = true;
+        ws.Cell(17, 1).Value = "범례";
+        ws.Cell(17, 1).Style.Font.Bold = true;
 
         string[] gradeLabels = { "1학년", "2학년", "3학년", "4학년" };
         for (int i = 0; i < 4; i++)
         {
-            int row = 17 + i;
+            int row = 18 + i;
             var swatch = ws.Range(row, 2, row, 3).Merge();
             swatch.Style.Fill.BackgroundColor = GradeFills[i + 1];
             ApplyThinBorder(swatch);
@@ -294,7 +335,6 @@ public static class FormattedTimetableExporter
             int r = PeriodRow(p);
             string label = p == 5 ? "점심" : p.ToString();
 
-            // left column A
             var left = ws.Cell(r, 1);
             left.Value = label;
             left.Style.Font.Bold = true;
@@ -302,7 +342,6 @@ public static class FormattedTimetableExporter
             left.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
             ApplyThinBorder(left.AsRange());
 
-            // right column (last)
             var right = ws.Cell(r, lastLabelCol);
             right.Value = label;
             right.Style.Font.Bold = true;
@@ -318,23 +357,22 @@ public static class FormattedTimetableExporter
         DayLayout[] layouts,
         int lastLabelCol)
     {
-        ws.Column(1).Width         = 4;   // period label
+        ws.Column(1).Width            = 4;
         ws.Column(lastLabelCol).Width = 4;
         for (int d = 0; d < 5; d++)
-        {
             for (int sub = 0; sub < layouts[d].SubColCount; sub++)
                 ws.Column(dayStart[d] + sub).Width = 14;
-        }
     }
 
     private static void SetRowHeights(IXLWorksheet ws)
     {
-        ws.Row(1).Height  = 30;   // title
-        ws.Row(2).Height  = 14;   // date
-        ws.Row(3).Height  = 6;    // spacer
-        ws.Row(4).Height  = 22;   // day headers
-        ws.Row(9).Height  = 22;   // lunch
-        ws.Row(14).Height = 40;   // 비고
+        ws.Row(1).Height  = 30;  // title
+        ws.Row(2).Height  = 14;  // date
+        ws.Row(3).Height  = 6;   // spacer
+        ws.Row(4).Height  = 22;  // day headers
+        ws.Row(5).Height  = 14;  // grade sub-headers
+        ws.Row(10).Height = 22;  // lunch (period 5)
+        ws.Row(15).Height = 40;  // 비고
         foreach (int p in new[] { 1, 2, 3, 4, 6, 7, 8, 9 })
             ws.Row(PeriodRow(p)).Height = 72;
     }
@@ -345,7 +383,7 @@ public static class FormattedTimetableExporter
         var sb = new System.Text.StringBuilder();
         sb.Append(name);
         sb.Append('\n');
-        sb.Append(section);  // empty string when no section
+        sb.Append(section);
         sb.Append('\n');
         sb.Append(profName);
         sb.Append('\n');
@@ -364,13 +402,10 @@ public static class FormattedTimetableExporter
         _ => section.ToString(),
     };
 
-    private static int GradeOf(string courseId, Dictionary<string, Course> cMap) =>
-        cMap.TryGetValue(courseId, out var c) ? c.Grade : 0;
-
     private static void ApplyThinBorder(IXLRange range)
     {
-        range.Style.Border.OutsideBorder     = XLBorderStyleValues.Thin;
-        range.Style.Border.InsideBorder      = XLBorderStyleValues.Thin;
+        range.Style.Border.OutsideBorder      = XLBorderStyleValues.Thin;
+        range.Style.Border.InsideBorder       = XLBorderStyleValues.Thin;
         range.Style.Border.OutsideBorderColor = XLColor.Black;
         range.Style.Border.InsideBorderColor  = XLColor.Black;
     }
@@ -389,8 +424,17 @@ public static class FormattedTimetableExporter
         int EndPeriod,
         string RoomId);
 
+    private sealed record GradeLayout(
+        int Grade,
+        int SubColStart,
+        int SubColCount,
+        List<CourseBlock> Blocks);
+
     private sealed record DayLayout(
         int SubColCount,
-        List<CourseBlock> CourseBlocks,
-        Dictionary<string, int> CourseSubCol);
+        List<GradeLayout> GradeLayouts,
+        Dictionary<string, int> CourseSubCol)
+    {
+        public IEnumerable<CourseBlock> AllBlocks => GradeLayouts.SelectMany(g => g.Blocks);
+    }
 }
