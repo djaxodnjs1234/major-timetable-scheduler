@@ -81,7 +81,13 @@ public partial class UnifiedTimetableControl : UserControl
         for (int i = 0; i < 2; i++)
             RootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         for (int i = 0; i < 9; i++)
-            RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = 36 });
+        {
+            // period 5 (index 4) = lunch → compact fixed height
+            if (i == 4)
+                RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(22) });
+            else
+                RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = 28 });
+        }
 
         // 2 label cols (period, time) + sum of all grade widths
         RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
@@ -95,11 +101,7 @@ public partial class UnifiedTimetableControl : UserControl
         {
             dayColStart[dg.Day] = curCol;
             for (int k = 0; k < dg.TotalWidth; k++)
-                RootGrid.ColumnDefinitions.Add(new ColumnDefinition
-                {
-                    Width = new GridLength(1, GridUnitType.Star),
-                    MinWidth = 56,
-                });
+                RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
             curCol += dg.TotalWidth;
         }
 
@@ -126,10 +128,20 @@ public partial class UnifiedTimetableControl : UserControl
         // Track which (row, col) are covered by row spans
         var covered = new HashSet<(int Row, int Col)>();
 
+        int totalDayCols = vm.DayGroups.Sum(dg => dg.TotalWidth);
+
         for (int p = 1; p <= 9; p++)
         {
             int row = 1 + p;  // headers occupy rows 0..1
-            AddBorder(p == 5 ? "점심" : p.ToString(), row, 0, 1, 1, HeaderBg, 11, FontWeights.Normal);
+
+            if (p == 5)
+            {
+                // Single merged lunch row spanning all columns
+                AddBorder("점 심 시 간", row, 0, 1, 2 + totalDayCols, LunchBg, 10, FontWeights.Bold);
+                continue;
+            }
+
+            AddBorder(p.ToString(), row, 0, 1, 1, HeaderBg, 11, FontWeights.Normal);
             AddBorder($"{8 + p:D2}:00", row, 1, 1, 1, HeaderBg, 10, FontWeights.Normal);
 
             foreach (var dg in vm.DayGroups)
@@ -138,12 +150,6 @@ public partial class UnifiedTimetableControl : UserControl
                 int sub = startCol;
                 foreach (var col in dg.Grades)
                 {
-                    if (p == 5)
-                    {
-                        AddBorder("점심", row, sub, 1, col.Width, LunchBg, 9, FontWeights.Normal);
-                        sub += col.Width;
-                        continue;
-                    }
                     if (col.Grade is not int g)
                     {
                         AddBorder("", row, sub, 1, col.Width, EmptyBg, 0, FontWeights.Normal);
@@ -245,18 +251,24 @@ public partial class UnifiedTimetableControl : UserControl
             TextAlignment = TextAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
         });
-        panel.Children.Add(new TextBlock
-        {
-            Text = a.ProfessorId,
-            FontSize = 8,
-            TextAlignment = TextAlignment.Center,
-        });
+        var allProfs = new List<string>();
+        if (!string.IsNullOrEmpty(a.ProfessorId)) allProfs.Add(a.ProfessorId);
+        allProfs.AddRange(a.CoteachProfIds);
+        if (allProfs.Count > 0)
+            panel.Children.Add(new TextBlock
+            {
+                Text = string.Join(", ", allProfs),
+                FontSize = 8,
+                TextAlignment = TextAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
+            });
         if (!string.IsNullOrEmpty(a.RoomsLabel))
             panel.Children.Add(new TextBlock
             {
                 Text = a.RoomsLabel,
                 FontSize = 8,
                 TextAlignment = TextAlignment.Center,
+                TextWrapping = TextWrapping.Wrap,
                 Foreground = Brushes.DarkSlateGray,
             });
         root.Children.Add(panel);

@@ -59,6 +59,7 @@ public static class XlsxLoader
 
             var sectionMatch = SectionRegex.Match(code);
             var section = sectionMatch.Success ? int.Parse(sectionMatch.Groups[1].Value) : 1;
+            var baseCode = sectionMatch.Success ? code[..sectionMatch.Index] : code;
 
             var sched = ParseSchedule(schedStr);
             var fixedRoom = sched.Count > 0 ? sched[0].Room : null;
@@ -72,7 +73,7 @@ public static class XlsxLoader
 
             courses.Add(new Course
             {
-                Id = code,
+                Id = baseCode,
                 Name = name,
                 Grade = grade,
                 HoursPerWeek = hours,

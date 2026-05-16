@@ -4,81 +4,97 @@
              xmlns:vm="clr-namespace:TimetableScheduler.ViewModel.Pages;assembly=TimetableScheduler.ViewModel"
              xmlns:grid="clr-namespace:TimetableScheduler.ViewModel.Grid;assembly=TimetableScheduler.ViewModel"
              xmlns:ctrl="clr-namespace:TimetableScheduler.Wpf.Controls"
+             xmlns:conv="clr-namespace:TimetableScheduler.Wpf.Converters"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=vm:ResultsViewModel}">
+    <UserControl.Resources>
+        <conv:DensityToBrushConverter x:Key="DensityToBrush" />
+    </UserControl.Resources>
+
     <Grid Margin="12">
         <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Top: 해 선택 + 점수 + 옵션 -->
-        <Border Grid.Row="0" Background="#F5F5F5" Padding="12" CornerRadius="4">
-            <StackPanel Orientation="Horizontal">
-                <TextBlock Text="해 선택:" VerticalAlignment="Center"
-                           Margin="0,0,8,0" FontWeight="Bold" />
-                <ComboBox Width="450"
-                          ItemsSource="{Binding Solutions}"
-                          SelectedItem="{Binding SelectedSolution, Mode=TwoWay}">
-                    <ComboBox.ItemTemplate>
-                        <DataTemplate>
-                            <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="총점 " />
-                                <TextBlock Text="{Binding Score.Total, StringFormat=F3}" FontWeight="Bold" />
-                                <TextBlock Text="  (SC01=" />
-                                <TextBlock Text="{Binding Score.Sc01, StringFormat=F2}" />
-                                <TextBlock Text=" SC02=" />
-                                <TextBlock Text="{Binding Score.Sc02, StringFormat=F2}" />
-                                <TextBlock Text=" SC03=" />
-                                <TextBlock Text="{Binding Score.Sc03, StringFormat=F2}" />
-                                <TextBlock Text=")" />
-                            </StackPanel>
+        <!-- Top: 해 밀도 미리보기 카드 스트립 -->
+        <Border Grid.Row="0" Background="#F8F9FA" BorderBrush="#DDD" BorderThickness="1"
+                Padding="8" Margin="0,0,0,8">
+            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+                <ItemsControl ItemsSource="{Binding SolutionCards}">
+                    <ItemsControl.ItemsPanel>
+                        <ItemsPanelTemplate>
+                            <StackPanel Orientation="Horizontal" />
+                        </ItemsPanelTemplate>
+                    </ItemsControl.ItemsPanel>
+                    <ItemsControl.ItemTemplate>
+                        <DataTemplate DataType="{x:Type vm:SolutionCardViewModel}">
+                            <Border Margin="4,2" Padding="8,6" CornerRadius="6"
+                                    Background="White" Cursor="Hand"
+                                    MouseLeftButtonDown="OnCardMouseDown">
+                                <Border.Style>
+                                    <Style TargetType="Border">
+                                        <Setter Property="BorderThickness" Value="2" />
+                                        <Setter Property="BorderBrush" Value="#DDD" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsSelected}" Value="True">
+                                                <Setter Property="BorderBrush" Value="#1E40AF" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <StackPanel>
+                                    <!-- 해 번호 -->
+                                    <TextBlock Text="{Binding Rank, StringFormat={}해 {0}}"
+                                               FontSize="10" Foreground="#666"
+                                               HorizontalAlignment="Center" Margin="0,0,0,4"/>
+                                    <!-- 요일 이름 -->
+                                    <ItemsControl ItemsSource="{Binding Days}">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type vm:DayDensityItem}">
+                                                <TextBlock Text="{Binding DayName}" Width="22"
+                                                           FontSize="9" TextAlignment="Center"
+                                                           Foreground="#555" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <!-- 밀도 블록 -->
+                                    <ItemsControl ItemsSource="{Binding Days}" Margin="0,2,0,4">
+                                        <ItemsControl.ItemsPanel>
+                                            <ItemsPanelTemplate>
+                                                <StackPanel Orientation="Horizontal" />
+                                            </ItemsPanelTemplate>
+                                        </ItemsControl.ItemsPanel>
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate DataType="{x:Type vm:DayDensityItem}">
+                                                <Rectangle Width="20" Height="36" Margin="1,0"
+                                                           RadiusX="3" RadiusY="3"
+                                                           Fill="{Binding Density, Converter={StaticResource DensityToBrush}}" />
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                    <!-- 총점 -->
+                                    <TextBlock Text="{Binding NormalizedScore, StringFormat={}{0:F1}점}"
+                                               FontSize="11" FontWeight="Bold"
+                                               Foreground="#1E40AF"
+                                               HorizontalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
                         </DataTemplate>
-                    </ComboBox.ItemTemplate>
-                </ComboBox>
-            </StackPanel>
-        </Border>
-
-        <!-- Score breakdown -->
-        <Border Grid.Row="1" Background="White" Padding="12,8" Margin="0,8,0,0"
-                BorderBrush="#DDD" BorderThickness="1">
-            <StackPanel Orientation="Horizontal">
-                <StackPanel Orientation="Horizontal" Margin="0,0,24,0">
-                    <TextBlock Text="SC-01 " Foreground="#666" />
-                    <TextBlock Text="{Binding SelectedSolution.Score.Sc01, StringFormat=F3}" FontWeight="Bold" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,0,24,0">
-                    <TextBlock Text="SC-02 " Foreground="#666" />
-                    <TextBlock Text="{Binding SelectedSolution.Score.Sc02, StringFormat=F3}" FontWeight="Bold" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="0,0,24,0">
-                    <TextBlock Text="SC-03 " Foreground="#666" />
-                    <TextBlock Text="{Binding SelectedSolution.Score.Sc03, StringFormat=F3}" FontWeight="Bold" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="Total " Foreground="#666" />
-                    <TextBlock Text="{Binding SelectedSolution.Score.Total, StringFormat=F3}"
-                               FontWeight="Bold" FontSize="14" Foreground="#005FB8" />
-                </StackPanel>
-                <StackPanel Orientation="Horizontal" Margin="32,0,0,0">
-                    <TextBlock Text="범례:" Foreground="#666" Margin="0,0,8,0" VerticalAlignment="Center" />
-                    <Border Background="#FFF9C4" Width="20" Height="14" Margin="2,0" />
-                    <TextBlock Text="1학년" FontSize="11" Margin="2,0,8,0" VerticalAlignment="Center" />
-                    <Border Background="#DCEDC8" Width="20" Height="14" Margin="2,0" />
-                    <TextBlock Text="2학년" FontSize="11" Margin="2,0,8,0" VerticalAlignment="Center" />
-                    <Border Background="#BBDEFB" Width="20" Height="14" Margin="2,0" />
-                    <TextBlock Text="3학년" FontSize="11" Margin="2,0,8,0" VerticalAlignment="Center" />
-                    <Border Background="#FFCDD2" Width="20" Height="14" Margin="2,0" />
-                    <TextBlock Text="4학년" FontSize="11" Margin="2,0,8,0" VerticalAlignment="Center" />
-                </StackPanel>
-            </StackPanel>
+                    </ItemsControl.ItemTemplate>
+                </ItemsControl>
+            </ScrollViewer>
         </Border>
 
         <!-- Tabs -->
-        <TabControl Grid.Row="2" Margin="0,8,0,0">
+        <TabControl Grid.Row="1" Margin="0,0,0,0">
             <TabItem Header="통합 시간표">
                 <ctrl:UnifiedTimetableControl DataContext="{Binding Unified}" />
             </TabItem>
@@ -130,3 +146,4 @@
         </TabControl>
     </Grid>
 </UserControl>
+

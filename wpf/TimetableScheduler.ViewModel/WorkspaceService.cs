@@ -83,16 +83,16 @@ public sealed class WorkspaceService
     }
 
     public void AddCourse(Course c) { Courses.Add(c); Persist(); }
-    public void DeleteCourse(string id)
+    public void DeleteCourse(Course course)
     {
-        var c = Courses.FirstOrDefault(x => x.Id == id);
+        var c = Courses.FirstOrDefault(x => x.Id == course.Id && x.Section == course.Section);
         if (c == null) return;
         Courses.Remove(c);
         Persist();
     }
     public void UpdateCourse(Course c)
     {
-        var idx = IndexOfCourse(c.Id);
+        var idx = IndexOfCourse(c.Id, c.Section);
         if (idx < 0) return;
         Courses[idx] = c;
         Persist();
@@ -152,10 +152,10 @@ public sealed class WorkspaceService
         Courses.ToList(), Professors.ToList(), Rooms.ToList(),
         CrossGroups.ToList(), RetakeScenarios.ToList());
 
-    private int IndexOfCourse(string id)
+    private int IndexOfCourse(string id, int section)
     {
         for (int i = 0; i < Courses.Count; i++)
-            if (Courses[i].Id == id) return i;
+            if (Courses[i].Id == id && Courses[i].Section == section) return i;
         return -1;
     }
 

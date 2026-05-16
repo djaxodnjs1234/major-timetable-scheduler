@@ -37,9 +37,6 @@
                     <Button Content="선택 해제"
                             Command="{Binding ClearSelectionCommand}"
                             Padding="8,4" Margin="8,0,0,0" />
-                    <Button Content="📤 xlsx 내보내기"
-                            Click="OnExportXlsxClick"
-                            Padding="8,4" Margin="16,0,0,0" />
                     <Separator Width="1" Margin="16,4" Background="#AAA" />
                     <TextBlock Text="이름:" VerticalAlignment="Center" Margin="0,0,4,0" />
                     <TextBox Width="180" Padding="4,2" VerticalAlignment="Center"
