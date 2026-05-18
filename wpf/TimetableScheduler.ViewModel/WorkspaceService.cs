@@ -148,8 +148,11 @@ public sealed class WorkspaceService
         Persist();
     }
 
+    public IReadOnlyList<Course> ExpandedCourses => DomainHelpers.ExpandSections(Courses);
+
     public AppData Snapshot() => new(
-        Courses.ToList(), Professors.ToList(), Rooms.ToList(),
+        DomainHelpers.ExpandSections(Courses),
+        Professors.ToList(), Rooms.ToList(),
         CrossGroups.ToList(), RetakeScenarios.ToList());
 
     private int IndexOfCourse(string id, int section)

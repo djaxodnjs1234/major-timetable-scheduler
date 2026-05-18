@@ -72,9 +72,12 @@ def _block_sizes(schedule):
 
 
 def load_from_xlsx(path: str) -> Tuple[List[Course], List[Professor], List[Room]]:
-    courses: List[Course] = []
+    from domain.models import base_id as _base_id
+
     prof_names = set()
     room_ids = set()
+    seen: dict = {}   # base_id → representative Course
+    counts: dict = {} # base_id → section count
 
     data_rows = list(_read_cells(path))
     for d in data_rows:
@@ -101,9 +104,6 @@ def load_from_xlsx(path: str) -> Tuple[List[Course], List[Professor], List[Room]
         dept = d.get("R", "").strip()
         sched_str = d.get("S", "").strip()
 
-        section_m = re.search(r"-(\d+)$", code)
-        section = int(section_m.group(1)) if section_m else 1
-
         sched = _parse_schedule(sched_str)
         fixed_room = sched[0][2] if sched else None
         xlsx_blocks = _block_sizes(sched)
@@ -118,23 +118,31 @@ def load_from_xlsx(path: str) -> Tuple[List[Course], List[Professor], List[Room]
             else:
                 block_structure = [hours]
 
-        courses.append(Course(
-            id=code,
-            name=name,
-            grade=grade,
-            hours_per_week=hours,
-            course_type=course_type,
-            professor_id=prof,
-            section=section,
-            department=dept,
-            fixed_rooms=[fixed_room] if fixed_room else [],
-            block_structure=block_structure,
-        ))
+        bid = _base_id(code)
+        counts[bid] = counts.get(bid, 0) + 1
+
+        if bid not in seen:
+            seen[bid] = Course(
+                id=bid,
+                name=name,
+                grade=grade,
+                hours_per_week=hours,
+                course_type=course_type,
+                professor_id=prof,
+                section=1,   # updated below
+                department=dept,
+                fixed_rooms=[fixed_room] if fixed_room else [],
+                block_structure=block_structure,
+            )
 
         if prof:
             prof_names.add(prof)
         if fixed_room:
             room_ids.add(fixed_room)
+
+    # section = 분반 수
+    import dataclasses
+    courses = [dataclasses.replace(c, section=counts[c.id]) for c in seen.values()]
 
     professors = [Professor(id=n, name=n) for n in sorted(prof_names)]
     rooms = [Room(id=rid, name=rid) for rid in sorted(room_ids)]

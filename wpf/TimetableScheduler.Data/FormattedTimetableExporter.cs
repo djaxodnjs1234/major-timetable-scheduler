@@ -136,7 +136,7 @@ public static class FormattedTimetableExporter
                         g.Key,
                         g.Min(a => a.Period),
                         g.Max(a => a.Period),
-                        g.First().RoomId))
+                        string.Join(", ", g.Select(a => a.RoomId).Distinct())))
                     .OrderBy(b => b.StartPeriod)
                     .ToList();
 
@@ -247,12 +247,15 @@ public static class FormattedTimetableExporter
                     ? SectionLabel(course.Section)
                     : "";
 
-                var profName = pMap.TryGetValue(course.ProfessorId ?? "", out var prof)
-                    ? prof.Name
-                    : course.ProfessorId ?? "";
+                var profParts = new List<string>();
+                if (!string.IsNullOrEmpty(course.ProfessorId))
+                    profParts.Add(pMap.TryGetValue(course.ProfessorId, out var mp) ? mp.Name : course.ProfessorId);
+                foreach (var pid in course.CoteachProfs)
+                    if (!string.IsNullOrEmpty(pid))
+                        profParts.Add(pMap.TryGetValue(pid, out var cp) ? cp.Name : pid);
+                var profStr = string.Join(", ", profParts);
 
-                cellRange.Value = BuildCellText(
-                    course.Name, section, profName, course.Grade, block.RoomId);
+                cellRange.Value = BuildCellText(course.Name, section, profStr, block.Rooms);
 
                 cellRange.Style.Fill.BackgroundColor = fill;
                 cellRange.Style.Alignment.WrapText   = true;
@@ -377,19 +380,13 @@ public static class FormattedTimetableExporter
             ws.Row(PeriodRow(p)).Height = 72;
     }
 
-    private static string BuildCellText(
-        string name, string section, string profName, int grade, string roomId)
+    private static string BuildCellText(string name, string section, string profStr, string rooms)
     {
         var sb = new System.Text.StringBuilder();
         sb.Append(name);
-        sb.Append('\n');
-        sb.Append(section);
-        sb.Append('\n');
-        sb.Append(profName);
-        sb.Append('\n');
-        sb.Append(grade > 0 ? $"{grade}학년" : "");
-        sb.Append('\n');
-        sb.Append(roomId);
+        if (!string.IsNullOrEmpty(section)) { sb.Append('\n'); sb.Append(section); }
+        if (!string.IsNullOrEmpty(profStr)) { sb.Append('\n'); sb.Append(profStr); }
+        if (!string.IsNullOrEmpty(rooms))   { sb.Append('\n'); sb.Append(rooms); }
         return sb.ToString();
     }
 
@@ -422,7 +419,7 @@ public static class FormattedTimetableExporter
         string CourseId,
         int StartPeriod,
         int EndPeriod,
-        string RoomId);
+        string Rooms);
 
     private sealed record GradeLayout(
         int Grade,

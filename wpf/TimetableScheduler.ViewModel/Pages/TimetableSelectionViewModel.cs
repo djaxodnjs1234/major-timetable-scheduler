@@ -52,7 +52,7 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         var assignments = value.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
             .ToList();
-        Preview.Render(assignments, _workspace.Courses);
+        Preview.Render(assignments, _workspace.ExpandedCourses);
     }
 
     [RelayCommand]
@@ -70,7 +70,7 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         FormattedTimetableExporter.Export(
             SelectedTimetable.Name,
             SelectedTimetable.Assignments,
-            _workspace.Courses,
+            _workspace.ExpandedCourses,
             _workspace.Professors,
             path);
     }

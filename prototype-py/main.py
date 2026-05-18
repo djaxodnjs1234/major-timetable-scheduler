@@ -8,6 +8,7 @@ from csp import build_and_solve_diverse
 from scoring import rank_solutions, SC_WEIGHTS
 from ui import launch
 from domain import derive_auto_retakes
+from domain.models import expand_sections
 
 XLSX_PATH = "개설강좌 편람.xlsx"
 N_SOLUTIONS = 1             # 다양성 모드로 모을 후보 해 수
@@ -43,11 +44,12 @@ def main():
     print("  전공 시간표 자동 생성 시스템 — 프로토타입")
     print("=" * 60)
 
-    courses, professors, rooms, crosses, manual_retakes = _load_data()
+    raw_courses, professors, rooms, crosses, manual_retakes = _load_data()
+    courses = expand_sections(raw_courses)
     auto_retakes = (derive_auto_retakes(courses)
                     if AUTO_RETAKES_DEFAULT else [])
     retakes = auto_retakes + manual_retakes
-    print(f"[loader] 과목 {len(courses)}개, 교수 {len(professors)}명, "
+    print(f"[loader] 과목 {len(courses)}개(분반 전개), 교수 {len(professors)}명, "
           f"강의실 {len(rooms)}개, Cross {len(crosses)}개, "
           f"재수강 시나리오 {len(retakes)}개 "
           f"(자동 {len(auto_retakes)} + 수동 {len(manual_retakes)})")

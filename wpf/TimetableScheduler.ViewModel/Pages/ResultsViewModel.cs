@@ -88,7 +88,7 @@ public sealed partial class ResultsViewModel : PageViewModelBase
     private void RenderCurrent()
     {
         var assignment = SelectedSolution?.Assignment ?? Array.Empty<Solver.SolutionAssignment>();
-        var courses = _workspace.Courses;
+        var courses = _workspace.ExpandedCourses;
 
         Unified.Render(assignment, courses);
 

@@ -176,7 +176,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private Course? SelectedCourse => SelectedAssignment == null
         ? null
-        : _workspace.Courses.FirstOrDefault(c => c.Id == SelectedAssignment.CourseId);
+        : _workspace.ExpandedCourses.FirstOrDefault(c => c.Id == SelectedAssignment.CourseId);
 
     partial void OnSelectedAssignmentChanged(CellAssignment? value)
     {
@@ -254,8 +254,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (target.Grade != SelectedAssignment.Grade)
             return CrossHoverState.Hidden("같은 학년 수업끼리만 크로스를 만들 수 있습니다.");
 
-        var selectedCourse = _workspace.Courses.FirstOrDefault(c => c.Id == SelectedAssignment.CourseId);
-        var targetCourse = _workspace.Courses.FirstOrDefault(c => c.Id == target.CourseId);
+        var selectedCourse = _workspace.ExpandedCourses.FirstOrDefault(c => c.Id == SelectedAssignment.CourseId);
+        var targetCourse = _workspace.ExpandedCourses.FirstOrDefault(c => c.Id == target.CourseId);
         if (selectedCourse == null || targetCourse == null)
             return CrossHoverState.Hidden("수업 정보를 확인할 수 없습니다.");
         var existingLink = GetCrossLinkForCourse(SelectedAssignment.CourseId);
@@ -396,7 +396,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         var rows = _working.Select(a => new TimetableAssignmentRow(a.CourseId, a.Day, a.Period, a.RoomId)).ToList();
         var name = string.IsNullOrWhiteSpace(SaveName) ? "시간표" : SaveName.Trim();
-        FormattedTimetableExporter.Export(name, rows, _workspace.Courses, _workspace.Professors, path);
+        FormattedTimetableExporter.Export(name, rows, _workspace.ExpandedCourses, _workspace.Professors, path);
     }
 
     private bool CanExport() => BaseSolution != null;
@@ -538,7 +538,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (targetGrade != assignment.Grade)
             return new[] { "선택한 수업은 같은 학년 열 안에서만 이동할 수 있습니다." };
 
-        var course = _workspace.Courses.First(c => c.Id == assignment.CourseId);
+        var course = _workspace.ExpandedCourses.First(c => c.Id == assignment.CourseId);
         if (course.IsFixed)
             return new[] { "HC-13 고정 시간표 보존 위반: 고정된 수업은 이동할 수 없습니다." };
 
@@ -561,7 +561,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (blockingAssignments.Count > 0)
         {
             var blockingCourses = blockingAssignments
-                .Select(a => _workspace.Courses.FirstOrDefault(c => c.Id == a.CourseId))
+                .Select(a => _workspace.ExpandedCourses.FirstOrDefault(c => c.Id == a.CourseId))
                 .Where(c => c != null)
                 .Cast<Course>()
                 .ToList();
@@ -692,7 +692,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private void Rerender()
     {
         Grid.SetCrossParallelOrder(BuildCrossParallelOrder());
-        Grid.Render(_working, _workspace.Courses);
+        Grid.Render(_working, _workspace.ExpandedCourses);
         Grid.SetCrossLinkLabels(BuildCrossLinkLabels());
         Conflicts.Clear();
         foreach (var c in DetectConflicts(_working))
@@ -702,7 +702,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private IReadOnlyList<ConflictItem> DetectConflicts(IReadOnlyList<SolutionAssignment> assignment) =>
         ConflictDetector.Detect(
             assignment,
-            _workspace.Courses,
+            _workspace.ExpandedCourses,
             _workspace.Professors,
             _workingCrossGroups,
             IsManualGradeOverlapAllowed);
@@ -941,7 +941,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private bool CanShareSlotByCross(CellAssignment left, CellAssignment right)
     {
         if (!IsCrossPair(left, right)) return false;
-        var rightCourse = _workspace.Courses.FirstOrDefault(c => c.Id == right.CourseId);
+        var rightCourse = _workspace.ExpandedCourses.FirstOrDefault(c => c.Id == right.CourseId);
         return rightCourse != null && !rightCourse.IsFixed;
     }
 
@@ -1008,8 +1008,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private bool IsCrossLinkStillValid(ManualCrossLink link)
     {
-        var c1 = _workspace.Courses.FirstOrDefault(c => c.Id == link.CourseIdA);
-        var c2 = _workspace.Courses.FirstOrDefault(c => c.Id == link.CourseIdB);
+        var c1 = _workspace.ExpandedCourses.FirstOrDefault(c => c.Id == link.CourseIdA);
+        var c2 = _workspace.ExpandedCourses.FirstOrDefault(c => c.Id == link.CourseIdB);
         return c1 != null
             && c2 != null
             && c1.Grade == c2.Grade
@@ -1039,7 +1039,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         $"{CourseDisplayName(link.CourseIdA)} ↔ {CourseDisplayName(link.CourseIdB)}";
 
     private string CourseDisplayName(string id) =>
-        _workspace.Courses.FirstOrDefault(c => c.Id == id)?.Name ?? id;
+        _workspace.ExpandedCourses.FirstOrDefault(c => c.Id == id)?.Name ?? id;
 
     private IReadOnlyDictionary<string, int> BuildCrossParallelOrder()
     {
