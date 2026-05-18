@@ -238,7 +238,6 @@ public partial class UnifiedTimetableControl : UserControl
 
     private static Border MakeChipBorder(CellAssignment a, Brush bg, string? crossLabel)
     {
-        var root = new Grid();
         var panel = new StackPanel { Margin = new Thickness(1) };
         var nameText = string.IsNullOrEmpty(a.SectionLabel)
             ? a.CourseName
@@ -271,13 +270,12 @@ public partial class UnifiedTimetableControl : UserControl
                 TextWrapping = TextWrapping.Wrap,
                 Foreground = Brushes.DarkSlateGray,
             });
-        root.Children.Add(panel);
         return new Border
         {
             BorderBrush = CellBorder,
             BorderThickness = new Thickness(0.5),
             Background = bg,
-            Child = root,
+            Child = panel,
             ToolTip = string.IsNullOrWhiteSpace(crossLabel) ? null : $"크로스: {crossLabel}",
         };
     }
@@ -324,11 +322,25 @@ public partial class UnifiedTimetableControl : UserControl
     {
         if (sender is not Border border
             || border.Tag is not ValueTuple<int, int, int, int, CellAssignment?> tup
-            || tup.Item5 == null
-            || border.Child is not Grid root)
+            || tup.Item5 == null)
             return;
 
-        RemoveCrossBadge(root);
+        // Wrap StackPanel in a Grid for badge overlay if not already done
+        Grid overlay;
+        if (border.Child is Grid g)
+        {
+            overlay = g;
+            RemoveCrossBadge(overlay);
+        }
+        else if (border.Child is StackPanel sp)
+        {
+            overlay = new Grid();
+            border.Child = null;
+            overlay.Children.Add(sp);
+            border.Child = overlay;
+        }
+        else return;
+
         var args = new CellClickedEventArgs(tup.Item1, tup.Item2, tup.Item3, tup.Item4, tup.Item5);
         var state = CrossHoverEvaluator?.Invoke(args) ?? CrossHoverState.Hidden();
         border.ToolTip = string.IsNullOrWhiteSpace(state.Reason) ? null : state.Reason;
@@ -351,13 +363,19 @@ public partial class UnifiedTimetableControl : UserControl
             Tag = args,
         };
         badge.Click += OnCrossBadgeClick;
-        root.Children.Add(badge);
+        overlay.Children.Add(badge);
     }
 
     private static void OnCourseMouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        if (sender is Border border && border.Child is Grid root)
-            RemoveCrossBadge(root);
+        if (sender is not Border border || border.Child is not Grid overlay) return;
+        RemoveCrossBadge(overlay);
+        // Unwrap back to StackPanel when no badge remains
+        if (overlay.Children.Count == 1 && overlay.Children[0] is StackPanel sp)
+        {
+            overlay.Children.Clear();
+            border.Child = sp;
+        }
     }
 
     private void OnCrossBadgeClick(object sender, RoutedEventArgs e)
