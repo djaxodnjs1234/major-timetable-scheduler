@@ -29,7 +29,10 @@ public static class TimetableXlsxService
     public static List<TimetableAssignmentRow> Import(string path)
     {
         using var wb = new XLWorkbook(path);
-        var ws = wb.Worksheet(1);
+        // Prefer the hidden "데이터" sheet (round-trip from FormattedTimetableExporter)
+        var ws = wb.Worksheets.TryGetWorksheet("데이터", out var dataWs)
+            ? dataWs
+            : wb.Worksheet(1);
         var result = new List<TimetableAssignmentRow>();
         bool first = true;
         foreach (var row in ws.RowsUsed())
