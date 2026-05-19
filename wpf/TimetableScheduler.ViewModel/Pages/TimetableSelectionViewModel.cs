@@ -29,6 +29,7 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
     {
         _workspace = workspace;
         _workspace.SavedTimetables.CollectionChanged += OnSavedTimetablesChanged;
+        SelectedTimetable = SavedTimetables.FirstOrDefault();
     }
 
     private void OnSavedTimetablesChanged(object? sender, NotifyCollectionChangedEventArgs e)
@@ -51,7 +52,7 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         var assignments = value.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
             .ToList();
-        Preview.Render(assignments, _workspace.Courses);
+        Preview.Render(assignments, _workspace.ExpandedCourses);
     }
 
     [RelayCommand]
@@ -69,10 +70,24 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         FormattedTimetableExporter.Export(
             SelectedTimetable.Name,
             SelectedTimetable.Assignments,
-            _workspace.Courses,
+            _workspace.ExpandedCourses,
             _workspace.Professors,
             path);
     }
 
     private bool CanExport() => SelectedTimetable != null;
+
+    [RelayCommand]
+    private void ImportXlsx(string path)
+    {
+        var rows = TimetableXlsxService.Import(path);
+        if (rows.Count == 0) return;
+        var name = System.IO.Path.GetFileNameWithoutExtension(path);
+        var assignments = rows
+            .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
+            .ToList();
+        _workspace.SaveTimetable(name, assignments);
+        SelectedTimetable = SavedTimetables.FirstOrDefault(t => t.Name == name)
+            ?? SavedTimetables.FirstOrDefault();
+    }
 }

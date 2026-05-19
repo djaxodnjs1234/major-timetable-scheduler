@@ -50,9 +50,10 @@ public class WorkspaceServiceTests : IDisposable
     public void DeleteCourse_PersistsImmediately()
     {
         var ws = new WorkspaceService(_repo);
-        ws.AddCourse(new Course { Id = "A", Name = "n1", Grade = 1, HoursPerWeek = 1 });
+        var courseA = new Course { Id = "A", Name = "n1", Grade = 1, HoursPerWeek = 1 };
+        ws.AddCourse(courseA);
         ws.AddCourse(new Course { Id = "B", Name = "n2", Grade = 1, HoursPerWeek = 1 });
-        ws.DeleteCourse("A");
+        ws.DeleteCourse(courseA);
 
         var fresh = new WorkspaceService(_repo);
         Assert.Single(fresh.Courses);

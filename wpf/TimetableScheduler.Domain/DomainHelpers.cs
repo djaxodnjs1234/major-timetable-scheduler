@@ -19,6 +19,44 @@ public static class DomainHelpers
         return ids;
     }
 
+    public static List<Course> ExpandSections(IEnumerable<Course> courses)
+    {
+        var result = new List<Course>();
+        foreach (var c in courses)
+        {
+            int n = c.Section;
+            // ID에 이미 분반 접미사가 있으면 개별 분반으로 이미 저장된 것 — 그대로 유지
+            bool alreadyExpanded = BaseId(c.Id) != c.Id;
+            if (n <= 1 || alreadyExpanded)
+            {
+                result.Add(CloneCourse(c, c.Id, n));
+            }
+            else
+            {
+                for (int s = 1; s <= n; s++)
+                    result.Add(CloneCourse(c, $"{c.Id}-{s:D2}", s));
+            }
+        }
+        return result;
+    }
+
+    private static Course CloneCourse(Course src, string newId, int newSection) => new()
+    {
+        Id = newId,
+        Name = src.Name,
+        Grade = src.Grade,
+        HoursPerWeek = src.HoursPerWeek,
+        CourseType = src.CourseType,
+        ProfessorId = src.ProfessorId,
+        Section = newSection,
+        Department = src.Department,
+        FixedRooms = new List<string>(src.FixedRooms),
+        BlockStructure = new List<int>(src.BlockStructure),
+        IsFixed = src.IsFixed,
+        FixedSlots = new List<TimeSlot>(src.FixedSlots),
+        CoteachProfs = new List<string>(src.CoteachProfs),
+    };
+
     public static List<RetakeScenario> DeriveAutoRetakes(
         IEnumerable<Course> courses,
         IEnumerable<int>? grades = null)

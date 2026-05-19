@@ -4,19 +4,20 @@ internal static class SqliteSchema
 {
     public const string CreateAll = @"
 CREATE TABLE IF NOT EXISTS Courses (
-    Id                TEXT PRIMARY KEY,
+    Id                TEXT NOT NULL,
     Name              TEXT NOT NULL,
     Grade             INTEGER NOT NULL,
     HoursPerWeek      INTEGER NOT NULL,
     CourseType        TEXT NOT NULL,
     ProfessorId       TEXT NOT NULL,
-    Section           INTEGER NOT NULL,
+    Section           INTEGER NOT NULL DEFAULT 1,
     Department        TEXT NOT NULL,
     FixedRoomsJson    TEXT NOT NULL,
     BlockStructureJson TEXT NOT NULL,
     IsFixed           INTEGER NOT NULL,
     FixedSlotsJson    TEXT NOT NULL,
-    CoteachProfsJson  TEXT NOT NULL
+    CoteachProfsJson  TEXT NOT NULL,
+    PRIMARY KEY (Id, Section)
 );
 
 CREATE TABLE IF NOT EXISTS Professors (

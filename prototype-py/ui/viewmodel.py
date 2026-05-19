@@ -13,7 +13,7 @@ import time
 
 from domain.models import (
     CrossGroup, Professor, Room,
-    derive_auto_retakes, base_id as _base_id,
+    derive_auto_retakes, base_id as _base_id, expand_sections as _expand_sections,
 )
 
 
@@ -27,7 +27,7 @@ class AppState:
                  crosses=None, retakes=None,
                  auto_retakes=True, scores=None):
         self.solutions = list(solutions or [])
-        self.courses = list(courses)
+        self.courses = list(_expand_sections(courses))
         self.professors = list(professors)
         self.rooms = list(rooms)
         self.crosses = list(crosses or [])

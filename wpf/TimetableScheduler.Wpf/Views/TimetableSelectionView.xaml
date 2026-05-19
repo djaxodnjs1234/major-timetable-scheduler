@@ -22,7 +22,10 @@
                     <StackPanel Orientation="Horizontal">
                         <TextBlock Text="저장된 시간표" FontWeight="Bold"
                                    VerticalAlignment="Center" Margin="0,0,8,0" />
-                        <Button Content="📤 xlsx 내보내기"
+                        <Button Content="불러오기"
+                                Click="OnImportXlsxClick"
+                                Padding="6,3" FontSize="11" Margin="0,0,4,0" />
+                        <Button Content="내보내기"
                                 Click="OnExportXlsxClick"
                                 Padding="6,3" FontSize="11" />
                     </StackPanel>
@@ -62,9 +65,8 @@
                                                    FontSize="11" Foreground="#888" Margin="0,2,0,0" />
                                     </StackPanel>
                                     <Button Grid.Column="1" Content="삭제"
-                                            Command="{Binding DataContext.DeleteTimetableCommand,
-                                                      RelativeSource={RelativeSource AncestorType=ListBox}}"
-                                            CommandParameter="{Binding}"
+                                            Click="OnDeleteClick"
+                                            Tag="{Binding}"
                                             Padding="6,3" Margin="8,0,0,0"
                                             Background="#BA1A1A" Foreground="White"
                                             FontSize="11" VerticalAlignment="Center" />

@@ -20,7 +20,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public WorkspaceService Workspace => _workspace;
 
     [ObservableProperty]
-    private InputCategory selectedCategory = InputCategory.Professor;
+    private InputCategory selectedCategory = InputCategory.Course;
 
     [ObservableProperty]
     private object? selectedItem;
@@ -92,7 +92,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         switch (SelectedItem)
         {
             case Professor p: _workspace.DeleteProfessor(p.Id); break;
-            case Course c: _workspace.DeleteCourse(c.Id); break;
+            case Course c: _workspace.DeleteCourse(c); break;
             case Room r: _workspace.DeleteRoom(r.Id); break;
         }
         SelectedItem = null;

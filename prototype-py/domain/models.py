@@ -70,6 +70,27 @@ def base_id(cid: str) -> str:
     return cid.rsplit("-", 1)[0] if "-" in cid else cid
 
 
+def expand_sections(courses):
+    """section > 1 인 과목을 개별 분반으로 전개.
+
+    Course(id="GA1004", section=2) →
+        [Course(id="GA1004-01", section=1), Course(id="GA1004-02", section=2)]
+
+    ID에 이미 분반 접미사가 있으면(base_id(c.id) != c.id) 이미 전개된 것이므로 그대로 유지.
+    """
+    import dataclasses
+    result = []
+    for c in courses:
+        n = c.section
+        already_expanded = base_id(c.id) != c.id
+        if n <= 1 or already_expanded:
+            result.append(dataclasses.replace(c))
+        else:
+            for s in range(1, n + 1):
+                result.append(dataclasses.replace(c, id=f"{c.id}-{s:02d}", section=s))
+    return result
+
+
 def derive_auto_retakes(courses, grades=(1, 2, 3, 4)):
     """모든 (상위학년, 하위학년 전필 base_id) 쌍을 RetakeScenario 로 생성."""
     majors_by_grade = {}

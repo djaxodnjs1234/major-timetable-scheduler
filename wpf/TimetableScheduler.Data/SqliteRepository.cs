@@ -40,6 +40,27 @@ public sealed class SqliteRepository
     {
         using var conn = Open();
         conn.Execute(SqliteSchema.CreateAll);
+        MigrateCoursePkIfNeeded(conn);
+    }
+
+    private static void MigrateCoursePkIfNeeded(SqliteConnection conn)
+    {
+        var ddl = conn.QueryFirstOrDefault<string>(
+            "SELECT sql FROM sqlite_master WHERE type='table' AND name='Courses'");
+        if (ddl == null || ddl.Contains("PRIMARY KEY (Id, Section)")) return;
+
+        // Recreate Courses table with composite primary key, preserving data
+        conn.Execute("CREATE TABLE Courses_v2 (" +
+            "Id TEXT NOT NULL, Name TEXT NOT NULL, Grade INTEGER NOT NULL," +
+            "HoursPerWeek INTEGER NOT NULL, CourseType TEXT NOT NULL," +
+            "ProfessorId TEXT NOT NULL, Section INTEGER NOT NULL DEFAULT 1," +
+            "Department TEXT NOT NULL, FixedRoomsJson TEXT NOT NULL," +
+            "BlockStructureJson TEXT NOT NULL, IsFixed INTEGER NOT NULL," +
+            "FixedSlotsJson TEXT NOT NULL, CoteachProfsJson TEXT NOT NULL," +
+            "PRIMARY KEY (Id, Section))");
+        conn.Execute("INSERT OR IGNORE INTO Courses_v2 SELECT * FROM Courses");
+        conn.Execute("DROP TABLE Courses");
+        conn.Execute("ALTER TABLE Courses_v2 RENAME TO Courses");
     }
 
     public AppData LoadAll()

@@ -13,6 +13,8 @@ public sealed record CellAssignment(
     int HoursPerWeek,
     bool IsFixed)
 {
+    public IReadOnlyList<string> CoteachProfIds { get; init; } = Array.Empty<string>();
+
     public string SectionLabel => Section >= 1 ? ((char)('A' + Section - 1)).ToString() : "";
 
     public string RoomsLabel
@@ -20,9 +22,7 @@ public sealed record CellAssignment(
         get
         {
             if (Rooms.Count == 0) return "";
-            var sorted = Rooms.OrderBy(r => r, StringComparer.Ordinal).ToList();
-            if (sorted.Count <= 3) return string.Join(",", sorted);
-            return $"{sorted[0]} 외 {sorted.Count - 1}";
+            return string.Join("\n", Rooms.OrderBy(r => r, StringComparer.Ordinal));
         }
     }
 
@@ -34,5 +34,8 @@ public sealed record CellAssignment(
             course.Id, course.Name, course.ProfessorId,
             course.Grade, course.Section,
             rooms.ToList(), rowSpan,
-            course.HoursPerWeek, course.IsFixed);
+            course.HoursPerWeek, course.IsFixed)
+        {
+            CoteachProfIds = course.CoteachProfs.ToList(),
+        };
 }

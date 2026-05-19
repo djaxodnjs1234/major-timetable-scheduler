@@ -17,7 +17,6 @@ public static class XlsxLoader
     };
 
     private static readonly Regex DayPeriodRegex = new(@"^([월화수목금])(\d+)$", RegexOptions.Compiled);
-    private static readonly Regex SectionRegex = new(@"-(\d+)$", RegexOptions.Compiled);
     private static readonly Regex SplitRegex = new(@"[,\s]+", RegexOptions.Compiled);
 
     public static XlsxLoadResult Load(string path)
@@ -25,9 +24,11 @@ public static class XlsxLoader
         using var wb = new XLWorkbook(path);
         var sheet = wb.Worksheet(1);
 
-        var courses = new List<Course>();
         var profNames = new HashSet<string>();
         var roomIds = new HashSet<string>();
+        // (baseId, representative course) — first row per base wins
+        var seen = new Dictionary<string, Course>();
+        var counts = new Dictionary<string, int>();
 
         foreach (var row in sheet.RowsUsed())
         {
@@ -57,9 +58,6 @@ public static class XlsxLoader
             var dept = Cell("R");
             var schedStr = Cell("S");
 
-            var sectionMatch = SectionRegex.Match(code);
-            var section = sectionMatch.Success ? int.Parse(sectionMatch.Groups[1].Value) : 1;
-
             var sched = ParseSchedule(schedStr);
             var fixedRoom = sched.Count > 0 ? sched[0].Room : null;
             var xlsxBlocks = sched.Select(s => s.Periods.Count).ToList();
@@ -70,23 +68,34 @@ public static class XlsxLoader
             else if (xlsxBlocks.Count > 0 && xlsxBlocks.Sum() == hours) blockStructure = xlsxBlocks;
             else blockStructure = new List<int> { hours };
 
-            courses.Add(new Course
+            var baseId = DomainHelpers.BaseId(code);
+            counts[baseId] = counts.GetValueOrDefault(baseId, 0) + 1;
+
+            if (!seen.ContainsKey(baseId))
             {
-                Id = code,
-                Name = name,
-                Grade = grade,
-                HoursPerWeek = hours,
-                CourseType = courseType,
-                ProfessorId = prof,
-                Section = section,
-                Department = dept,
-                FixedRooms = fixedRoom != null ? new List<string> { fixedRoom } : new List<string>(),
-                BlockStructure = blockStructure,
-            });
+                seen[baseId] = new Course
+                {
+                    Id = baseId,
+                    Name = name,
+                    Grade = grade,
+                    HoursPerWeek = hours,
+                    CourseType = courseType,
+                    ProfessorId = prof,
+                    Section = 1,   // updated below
+                    Department = dept,
+                    FixedRooms = fixedRoom != null ? new List<string> { fixedRoom } : new List<string>(),
+                    BlockStructure = blockStructure,
+                };
+            }
 
             if (!string.IsNullOrEmpty(prof)) profNames.Add(prof);
             if (fixedRoom != null) roomIds.Add(fixedRoom);
         }
+
+        // Set Section = number of sections found per base
+        var courses = seen.Values.ToList();
+        foreach (var c in courses)
+            c.Section = counts[c.Id];
 
         var professors = profNames.OrderBy(n => n)
             .Select(n => new Professor { Id = n, Name = n }).ToList();
