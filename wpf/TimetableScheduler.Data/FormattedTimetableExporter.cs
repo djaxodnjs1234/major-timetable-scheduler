@@ -110,6 +110,23 @@ public static class FormattedTimetableExporter
 
         ws.SheetView.Freeze(5, 1);
 
+        // Hidden data sheet for round-trip import
+        var dataWs = wb.AddWorksheet("데이터");
+        dataWs.Cell(1, 1).Value = "과목ID";
+        dataWs.Cell(1, 2).Value = "요일번호";
+        dataWs.Cell(1, 3).Value = "교시";
+        dataWs.Cell(1, 4).Value = "강의실ID";
+        int dr = 2;
+        foreach (var row in aList)
+        {
+            dataWs.Cell(dr, 1).Value = row.CourseId;
+            dataWs.Cell(dr, 2).Value = row.Day;
+            dataWs.Cell(dr, 3).Value = row.Period;
+            dataWs.Cell(dr, 4).Value = row.RoomId;
+            dr++;
+        }
+        dataWs.Visibility = XLWorksheetVisibility.Hidden;
+
         wb.SaveAs(path);
     }
 
