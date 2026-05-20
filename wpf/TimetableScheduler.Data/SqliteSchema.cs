@@ -49,5 +49,24 @@ CREATE TABLE IF NOT EXISTS SavedTimetables (
     CreatedAt       TEXT NOT NULL,
     AssignmentsJson TEXT NOT NULL
 );
+
+CREATE TABLE IF NOT EXISTS SavedTimetableManualCrossLinks (
+    Id              TEXT PRIMARY KEY,
+    SavedTimetableId TEXT NOT NULL,
+    SourceCourseId  TEXT NOT NULL,
+    SourceGrade     INTEGER NOT NULL,
+    SourceSection   TEXT NULL,
+    SourceDay       INTEGER NOT NULL,
+    SourcePeriod    INTEGER NOT NULL,
+    SourceRoomId    TEXT NOT NULL,
+    TargetCourseId  TEXT NOT NULL,
+    TargetGrade     INTEGER NOT NULL,
+    TargetSection   TEXT NULL,
+    TargetDay       INTEGER NOT NULL,
+    TargetPeriod    INTEGER NOT NULL,
+    TargetRoomId    TEXT NOT NULL,
+    PolicyType      TEXT NOT NULL,
+    CreatedAt       TEXT NOT NULL
+);
 ";
 }

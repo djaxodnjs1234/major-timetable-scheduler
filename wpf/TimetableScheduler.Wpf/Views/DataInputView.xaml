@@ -464,8 +464,14 @@
                                 <Button Content="시간표 자동 생성"
                                         Command="{Binding SolveCommand}"
                                         Padding="20,10" FontWeight="Bold" FontSize="13"
-                                        Background="{StaticResource PrimaryBrush}" Foreground="White"
-                                        Margin="0,0,8,0" />
+                                        Margin="0,0,8,0">
+                                    <Button.Style>
+                                        <Style TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
+                                            <Setter Property="Background" Value="{StaticResource PrimaryBrush}" />
+                                            <Setter Property="Foreground" Value="White" />
+                                        </Style>
+                                    </Button.Style>
+                                </Button>
                                 <Button Content="취소" Command="{Binding CancelCommand}"
                                         Padding="14,10"
                                         IsEnabled="{Binding IsSolving}" />

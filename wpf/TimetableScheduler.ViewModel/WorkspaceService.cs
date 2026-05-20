@@ -43,12 +43,20 @@ public sealed class WorkspaceService
         RaiseChanged();
     }
 
-    public void SaveTimetable(string name, IReadOnlyList<SolutionAssignment> assignments)
+    public void SaveTimetable(
+        string name,
+        IReadOnlyList<SolutionAssignment> assignments,
+        IReadOnlyList<SavedManualCrossLinkRow>? manualCrossLinks = null)
     {
         var rows = assignments
             .Select(a => new TimetableAssignmentRow(a.CourseId, a.Day, a.Period, a.RoomId))
             .ToList();
-        var record = new SavedTimetableRecord(Guid.NewGuid().ToString(), name, DateTime.Now, rows);
+        var record = new SavedTimetableRecord(
+            Guid.NewGuid().ToString(),
+            name,
+            DateTime.Now,
+            rows,
+            manualCrossLinks?.ToList() ?? new List<SavedManualCrossLinkRow>());
         _repo.UpsertSavedTimetable(record);
         SavedTimetables.Insert(0, record);
     }

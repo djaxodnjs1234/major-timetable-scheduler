@@ -121,22 +121,64 @@ public sealed class SqliteRepository
         public string AssignmentsJson { get; set; } = "[]";
     }
 
+    private sealed class SavedManualCrossLinkDbRow
+    {
+        public string SavedTimetableId { get; set; } = "";
+        public string SourceCourseId { get; set; } = "";
+        public int SourceGrade { get; set; }
+        public string? SourceSection { get; set; }
+        public int SourceDay { get; set; }
+        public int SourcePeriod { get; set; }
+        public string SourceRoomId { get; set; } = "";
+        public string TargetCourseId { get; set; } = "";
+        public int TargetGrade { get; set; }
+        public string? TargetSection { get; set; }
+        public int TargetDay { get; set; }
+        public int TargetPeriod { get; set; }
+        public string TargetRoomId { get; set; } = "";
+        public string PolicyType { get; set; } = "";
+    }
+
     public List<SavedTimetableRecord> LoadSavedTimetables()
     {
         using var conn = Open();
+        var crossLinks = conn.Query<SavedManualCrossLinkDbRow>(
+                "SELECT * FROM SavedTimetableManualCrossLinks")
+            .GroupBy(r => r.SavedTimetableId)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<SavedManualCrossLinkRow>)g
+                    .Select(r => new SavedManualCrossLinkRow(
+                        r.SourceCourseId,
+                        r.SourceGrade,
+                        r.SourceSection,
+                        r.SourceDay,
+                        r.SourcePeriod,
+                        r.SourceRoomId,
+                        r.TargetCourseId,
+                        r.TargetGrade,
+                        r.TargetSection,
+                        r.TargetDay,
+                        r.TargetPeriod,
+                        r.TargetRoomId,
+                        r.PolicyType))
+                    .ToList());
+
         return conn.Query<SavedTimetableRow>(
                 "SELECT * FROM SavedTimetables ORDER BY CreatedAt DESC")
             .Select(r => new SavedTimetableRecord(
                 r.Id,
                 r.Name,
                 DateTime.Parse(r.CreatedAt),
-                JsonSerializer.Deserialize<List<TimetableAssignmentRow>>(r.AssignmentsJson) ?? new()))
+                JsonSerializer.Deserialize<List<TimetableAssignmentRow>>(r.AssignmentsJson) ?? new(),
+                crossLinks.TryGetValue(r.Id, out var links) ? links : Array.Empty<SavedManualCrossLinkRow>()))
             .ToList();
     }
 
     public void UpsertSavedTimetable(SavedTimetableRecord t)
     {
         using var conn = Open();
+        using var tx = conn.BeginTransaction();
         conn.Execute(
             @"INSERT OR REPLACE INTO SavedTimetables (Id, Name, CreatedAt, AssignmentsJson)
               VALUES (@Id, @Name, @CreatedAt, @AssignmentsJson)",
@@ -146,12 +188,49 @@ public sealed class SqliteRepository
                 t.Name,
                 CreatedAt = t.CreatedAt.ToString("O"),
                 AssignmentsJson = JsonSerializer.Serialize(t.Assignments),
-            });
+            },
+            tx);
+
+        conn.Execute("DELETE FROM SavedTimetableManualCrossLinks WHERE SavedTimetableId = @Id", new { t.Id }, tx);
+
+        foreach (var link in t.ManualCrossLinks ?? Array.Empty<SavedManualCrossLinkRow>())
+        {
+            conn.Execute(
+                @"INSERT INTO SavedTimetableManualCrossLinks
+                  (Id, SavedTimetableId, SourceCourseId, SourceGrade, SourceSection, SourceDay, SourcePeriod, SourceRoomId,
+                   TargetCourseId, TargetGrade, TargetSection, TargetDay, TargetPeriod, TargetRoomId, PolicyType, CreatedAt)
+                  VALUES
+                  (@Id, @SavedTimetableId, @SourceCourseId, @SourceGrade, @SourceSection, @SourceDay, @SourcePeriod, @SourceRoomId,
+                   @TargetCourseId, @TargetGrade, @TargetSection, @TargetDay, @TargetPeriod, @TargetRoomId, @PolicyType, @CreatedAt)",
+                new
+                {
+                    Id = Guid.NewGuid().ToString(),
+                    SavedTimetableId = t.Id,
+                    link.SourceCourseId,
+                    link.SourceGrade,
+                    link.SourceSection,
+                    link.SourceDay,
+                    link.SourcePeriod,
+                    link.SourceRoomId,
+                    link.TargetCourseId,
+                    link.TargetGrade,
+                    link.TargetSection,
+                    link.TargetDay,
+                    link.TargetPeriod,
+                    link.TargetRoomId,
+                    link.PolicyType,
+                    CreatedAt = t.CreatedAt.ToString("O"),
+                },
+                tx);
+        }
+
+        tx.Commit();
     }
 
     public void DeleteSavedTimetable(string id)
     {
         using var conn = Open();
+        conn.Execute("DELETE FROM SavedTimetableManualCrossLinks WHERE SavedTimetableId = @Id", new { Id = id });
         conn.Execute("DELETE FROM SavedTimetables WHERE Id = @Id", new { Id = id });
     }
 

@@ -84,7 +84,6 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         _lastCourses = courses;
 
         var courseMap = courses.ToDictionary(c => c.Id);
-        var runs = TimetableRuns.ComputeRuns(assignment);
 
         // (cid, d, p) → set of rooms
         var roomsBySlot = new Dictionary<(string Cid, int Day, int Period), HashSet<string>>();
@@ -96,6 +95,8 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
                 roomsBySlot[key] = set = new HashSet<string>();
             set.Add(a.RoomId);
         }
+
+        var runs = ComputeVisualRuns(roomsBySlot, courseMap);
 
         // For each (day, period), count distinct courses per grade — used to determine column width.
         // max_width[(d, grade)] = max over periods of (# courses of that grade in that slot)
@@ -174,6 +175,64 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         Cells = cells;
 
         Rebuilt?.Invoke(this, EventArgs.Empty);
+    }
+
+    private static RunInfo ComputeVisualRuns(
+        IReadOnlyDictionary<(string Cid, int Day, int Period), HashSet<string>> roomsBySlot,
+        IReadOnlyDictionary<string, Course> courseMap)
+    {
+        var runLen = new Dictionary<(string CourseId, int Day, int Period), int>();
+        var inside = new HashSet<(string CourseId, int Day, int Period)>();
+
+        foreach (var group in roomsBySlot.Keys.GroupBy(k => (k.Cid, k.Day)))
+        {
+            var ordered = group.OrderBy(k => k.Period).ToList();
+            int i = 0;
+            while (i < ordered.Count)
+            {
+                int j = i;
+                while (j + 1 < ordered.Count
+                       && ordered[j + 1].Period == ordered[j].Period + 1
+                       && CanMergeAsSameVisualBlock(
+                           ordered[j],
+                           ordered[j + 1],
+                           roomsBySlot,
+                           courseMap))
+                {
+                    j++;
+                }
+
+                var start = ordered[i];
+                runLen[(start.Cid, start.Day, start.Period)] = j - i + 1;
+                for (int k = i + 1; k <= j; k++)
+                {
+                    var current = ordered[k];
+                    inside.Add((current.Cid, current.Day, current.Period));
+                }
+                i = j + 1;
+            }
+        }
+
+        return new RunInfo(runLen, inside);
+    }
+
+    private static bool CanMergeAsSameVisualBlock(
+        (string Cid, int Day, int Period) a,
+        (string Cid, int Day, int Period) b,
+        IReadOnlyDictionary<(string Cid, int Day, int Period), HashSet<string>> roomsBySlot,
+        IReadOnlyDictionary<string, Course> courseMap)
+    {
+        if (a.Cid != b.Cid || a.Day != b.Day) return false;
+        if (!courseMap.TryGetValue(a.Cid, out var left) ||
+            !courseMap.TryGetValue(b.Cid, out var right))
+            return false;
+
+        return left.Id == right.Id
+            && left.Grade == right.Grade
+            && left.Section == right.Section
+            && left.ProfessorId == right.ProfessorId
+            && left.Name == right.Name
+            && roomsBySlot[a].SetEquals(roomsBySlot[b]);
     }
 
     public void SetEditState(

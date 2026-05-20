@@ -30,6 +30,9 @@ public partial class UnifiedTimetableControl : UserControl
         SelectedBorder.Freeze();
     }
 
+    private static string? NullIfBlank(string? value) =>
+        string.IsNullOrWhiteSpace(value) ? null : value;
+
     public sealed class CellClickedEventArgs : EventArgs
     {
         public int Day { get; }
@@ -276,7 +279,7 @@ public partial class UnifiedTimetableControl : UserControl
             BorderThickness = new Thickness(0.5),
             Background = bg,
             Child = panel,
-            ToolTip = string.IsNullOrWhiteSpace(crossLabel) ? null : $"크로스: {crossLabel}",
+            ToolTip = NullIfBlank(crossLabel) is { } label ? $"크로스: {label}" : null,
         };
     }
 
@@ -305,7 +308,7 @@ public partial class UnifiedTimetableControl : UserControl
             Background = bg,
             Tag = (day, period, grade, subColumnIdx, (CellAssignment?)null),
             Cursor = System.Windows.Input.Cursors.Hand,
-            ToolTip = tooltip,
+            ToolTip = NullIfBlank(tooltip),
         };
         border.MouseLeftButtonDown += OnCellClicked;
         return border;
@@ -343,7 +346,7 @@ public partial class UnifiedTimetableControl : UserControl
 
         var args = new CellClickedEventArgs(tup.Item1, tup.Item2, tup.Item3, tup.Item4, tup.Item5);
         var state = CrossHoverEvaluator?.Invoke(args) ?? CrossHoverState.Hidden();
-        border.ToolTip = string.IsNullOrWhiteSpace(state.Reason) ? null : state.Reason;
+        border.ToolTip = NullIfBlank(state.Reason);
         if (!state.CanCreate) return;
 
         var badge = new Button

@@ -82,4 +82,66 @@ public class UnifiedTimetableViewModelTests
         Assert.Equal(2, d0.Grades[0].Grade);
         Assert.Equal(2, d0.Grades[0].Width);  // 2 sections → width 2
     }
+
+    [Fact]
+    public void Render_DifferentSectionsInConsecutivePeriods_NotMerged()
+    {
+        var vm = new UnifiedTimetableViewModel();
+        var courses = new List<Course>
+        {
+            new() { Id = "X-01", Name = "전공", Grade = 2, Section = 1, ProfessorId = "P1" },
+            new() { Id = "X-02", Name = "전공", Grade = 2, Section = 2, ProfessorId = "P1" },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("X-01", 0, 1, "R1"),
+            new("X-02", 0, 2, "R1"),
+        };
+
+        vm.Render(assignment, courses);
+
+        Assert.Contains(vm.Cells, c => c.Period == 1 && c.Assignment.CourseId == "X-01" && c.Assignment.RowSpan == 1);
+        Assert.Contains(vm.Cells, c => c.Period == 2 && c.Assignment.CourseId == "X-02" && c.Assignment.RowSpan == 1);
+    }
+
+    [Fact]
+    public void Render_SameCourseConsecutivePeriodsSameRoom_Merged()
+    {
+        var vm = new UnifiedTimetableViewModel();
+        var courses = new List<Course>
+        {
+            new() { Id = "X-01", Name = "전공", Grade = 2, Section = 1, ProfessorId = "P1" },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("X-01", 0, 1, "R1"),
+            new("X-01", 0, 2, "R1"),
+        };
+
+        vm.Render(assignment, courses);
+
+        var cell = Assert.Single(vm.Cells);
+        Assert.Equal(1, cell.Period);
+        Assert.Equal(2, cell.Assignment.RowSpan);
+    }
+
+    [Fact]
+    public void Render_SameCourseConsecutivePeriodsDifferentRooms_NotMerged()
+    {
+        var vm = new UnifiedTimetableViewModel();
+        var courses = new List<Course>
+        {
+            new() { Id = "X-01", Name = "전공", Grade = 2, Section = 1, ProfessorId = "P1" },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("X-01", 0, 1, "R1"),
+            new("X-01", 0, 2, "R2"),
+        };
+
+        vm.Render(assignment, courses);
+
+        Assert.Contains(vm.Cells, c => c.Period == 1 && c.Assignment.RowSpan == 1);
+        Assert.Contains(vm.Cells, c => c.Period == 2 && c.Assignment.RowSpan == 1);
+    }
 }

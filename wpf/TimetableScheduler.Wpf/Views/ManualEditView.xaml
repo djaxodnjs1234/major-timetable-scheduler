@@ -9,6 +9,51 @@
              mc:Ignorable="d"
              Focusable="True"
              d:DataContext="{d:DesignInstance Type=vm:ManualEditViewModel}">
+    <UserControl.Resources>
+        <Style TargetType="{x:Type Expander}">
+            <Setter Property="Template">
+                <Setter.Value>
+                    <ControlTemplate TargetType="{x:Type Expander}">
+                        <StackPanel>
+                            <ToggleButton IsChecked="{Binding IsExpanded, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                          Background="Transparent"
+                                          BorderThickness="0"
+                                          Padding="0"
+                                          HorizontalContentAlignment="Stretch">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="*" />
+                                        <ColumnDefinition Width="Auto" />
+                                    </Grid.ColumnDefinitions>
+                                    <ContentPresenter ContentSource="Header"
+                                                      VerticalAlignment="Center" />
+                                    <TextBlock x:Name="Chevron"
+                                               Grid.Column="1"
+                                               Text="⌄"
+                                               FontSize="12"
+                                               Foreground="#666"
+                                               Margin="8,0,0,0"
+                                               VerticalAlignment="Center" />
+                                </Grid>
+                            </ToggleButton>
+                            <ContentPresenter x:Name="ExpandSite"
+                                              ContentSource="Content"
+                                              Visibility="Collapsed" />
+                        </StackPanel>
+                        <ControlTemplate.Triggers>
+                            <Trigger Property="IsExpanded" Value="True">
+                                <Setter TargetName="ExpandSite" Property="Visibility" Value="Visible" />
+                                <Setter TargetName="Chevron" Property="Text" Value="⌃" />
+                            </Trigger>
+                            <Trigger Property="IsEnabled" Value="False">
+                                <Setter Property="Opacity" Value="0.65" />
+                            </Trigger>
+                        </ControlTemplate.Triggers>
+                    </ControlTemplate>
+                </Setter.Value>
+            </Setter>
+        </Style>
+    </UserControl.Resources>
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
@@ -46,8 +91,14 @@
                              Text="{Binding SaveName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                     <Button Content="💾 저장"
                             Command="{Binding SaveTimetableCommand}"
-                            Padding="8,4" Margin="4,0,0,0"
-                            Background="#005FB8" Foreground="White" />
+                            Padding="8,4" Margin="4,0,0,0">
+                        <Button.Style>
+                            <Style TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
+                                <Setter Property="Background" Value="#005FB8" />
+                                <Setter Property="Foreground" Value="White" />
+                            </Style>
+                        </Button.Style>
+                    </Button>
                 </StackPanel>
             </Border>
 
@@ -66,107 +117,136 @@
         <Border Grid.Column="1" BorderBrush="#CCC" BorderThickness="1,0,0,0" Background="White">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel>
-                    <Border Background="#F8F9FA" Padding="16,12">
-                        <TextBlock Text="INSPECTOR &amp; PROPERTIES" FontSize="11"
-                                   FontWeight="Bold" Foreground="#005FB8" />
-                    </Border>
-
-                    <Border Margin="16,12"
-                            Padding="12"
-                            Background="#F8F9FA"
-                            BorderBrush="#DDD"
-                            BorderThickness="1"
-                            Visibility="{Binding HasNoSelection, Converter={StaticResource BoolToVisibility}}">
-                        <TextBlock Text="수업을 선택하세요."
-                                   Foreground="#666"
-                                   FontSize="12" />
-                    </Border>
-
-                    <StackPanel Margin="16,12" Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}">
-                        <TextBlock Text="선택 수업" FontSize="10" Foreground="#999"
-                                   FontWeight="Bold" Margin="0,0,0,4" />
-                        <TextBlock Text="{Binding SelectedAssignment.CourseName}"
-                                   FontWeight="Bold" FontSize="14" />
-                        <TextBlock Text="{Binding SelectedAssignment.CourseId}"
-                                   FontSize="11" Foreground="#666" Margin="0,0,0,8" />
-                        <TextBlock Text="{Binding SelectedLocationText}"
-                                   FontSize="12" Margin="0,0,0,2" />
-                        <TextBlock Text="{Binding SelectedSlotLabel}"
-                                   FontSize="12" Margin="0,0,0,2" />
-                        <TextBlock Text="{Binding SelectedOccupiedSlotsText, StringFormat=점유 교시: {0}}"
-                                   FontSize="12" Margin="0,0,0,12" />
-
-                        <TextBlock Text="수업 속성" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />
-                        <TextBlock Text="{Binding SelectedProfessorName, StringFormat=교수: {0}}"
-                                   FontSize="12" />
-                        <TextBlock Text="{Binding SelectedDurationText, StringFormat=수업 길이: {0}}"
-                                   FontSize="12" />
-                        <TextBlock Text="{Binding SelectedBlockText, StringFormat=블록: {0}}"
-                                   FontSize="12" />
-                        <TextBlock Text="{Binding SelectedFixedText, StringFormat=고정 수업: {0}}"
-                                   FontSize="12" />
-                        <TextBlock Text="{Binding SelectedCoteachText, StringFormat=공동강의 교수: {0}}"
-                                   FontSize="12" />
-                        <TextBlock Text="{Binding SelectedMultiRoomText, StringFormat=복수 강의실: {0}}"
-                                   FontSize="12" />
-                        <TextBlock Text="{Binding SelectedAllowedRoomsText, StringFormat=허용 강의실: {0}}"
-                                   FontSize="12" />
-                        <TextBlock Text="{Binding SelectedCrossGroupText, StringFormat=크로스 그룹: {0}}"
-                                   FontSize="12" Margin="0,0,0,12" />
-
-                        <TextBlock Text="이동 상태" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />
-                        <TextBlock Text="{Binding SelectedMoveStateText}"
-                                   FontSize="12" FontWeight="Bold" />
-                        <TextBlock Text="{Binding SelectedBlockedReasonText, StringFormat=이동 불가 사유: {0}}"
-                                   FontSize="12" Foreground="#BA1A1A" TextWrapping="Wrap" />
-                        <TextBlock Text="{Binding SelectedWarningReasonText, StringFormat=주의 사유: {0}}"
-                                   FontSize="12" Foreground="#A05A00" TextWrapping="Wrap"
-                                   Margin="0,0,0,12" />
-
-                        <TextBlock Text="새 강의실" FontSize="10" Foreground="#999" FontWeight="Bold" Margin="0,0,0,4" />
-                        <ComboBox ItemsSource="{Binding AvailableRoomIds}"
-                                  SelectedItem="{Binding NewRoomId, Mode=TwoWay}"
-                                  Margin="0,0,0,12" Padding="6,4" />
-
-                        <Button Content="✓ Apply Changes"
-                                Command="{Binding ApplyRoomChangeCommand}"
-                                Background="#005FB8" Foreground="White"
-                                Padding="8,8" FontWeight="Bold" />
-                    </StackPanel>
-
-                    <Border Background="#F8F9FA" Padding="16,12" Margin="0,8,0,0">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="VALIDATION &amp; CONSTRAINTS" FontSize="11"
-                                       FontWeight="Bold" Foreground="#005FB8" />
-                            <Border Background="#BA1A1A" CornerRadius="8" Padding="6,1" Margin="8,0,0,0">
-                                <TextBlock Text="{Binding Conflicts.Count}" Foreground="White"
-                                           FontSize="10" FontWeight="Bold" />
+                    <Expander Header="Inspector" IsExpanded="True" Margin="16,12">
+                        <StackPanel Margin="0,10,0,0">
+                            <Border Padding="12"
+                                    Background="#F8F9FA"
+                                    BorderBrush="#DDD"
+                                    BorderThickness="1"
+                                    Visibility="{Binding HasNoSelection, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="수업을 선택하세요."
+                                           Foreground="#666"
+                                           FontSize="12" />
                             </Border>
-                        </StackPanel>
-                    </Border>
 
-                    <ItemsControl ItemsSource="{Binding Conflicts}" Margin="16,8">
-                        <ItemsControl.ItemTemplate>
-                            <DataTemplate DataType="{x:Type slv:ConflictItem}">
-                                <Border Background="White" BorderBrush="#BA1A1A"
-                                        BorderThickness="0,0,0,0"
-                                        Padding="12,8" Margin="0,0,0,6">
-                                    <Border.Style>
-                                        <Style TargetType="Border">
-                                            <Setter Property="BorderThickness" Value="4,1,1,1" />
-                                            <Setter Property="BorderBrush" Value="#BA1A1A" />
-                                        </Style>
-                                    </Border.Style>
+                            <StackPanel Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}">
+                                <Border Background="#F8F9FA" BorderBrush="#DDD" BorderThickness="1"
+                                        Padding="12" Margin="0,0,0,10">
                                     <StackPanel>
-                                        <TextBlock Text="{Binding Type}" FontWeight="Bold"
-                                                   Foreground="#BA1A1A" FontSize="11" />
-                                        <TextBlock Text="{Binding Description}" FontSize="11"
-                                                   TextWrapping="Wrap" Margin="0,2,0,0" />
+                                        <TextBlock Text="{Binding SelectedAssignment.CourseName}"
+                                                   FontWeight="Bold" FontSize="14" />
+                                        <TextBlock Text="{Binding SelectedAssignment.CourseId}"
+                                                   FontSize="11" Foreground="#666" Margin="0,0,0,8" />
+                                        <TextBlock Text="{Binding SelectedLocationText}"
+                                                   FontSize="12" Margin="0,0,0,2" />
+                                        <TextBlock Text="{Binding SelectedSlotLabel}"
+                                                   FontSize="12" Margin="0,0,0,2" />
+                                        <TextBlock Text="{Binding SelectedOccupiedSlotsText, StringFormat=점유 교시: {0}}"
+                                                   FontSize="12" Margin="0,0,0,4" />
                                     </StackPanel>
                                 </Border>
-                            </DataTemplate>
-                        </ItemsControl.ItemTemplate>
-                    </ItemsControl>
+
+                                <StackPanel Margin="0,0,0,10">
+                                    <TextBlock Text="수업 속성" FontSize="10" Foreground="#999"
+                                               FontWeight="Bold" Margin="0,0,0,4" />
+                                    <TextBlock Text="{Binding SelectedProfessorName, StringFormat=교수: {0}}"
+                                               FontSize="12" />
+                                    <TextBlock Text="{Binding SelectedDurationText, StringFormat=수업 길이: {0}}"
+                                               FontSize="12" />
+                                    <TextBlock Text="{Binding SelectedBlockText, StringFormat=블록: {0}}"
+                                               FontSize="12" />
+                                    <TextBlock Text="{Binding SelectedFixedText, StringFormat=고정 수업: {0}}"
+                                               FontSize="12" />
+                                    <TextBlock Text="{Binding SelectedCoteachText, StringFormat=공동강의 교수: {0}}"
+                                               FontSize="12" />
+                                    <TextBlock Text="{Binding SelectedMultiRoomText, StringFormat=복수 강의실: {0}}"
+                                               FontSize="12" />
+                                    <TextBlock Text="{Binding SelectedAllowedRoomsText, StringFormat=허용 강의실: {0}}"
+                                               FontSize="12" />
+                                </StackPanel>
+
+                                <StackPanel Margin="0,0,0,10">
+                                    <TextBlock Text="이동 상태" FontSize="10" Foreground="#999"
+                                               FontWeight="Bold" Margin="0,0,0,4" />
+                                    <TextBlock Text="{Binding SelectedMoveStateText}"
+                                               FontSize="12" FontWeight="Bold" />
+                                    <TextBlock Text="{Binding SelectedBlockedReasonText, StringFormat=이동 불가 사유: {0}}"
+                                               FontSize="12" Foreground="#BA1A1A" TextWrapping="Wrap" />
+                                    <TextBlock Text="{Binding SelectedWarningReasonText, StringFormat=주의 사유: {0}}"
+                                               FontSize="12" Foreground="#A05A00" TextWrapping="Wrap"
+                                               Margin="0,0,0,6" />
+                                    <TextBlock Text="빨간 칸도 확인 팝업에서 승인하면 강제 이동할 수 있습니다. Error가 남으면 저장은 차단됩니다."
+                                               FontSize="11" Foreground="#666" TextWrapping="Wrap" />
+                                </StackPanel>
+
+                                <StackPanel Margin="0,0,0,10">
+                                    <TextBlock Text="Cross 관계" FontSize="10" Foreground="#999"
+                                               FontWeight="Bold" Margin="0,0,0,4" />
+                                    <TextBlock Text="{Binding SelectedCrossGroupText, StringFormat=연결 수업: {0}}"
+                                               FontSize="12" TextWrapping="Wrap" />
+                                    <TextBlock Text="Cross는 HC-11 학년 충돌만 예외 처리합니다. 교수/강의실/점심/고정/교수불가능시간은 계속 Error입니다."
+                                               FontSize="11" Foreground="#666" TextWrapping="Wrap" Margin="0,6,0,0" />
+                                </StackPanel>
+
+                                <Border Background="#F8F9FA" BorderBrush="#DDD" BorderThickness="1"
+                                        Padding="12">
+                                    <StackPanel>
+                                        <TextBlock Text="강의실 변경" FontSize="10" Foreground="#999"
+                                                   FontWeight="Bold" Margin="0,0,0,4" />
+                                        <ComboBox ItemsSource="{Binding AvailableRoomIds}"
+                                                  SelectedItem="{Binding NewRoomId, Mode=TwoWay}"
+                                                  Margin="0,0,0,12" Padding="6,4" />
+
+                                        <Button Content="✓ Apply Changes"
+                                                Command="{Binding ApplyRoomChangeCommand}"
+                                                Padding="8,8" FontWeight="Bold">
+                                            <Button.Style>
+                                                <Style TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
+                                                    <Setter Property="Background" Value="#005FB8" />
+                                                    <Setter Property="Foreground" Value="White" />
+                                                </Style>
+                                            </Button.Style>
+                                        </Button>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
+                        </StackPanel>
+                    </Expander>
+
+                    <Expander IsExpanded="True" Margin="16,8">
+                        <Expander.Header>
+                            <StackPanel Orientation="Horizontal">
+                                <TextBlock Text="제약조건 위반" FontSize="11"
+                                           FontWeight="Bold" Foreground="#005FB8" />
+                                <Border Background="#BA1A1A" CornerRadius="8" Padding="6,1" Margin="8,0,0,0">
+                                    <TextBlock Text="{Binding Conflicts.Count}" Foreground="White"
+                                               FontSize="10" FontWeight="Bold" />
+                                </Border>
+                            </StackPanel>
+                        </Expander.Header>
+                        <ItemsControl ItemsSource="{Binding Conflicts}" Margin="0,8,0,0">
+                            <ItemsControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type slv:ConflictItem}">
+                                    <Border Background="White" BorderBrush="#BA1A1A"
+                                            BorderThickness="0,0,0,0"
+                                            Padding="12,8" Margin="0,0,0,6">
+                                        <Border.Style>
+                                            <Style TargetType="Border">
+                                                <Setter Property="BorderThickness" Value="4,1,1,1" />
+                                                <Setter Property="BorderBrush" Value="#BA1A1A" />
+                                            </Style>
+                                        </Border.Style>
+                                        <StackPanel>
+                                            <TextBlock Text="{Binding Type}" FontWeight="Bold"
+                                                       Foreground="#BA1A1A" FontSize="11" />
+                                            <TextBlock Text="{Binding Description}" FontSize="11"
+                                                       TextWrapping="Wrap" Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </Border>
+                                </DataTemplate>
+                            </ItemsControl.ItemTemplate>
+                        </ItemsControl>
+                    </Expander>
 
                     <Border Background="#E8F5E9" Padding="12,8" Margin="16,8"
                             Visibility="{Binding Conflicts.Count, Converter={StaticResource BoolToVisibility}, ConverterParameter=Zero}">
