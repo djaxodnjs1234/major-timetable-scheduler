@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using TimetableScheduler.Solver;
 using TimetableScheduler.ViewModel;
 using TimetableScheduler.ViewModel.Pages;
 
@@ -55,6 +56,32 @@ public class MainWindowViewModelTests : IDisposable
         var main = _sp.GetRequiredService<MainWindowViewModel>();
         main.GoToInputCommand.Execute(null);
         Assert.IsType<DataInputViewModel>(main.CurrentPage);
+    }
+
+    [Fact]
+    public void EditSelectedTimetableCommand_OpensManualEditPageWithSavedAssignments()
+    {
+        var workspace = _sp.GetRequiredService<WorkspaceService>();
+        workspace.SaveTimetable("저장본", new[]
+        {
+            new SolutionAssignment("C1", 0, 1, "R1"),
+        });
+
+        var selection = _sp.GetRequiredService<TimetableSelectionViewModel>();
+        selection.SelectedTimetable = selection.SavedTimetables.First();
+
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        selection.EditSelectedTimetableCommand.Execute(null);
+
+        var manual = Assert.IsType<ManualEditViewModel>(main.CurrentPage);
+        Assert.NotNull(manual.BaseSolution);
+        var assignment = Assert.Single(manual.BaseSolution!.Assignment);
+        Assert.Equal("C1", assignment.CourseId);
+        Assert.Equal(0, assignment.Day);
+        Assert.Equal(1, assignment.Period);
+        Assert.Equal("R1", assignment.RoomId);
+        Assert.Equal("저장본", manual.SaveName);
+        Assert.Contains("저장된 시간표", manual.StatusMessage);
     }
 
     [Fact]

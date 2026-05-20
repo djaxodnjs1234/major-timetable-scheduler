@@ -11,6 +11,18 @@
             <conv:GradeToBrushConverter x:Key="GradeToBrush" />
             <conv:IntListToCsvConverter x:Key="IntListToCsv" />
 
+            <Style TargetType="{x:Type Button}">
+                <Style.Triggers>
+                    <Trigger Property="IsEnabled" Value="False">
+                        <Setter Property="Background" Value="#E5E7EB" />
+                        <Setter Property="BorderBrush" Value="#CBD5E1" />
+                        <Setter Property="Foreground" Value="#6B7280" />
+                        <Setter Property="Opacity" Value="0.65" />
+                        <Setter Property="Cursor" Value="Arrow" />
+                    </Trigger>
+                </Style.Triggers>
+            </Style>
+
             <DataTemplate DataType="{x:Type vm:TimetableSelectionViewModel}">
                 <views:TimetableSelectionView />
             </DataTemplate>

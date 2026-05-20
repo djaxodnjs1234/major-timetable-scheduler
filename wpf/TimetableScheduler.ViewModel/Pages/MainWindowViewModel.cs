@@ -34,6 +34,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
             _results.SetSolutions(ranked);
         };
         _input.GoToSelectionRequested += (_, _) => NavigateTo(_results);
+        _selection.EditRequested += (_, timetable) =>
+        {
+            _manual.LoadFromSavedTimetable(timetable);
+            NavigateTo(_manual);
+        };
 
         currentPage = _selection;
     }
