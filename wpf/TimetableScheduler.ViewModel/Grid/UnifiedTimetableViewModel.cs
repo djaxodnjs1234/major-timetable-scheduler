@@ -40,7 +40,7 @@ public sealed record EditCellState(ManualMoveCellState State, string Reason)
 public sealed record CrossHoverState(bool CanCreate, string Reason)
 {
     public static CrossHoverState Hidden(string reason = "") => new(false, reason);
-    public static CrossHoverState Available(string reason = "크로스 생성 가능") => new(true, reason);
+    public static CrossHoverState Available(string reason = "크로스 가능: + 클릭 시 선택 수업이 대상 수업 시간대로 이동하고 HC-11 예외가 생성됩니다.") => new(true, reason);
 }
 
 public sealed partial class UnifiedTimetableViewModel : ObservableObject

@@ -6,22 +6,10 @@ namespace TimetableScheduler.Tests.Integration;
 
 public class EndToEndSolverTests
 {
-    private static string FindRepoRoot()
-    {
-        var dir = AppContext.BaseDirectory;
-        for (int i = 0; i < 8 && dir != null; i++)
-        {
-            if (File.Exists(Path.Combine(dir, "개설강좌 편람.xlsx")))
-                return dir;
-            dir = Path.GetDirectoryName(dir);
-        }
-        throw new InvalidOperationException("repo root not found");
-    }
-
     [Fact]
     public void Xlsx_ToSolver_ProducesAtLeastOneSolution()
     {
-        var path = Path.Combine(FindRepoRoot(), "개설강좌 편람.xlsx");
+        var path = Path.Combine(TestPaths.FindRepoRoot(), "개설강좌 편람.xlsx");
         var data = XlsxLoader.Load(path);
 
         var options = new DiverseSolverOptions
@@ -44,7 +32,7 @@ public class EndToEndSolverTests
     [Fact]
     public void Xlsx_AllHardConstraintsSatisfied()
     {
-        var path = Path.Combine(FindRepoRoot(), "개설강좌 편람.xlsx");
+        var path = Path.Combine(TestPaths.FindRepoRoot(), "개설강좌 편람.xlsx");
         var data = XlsxLoader.Load(path);
 
         var options = new DiverseSolverOptions
@@ -82,7 +70,7 @@ public class EndToEndSolverTests
     [Fact]
     public void Xlsx_WithSoftConstraints_ScoreIsValid()
     {
-        var path = Path.Combine(FindRepoRoot(), "개설강좌 편람.xlsx");
+        var path = Path.Combine(TestPaths.FindRepoRoot(), "개설강좌 편람.xlsx");
         var data = XlsxLoader.Load(path);
 
         var options = new DiverseSolverOptions

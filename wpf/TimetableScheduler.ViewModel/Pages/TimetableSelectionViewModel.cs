@@ -15,6 +15,7 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
     public override string Title => "시간표 선택";
 
     public ObservableCollection<SavedTimetableRecord> SavedTimetables => _workspace.SavedTimetables;
+    public event EventHandler<SavedTimetableRecord>? EditRequested;
 
     public UnifiedTimetableViewModel Preview { get; } = new();
 
@@ -42,6 +43,7 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasNoSelection));
         ExportXlsxCommand.NotifyCanExecuteChanged();
+        EditSelectedTimetableCommand.NotifyCanExecuteChanged();
 
         if (value == null)
         {
@@ -76,6 +78,15 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
     }
 
     private bool CanExport() => SelectedTimetable != null;
+
+    [RelayCommand(CanExecute = nameof(CanEditSelectedTimetable))]
+    private void EditSelectedTimetable()
+    {
+        if (SelectedTimetable == null) return;
+        EditRequested?.Invoke(this, SelectedTimetable);
+    }
+
+    private bool CanEditSelectedTimetable() => SelectedTimetable != null;
 
     [RelayCommand]
     private void ImportXlsx(string path)

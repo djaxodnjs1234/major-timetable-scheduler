@@ -34,7 +34,14 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private List<SolutionAssignment> _working = new();
     private List<CrossGroup> _workingCrossGroups = new();
     private readonly List<ManualCrossLink> _workingCrossLinks = new();
-    private List<SolutionAssignment>? _undoSnapshot;
+    private sealed class ManualEditSnapshot
+    {
+        public List<SolutionAssignment> Assignments { get; init; } = new();
+        public List<ManualCrossLink> CrossLinks { get; init; } = new();
+    }
+
+    private readonly Stack<ManualEditSnapshot> _undoStack = new();
+    private readonly Stack<ManualEditSnapshot> _redoStack = new();
     private UnifiedCellKey? _selectedGridCell;
 
     public override string Title => "수동 편집";
@@ -200,10 +207,23 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .Select(g => new CrossGroup { Id = g.Id, BaseIds = g.BaseIds.ToList() })
             .ToList();
         _workingCrossLinks.Clear();
-        _undoSnapshot = null;
+        _undoStack.Clear();
+        _redoStack.Clear();
+        NotifyUndoRedoCanExecuteChanged();
         Rerender();
         ClearSelectionCore();
         StatusMessage = "수업 블록을 클릭한 뒤, 초록색 칸을 클릭해 이동하세요.";
+    }
+
+    public void LoadFromSavedTimetable(SavedTimetableRecord timetable)
+    {
+        var assignments = timetable.Assignments
+            .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
+            .ToList();
+
+        LoadFromSolution(new RankedSolution(assignments, new SolutionScore(0, 0, 0, 0)));
+        SaveName = timetable.Name;
+        StatusMessage = $"저장된 시간표 '{timetable.Name}'을(를) 수정 모드로 열었습니다.";
     }
 
     public void HandleCellClick(int day, int period, int grade, int subColumnIdx, CellAssignment? assignment)
@@ -212,7 +232,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         {
             var selectedCourseId = SelectedAssignment.CourseId;
             if (TryMoveSelectedTo(day, period, grade, subColumnIdx))
-                RemoveCrossForCourse(selectedCourseId, "빈 칸 이동으로 기존 크로스가 해제되었습니다.");
+                RemoveCrossForCourse(selectedCourseId, "빈 칸 이동으로 기존 크로스가 해제되었습니다.", recordUndo: false);
             return;
         }
 
@@ -226,8 +246,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 selectedDay,
                 selectedPeriod))
         {
-            RemoveCrossForCourse(SelectedAssignment.CourseId, "다른 수업을 선택하여 기존 크로스가 해제되었습니다.");
-            SelectCell(day, period, grade, subColumnIdx, assignment);
+            var selectedCourseId = SelectedAssignment.CourseId;
+            if (TryMoveSelectedTo(day, period, grade, subColumnIdx))
+                RemoveCrossForCourse(selectedCourseId, "이동으로 기존 크로스가 해제되었습니다.", recordUndo: false);
             return;
         }
 
@@ -334,7 +355,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return;
         }
 
-        var snapshot = _working.ToList();
+        var snapshot = CaptureSnapshot();
         var changed = 0;
         for (int i = 0; i < _working.Count; i++)
         {
@@ -366,24 +387,46 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     [RelayCommand(CanExecute = nameof(CanUndo))]
     private void UndoLastMove()
     {
-        if (_undoSnapshot == null) return;
-        _working = _undoSnapshot;
-        _undoSnapshot = null;
-        Rerender();
-        ClearSelectionCore();
-        StatusMessage = "직전 이동을 되돌렸습니다.";
-        UndoLastMoveCommand.NotifyCanExecuteChanged();
+        Undo();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanUndo))]
+    private void Undo()
+    {
+        if (_undoStack.Count == 0) return;
+        _redoStack.Push(CaptureSnapshot());
+        RestoreSnapshot(_undoStack.Pop());
+        StatusMessage = "뒤로가기를 실행했습니다.";
+        NotifyUndoRedoCanExecuteChanged();
+    }
+
+    [RelayCommand(CanExecute = nameof(CanRedo))]
+    private void Redo()
+    {
+        if (_redoStack.Count == 0) return;
+        _undoStack.Push(CaptureSnapshot());
+        RestoreSnapshot(_redoStack.Pop());
+        StatusMessage = "앞으로가기를 실행했습니다.";
+        NotifyUndoRedoCanExecuteChanged();
     }
 
     [RelayCommand]
     private void Reset()
     {
-        if (BaseSolution != null) LoadFromSolution(BaseSolution);
+        if (BaseSolution == null) return;
+        PushUndoSnapshot();
+        _working = BaseSolution.Assignment.ToList();
+        _workingCrossLinks.Clear();
+        Rerender();
+        ClearSelectionCore();
+        StatusMessage = "베이스 시간표로 초기화했습니다.";
     }
 
     [RelayCommand(CanExecute = nameof(CanSaveTimetable))]
     private void SaveTimetable()
     {
+        if (!ValidateBeforeSave()) return;
+
         _workspace.SaveTimetable(SaveName.Trim(), _working);
         StatusMessage = $"'{SaveName.Trim()}' 저장 완료";
         SaveName = "";
@@ -401,6 +444,16 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private bool CanExport() => BaseSolution != null;
 
+    private bool ValidateBeforeSave()
+    {
+        RefreshConflicts();
+        var errorCount = Conflicts.Count(c => c.Severity == ConflictSeverity.Error);
+        if (errorCount == 0) return true;
+
+        StatusMessage = $"저장 차단: 제약조건 위반 Error {errorCount}건이 남아 있습니다. 위반 항목을 수정한 뒤 다시 저장하세요.";
+        return false;
+    }
+
     private bool TryMoveSelectedTo(int targetDay, int targetPeriod, int targetGrade, int targetSubColumnIdx)
     {
         if (SelectedAssignment == null || SelectedDay == null || SelectedPeriod == null) return false;
@@ -416,17 +469,15 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 out var candidate,
                 out var reasons))
         {
-            StatusMessage = reasons.FirstOrDefault() ?? "이동할 수 없는 칸입니다.";
-            return false;
+            return TryForceMoveSelectedTo(targetDay, targetPeriod, targetGrade, targetSubColumnIdx, reasons);
         }
 
-        var snapshot = _working.ToList();
+        var snapshot = CaptureSnapshot();
         var movedCourseId = SelectedAssignment.CourseId;
         _working = candidate;
         Rerender();
 
-        _undoSnapshot = snapshot;
-        UndoLastMoveCommand.NotifyCanExecuteChanged();
+        PushUndoSnapshot(snapshot);
         SelectedDay = targetDay;
         SelectedPeriod = targetPeriod;
         _selectedGridCell = FindGridCellKey(movedCourseId, targetDay, targetPeriod, targetGrade)
@@ -441,6 +492,69 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             : warning == null
             ? $"{movedCourseId} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시"
             : $"{movedCourseId} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시. {warning}";
+        return true;
+    }
+
+    private bool TryForceMoveSelectedTo(
+        int targetDay,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx,
+        IReadOnlyList<string> blockedReasons)
+    {
+        if (SelectedAssignment == null || SelectedDay == null || SelectedPeriod == null) return false;
+        if (targetDay < 0 || targetDay >= Constants.Days || !Constants.Periods.Contains(targetPeriod))
+        {
+            StatusMessage = "화면에 존재하지 않는 시간 슬롯으로는 이동할 수 없습니다.";
+            return false;
+        }
+        var targetPeriods = GetOccupiedPeriods(targetPeriod, SelectedAssignment.RowSpan);
+        if (targetPeriods.Any(p => !Constants.Periods.Contains(p)))
+        {
+            StatusMessage = "수업 블록이 시간표 범위를 벗어납니다.";
+            return false;
+        }
+
+        var snapshot = CaptureSnapshot();
+        var movedCourseId = SelectedAssignment.CourseId;
+        var candidate = BuildMovedCandidate(
+            SelectedAssignment,
+            SelectedDay.Value,
+            SelectedPeriod.Value,
+            targetDay,
+            targetPeriod);
+        var conflictsAfterMove = DetectConflicts(candidate).ToList();
+        var dialogItems = conflictsAfterMove.Count > 0
+            ? conflictsAfterMove
+            : blockedReasons.Select(r => new ConflictItem(
+                ConflictType.GradeConflict,
+                ConflictSeverity.Error,
+                r,
+                targetDay,
+                targetPeriod)).ToList();
+
+        if (!_dialog.ConfirmDespiteConflicts(dialogItems))
+        {
+            StatusMessage = "강제 이동이 취소되었습니다.";
+            return false;
+        }
+
+        _working = candidate;
+        Rerender();
+
+        PushUndoSnapshot(snapshot);
+        SelectedDay = targetDay;
+        SelectedPeriod = targetPeriod;
+        _selectedGridCell = FindGridCellKey(movedCourseId, targetDay, targetPeriod, targetGrade)
+            ?? new UnifiedCellKey(targetDay, targetPeriod, targetGrade, targetSubColumnIdx);
+        OnPropertyChanged(nameof(SelectedSlotLabel));
+        NotifySelectionDetailChanged();
+        Grid.SetEditState(_selectedGridCell, BuildMoveStates(SelectedAssignment, targetDay, targetPeriod));
+        var removedLinks = RemoveInvalidCrossesAfterMove();
+        var errorCount = Conflicts.Count(c => c.Severity == ConflictSeverity.Error);
+        var warningCount = Conflicts.Count(c => c.Severity == ConflictSeverity.Warning);
+        StatusMessage = $"제약조건 위반 상태로 강제 이동했습니다. Error {errorCount}건, Warning {warningCount}건이 남아 있습니다. Error가 남아 있으면 저장할 수 없습니다."
+            + (removedLinks > 0 ? " 수업 식별 또는 학년 조건 변경으로 크로스 관계가 해제되었습니다." : "");
         return true;
     }
 
@@ -666,10 +780,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         && cell.Period == sourcePeriod
         && cell.Assignment.Rooms.SequenceEqual(assignment.Rooms);
 
-    private bool TryCommitChange(List<SolutionAssignment> snapshot, string successMessage)
+    private bool TryCommitChange(ManualEditSnapshot snapshot, string successMessage)
     {
         Rerender();
-        var baselineKeys = ConflictKeys(DetectConflicts(snapshot));
+        var baselineKeys = ConflictKeys(DetectConflicts(snapshot.Assignments));
         var newOnes = Conflicts.Where(c => !baselineKeys.Contains(KeyOf(c))).ToList();
 
         if (newOnes.Count > 0)
@@ -677,13 +791,14 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             bool proceed = _dialog.ConfirmDespiteConflicts(newOnes);
             if (!proceed)
             {
-                _working = snapshot;
+                RestoreSnapshot(snapshot);
                 Rerender();
                 StatusMessage = $"변경 취소됨 — {ToUserReason(newOnes[0])}";
                 return false;
             }
         }
 
+        PushUndoSnapshot(snapshot);
         StatusMessage = successMessage
             + (newOnes.Count > 0 ? $" — 신규 위반 {newOnes.Count}건 수용" : "");
         return true;
@@ -694,6 +809,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         Grid.SetCrossParallelOrder(BuildCrossParallelOrder());
         Grid.Render(_working, _workspace.ExpandedCourses);
         Grid.SetCrossLinkLabels(BuildCrossLinkLabels());
+        RefreshConflicts();
+    }
+
+    private void RefreshConflicts()
+    {
         Conflicts.Clear();
         foreach (var c in DetectConflicts(_working))
             Conflicts.Add(c);
@@ -805,7 +925,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             selected.RowSpan,
             targetPeriod,
             target.RowSpan);
-        var snapshot = _working.ToList();
+        var snapshot = CaptureSnapshot();
         _workingCrossLinks.Add(provisionalLink);
 
         if (!TryMoveAssignment(
@@ -826,8 +946,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
         _working = candidate;
         Rerender();
-        _undoSnapshot = snapshot;
-        UndoLastMoveCommand.NotifyCanExecuteChanged();
+        PushUndoSnapshot(snapshot);
         SelectedDay = day;
         SelectedPeriod = targetPeriod;
         _selectedGridCell = FindGridCellKey(selected.CourseId, day, targetPeriod, targetGrade)
@@ -875,6 +994,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return false;
         }
 
+        var snapshot = CaptureSnapshot();
         var crossSnapshot = _workingCrossLinks.ToList();
         var workingSnapshot = _working.ToList();
         var replacementLink = new ManualCrossLink(
@@ -907,8 +1027,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
         _working = candidate;
         Rerender();
-        _undoSnapshot = workingSnapshot;
-        UndoLastMoveCommand.NotifyCanExecuteChanged();
+        PushUndoSnapshot(snapshot);
         SelectedDay = day;
         SelectedPeriod = targetPeriod;
         _selectedGridCell = FindGridCellKey(selected.CourseId, day, targetPeriod, targetGrade)
@@ -989,10 +1108,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         return reasons;
     }
 
-    private void RemoveCrossForCourse(string courseId, string? statusMessage)
+    private void RemoveCrossForCourse(string courseId, string? statusMessage, bool recordUndo = true)
     {
+        var snapshot = recordUndo ? CaptureSnapshot() : null;
         var removed = _workingCrossLinks.RemoveAll(l => l.CourseIdA == courseId || l.CourseIdB == courseId);
         if (removed == 0) return;
+        if (snapshot != null)
+            PushUndoSnapshot(snapshot);
         Grid.SetCrossLinkLabels(BuildCrossLinkLabels());
         Rerender();
         NotifySelectionDetailChanged();
@@ -1004,6 +1126,49 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         _workingCrossLinks.Clear();
         _workingCrossLinks.AddRange(snapshot);
+    }
+
+    private ManualEditSnapshot CaptureSnapshot() => new()
+    {
+        Assignments = _working
+            .Select(a => new SolutionAssignment(a.CourseId, a.Day, a.Period, a.RoomId))
+            .ToList(),
+        CrossLinks = _workingCrossLinks
+            .Select(l => new ManualCrossLink(
+                l.CourseIdA,
+                l.CourseIdB,
+                l.Day,
+                l.PeriodA,
+                l.RowSpanA,
+                l.PeriodB,
+                l.RowSpanB))
+            .ToList(),
+    };
+
+    private void PushUndoSnapshot() => PushUndoSnapshot(CaptureSnapshot());
+
+    private void PushUndoSnapshot(ManualEditSnapshot snapshot)
+    {
+        _undoStack.Push(snapshot);
+        _redoStack.Clear();
+        NotifyUndoRedoCanExecuteChanged();
+    }
+
+    private void RestoreSnapshot(ManualEditSnapshot snapshot)
+    {
+        _working = snapshot.Assignments
+            .Select(a => new SolutionAssignment(a.CourseId, a.Day, a.Period, a.RoomId))
+            .ToList();
+        RestoreCrossLinks(snapshot.CrossLinks);
+        Rerender();
+        ClearSelectionCore();
+    }
+
+    private void NotifyUndoRedoCanExecuteChanged()
+    {
+        UndoCommand.NotifyCanExecuteChanged();
+        RedoCommand.NotifyCanExecuteChanged();
+        UndoLastMoveCommand.NotifyCanExecuteChanged();
     }
 
     private bool IsCrossLinkStillValid(ManualCrossLink link)
@@ -1117,7 +1282,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private bool CanClearSelection() => SelectedAssignment != null;
 
-    private bool CanUndo() => _undoSnapshot != null;
+    private bool CanUndo() => _undoStack.Count > 0;
+
+    private bool CanRedo() => _redoStack.Count > 0;
 
     private static HashSet<string> ConflictKeys(IEnumerable<ConflictItem> conflicts) =>
         conflicts.Select(KeyOf).ToHashSet();
