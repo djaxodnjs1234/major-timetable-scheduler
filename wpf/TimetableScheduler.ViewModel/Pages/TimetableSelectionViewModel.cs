@@ -15,9 +15,11 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
     public override string Title => "시간표 선택";
 
     public ObservableCollection<SavedTimetableRecord> SavedTimetables => _workspace.SavedTimetables;
-    public event EventHandler<SavedTimetableRecord>? EditRequested;
 
     public UnifiedTimetableViewModel Preview { get; } = new();
+    public ObservableCollection<NamedGridViewModel> GradeViews { get; } = new();
+    public ObservableCollection<NamedGridViewModel> RoomViews { get; } = new();
+    public ObservableCollection<NamedGridViewModel> ProfessorViews { get; } = new();
 
     [ObservableProperty]
     private SavedTimetableRecord? selectedTimetable;
@@ -25,6 +27,15 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
     public bool HasSelection => SelectedTimetable != null;
     public bool HasNoSelection => !HasSelection;
     public bool HasNoTimetable => SavedTimetables.Count == 0;
+
+    public event EventHandler? CreateNewRequested;
+    public event EventHandler<SavedTimetableRecord>? EditRequested;
+
+    [RelayCommand]
+    private void CreateNew() => CreateNewRequested?.Invoke(this, EventArgs.Empty);
+
+    [RelayCommand]
+    private void Edit(SavedTimetableRecord record) => EditRequested?.Invoke(this, record);
 
     public TimetableSelectionViewModel(WorkspaceService workspace)
     {
@@ -43,18 +54,48 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasNoSelection));
         ExportXlsxCommand.NotifyCanExecuteChanged();
-        EditSelectedTimetableCommand.NotifyCanExecuteChanged();
 
         if (value == null)
         {
-            Preview.Render(Array.Empty<SolutionAssignment>(), Array.Empty<Domain.Course>());
+            RenderViews(Array.Empty<SolutionAssignment>(), Array.Empty<Domain.Course>());
             return;
         }
 
         var assignments = value.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
             .ToList();
-        Preview.Render(assignments, _workspace.ExpandedCourses);
+        RenderViews(assignments, _workspace.ExpandedCourses);
+    }
+
+    private void RenderViews(
+        IReadOnlyList<SolutionAssignment> assignments,
+        IReadOnlyList<Domain.Course> courses)
+    {
+        Preview.Render(assignments, courses);
+
+        GradeViews.Clear();
+        foreach (var g in new[] { 1, 2, 3, 4 })
+        {
+            var vm = new TimetableGridViewModel();
+            vm.Render(assignments, courses, (c, _) => c.Grade == g);
+            GradeViews.Add(new NamedGridViewModel(g.ToString(), $"{g}학년", vm));
+        }
+
+        RoomViews.Clear();
+        foreach (var r in _workspace.Rooms)
+        {
+            var vm = new TimetableGridViewModel();
+            vm.Render(assignments, courses, (_, rid) => rid == r.Id);
+            RoomViews.Add(new NamedGridViewModel(r.Id, r.Name, vm));
+        }
+
+        ProfessorViews.Clear();
+        foreach (var p in _workspace.Professors)
+        {
+            var vm = new TimetableGridViewModel();
+            vm.Render(assignments, courses, (c, _) => c.ProfessorId == p.Id);
+            ProfessorViews.Add(new NamedGridViewModel(p.Id, p.Name, vm));
+        }
     }
 
     [RelayCommand]
@@ -78,27 +119,4 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
     }
 
     private bool CanExport() => SelectedTimetable != null;
-
-    [RelayCommand(CanExecute = nameof(CanEditSelectedTimetable))]
-    private void EditSelectedTimetable()
-    {
-        if (SelectedTimetable == null) return;
-        EditRequested?.Invoke(this, SelectedTimetable);
-    }
-
-    private bool CanEditSelectedTimetable() => SelectedTimetable != null;
-
-    [RelayCommand]
-    private void ImportXlsx(string path)
-    {
-        var rows = TimetableXlsxService.Import(path);
-        if (rows.Count == 0) return;
-        var name = System.IO.Path.GetFileNameWithoutExtension(path);
-        var assignments = rows
-            .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
-            .ToList();
-        _workspace.SaveTimetable(name, assignments);
-        SelectedTimetable = SavedTimetables.FirstOrDefault(t => t.Name == name)
-            ?? SavedTimetables.FirstOrDefault();
-    }
 }

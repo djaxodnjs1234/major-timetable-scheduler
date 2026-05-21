@@ -47,7 +47,8 @@ CREATE TABLE IF NOT EXISTS SavedTimetables (
     Id              TEXT PRIMARY KEY,
     Name            TEXT NOT NULL,
     CreatedAt       TEXT NOT NULL,
-    AssignmentsJson TEXT NOT NULL
+    AssignmentsJson TEXT NOT NULL,
+    SnapshotJson    TEXT
 );
 
 CREATE TABLE IF NOT EXISTS SavedTimetableManualCrossLinks (

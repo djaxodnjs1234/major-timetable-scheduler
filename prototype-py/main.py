@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Timetable scheduler prototype — entry point.
+"""Timetable scheduler prototype - entry point.
 
 Layered: domain → csp → scoring → data → ui.
 """
@@ -10,7 +10,20 @@ from ui import launch
 from domain import derive_auto_retakes
 from domain.models import expand_sections
 
-XLSX_PATH = "개설강좌 편람.xlsx"
+def _find_xlsx():
+    """xlsx 검색 순서: data_files/ → ../wpf/data/ → 현재 디렉터리."""
+    import os
+    candidates = [
+        "data_files/개설강좌 편람.xlsx",
+        "../wpf/data/개설강좌 편람.xlsx",
+        "개설강좌 편람.xlsx",
+    ]
+    for p in candidates:
+        if os.path.isfile(p):
+            return p
+    return candidates[-1]  # 없어도 마지막 경로 반환 (로더가 오류 처리)
+
+XLSX_PATH = _find_xlsx()
 N_SOLUTIONS = 1             # 다양성 모드로 모을 후보 해 수
 M_TOP = 1                    # GUI 에 노출할 상위 해
 TIME_LIMIT_SEC = 600        # 솔버 전체 wall-clock 제한
@@ -41,7 +54,7 @@ def _load_data():
 
 def main():
     print("=" * 60)
-    print("  전공 시간표 자동 생성 시스템 — 프로토타입")
+    print("  전공 시간표 자동 생성 시스템 - 프로토타입")
     print("=" * 60)
 
     raw_courses, professors, rooms, crosses, manual_retakes = _load_data()
@@ -74,7 +87,7 @@ def main():
     )
 
     if not solutions:
-        print(f"\n❌ 해를 찾지 못했습니다. (status={status})")
+        print(f"\n[오류] 해를 찾지 못했습니다. (status={status})")
         return
 
     ranked = rank_solutions(solutions, courses, professors, top_m=M_TOP)
@@ -88,7 +101,7 @@ def main():
         parts = "  ".join(f"{k}={sd[k]:.2f}" for k in SC_KEYS)
         print(f"  #{i+1}  total={sd['total']:.2f}  {parts}")
 
-    print(f"\n✅ 상위 {len(top_solutions)}개의 해를 GUI에 노출합니다...")
+    print(f"\n상위 {len(top_solutions)}개의 해를 GUI에 노출합니다...")
     launch(top_solutions, courses, professors, rooms, crosses, manual_retakes,
            auto_retakes=AUTO_RETAKES_DEFAULT, scores=top_scores,
            n_solutions=N_SOLUTIONS, m_top=M_TOP,

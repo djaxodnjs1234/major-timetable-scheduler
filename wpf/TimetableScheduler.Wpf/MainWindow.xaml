@@ -10,27 +10,6 @@
         Height="800" Width="1200"
         WindowStartupLocation="CenterScreen">
     <Grid>
-        <Grid.RowDefinitions>
-            <RowDefinition Height="Auto" />
-            <RowDefinition Height="*" />
-        </Grid.RowDefinitions>
-
-        <Border Grid.Row="0" Background="#2D2D30" Padding="8">
-            <StackPanel Orientation="Horizontal">
-                <Button Content="시간표 선택" Command="{Binding GoToSelectionCommand}"
-                        Padding="12,6" Margin="0,0,4,0" />
-                <Button Content="정보 입력" Command="{Binding GoToInputCommand}"
-                        Padding="12,6" Margin="0,0,4,0" />
-                <Button Content="해 미리보기" Command="{Binding GoToResultsCommand}"
-                        Padding="12,6" Margin="0,0,4,0" />
-                <Button Content="수동 편집" Command="{Binding GoToManualCommand}"
-                        Padding="12,6" Margin="0,0,4,0" />
-                <TextBlock Text="{Binding CurrentPage.Title}"
-                           Foreground="White" VerticalAlignment="Center"
-                           Margin="20,0,0,0" FontSize="14" FontWeight="Bold" />
-            </StackPanel>
-        </Border>
-
-        <ContentControl Grid.Row="1" Content="{Binding CurrentPage}" />
+        <ContentControl Content="{Binding CurrentPage}" />
     </Grid>
 </Window>

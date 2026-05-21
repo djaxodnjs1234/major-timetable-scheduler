@@ -429,6 +429,32 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
+    public void LoadFromSaved_UsesSnapshotCoursesNotInWorkspace()
+    {
+        // A saved timetable references a course that no longer exists in the workspace,
+        // but its snapshot still carries the original course definition.
+        var snapshot = new TimetableScheduler.Data.AppData(
+            new List<Course> { new() { Id = "GONE-01", Name = "사라진과목", Grade = 1, HoursPerWeek = 2, ProfessorId = "P1" } },
+            new List<Professor> { new() { Id = "P1", Name = "교수" } },
+            new List<Room> { new() { Id = "R1", Name = "강의실1" } },
+            new List<CrossGroup>(), new List<RetakeScenario>());
+        var record = new TimetableScheduler.Data.SavedTimetableRecord(
+            Guid.NewGuid().ToString(), "snap", DateTime.Now,
+            new List<TimetableScheduler.Data.TimetableAssignmentRow>
+            {
+                new("GONE-01", 0, 1, "R1"),
+                new("GONE-01", 0, 2, "R1"),
+            },
+            SnapshotJson: System.Text.Json.JsonSerializer.Serialize(snapshot));
+
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSaved(record);
+
+        Assert.Equal("snap", vm.SaveName);
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.CourseId == "GONE-01");
+    }
+
+    [Fact]
     public void SelectCell_PopulatesInspector()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();

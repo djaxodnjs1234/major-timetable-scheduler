@@ -75,28 +75,133 @@ public partial class DataInputView : UserControl
         }
     }
 
-    private void OnCourseExpanded(object sender, RoutedEventArgs e)
+    private void OnCourseGroupExpanded(object sender, RoutedEventArgs e)
     {
-        if (sender is not Expander expander || expander.DataContext is not Course course || Vm == null) return;
+        if (sender is not Expander expander || expander.DataContext is not CourseGroupItem item || Vm == null) return;
+        var course = item.Sections[0];
 
-        if (expander.FindName("FixedRoomsPicker") is CheckListPickerControl roomsPicker)
+        if (expander.FindName("GroupFixedRoomsPicker") is CheckListPickerControl roomsPicker)
         {
             roomsPicker.DataContext = CheckListBinder.Bind(
                 Vm.Workspace.Rooms.ToList(),
                 r => r.Id, r => $"{r.Id} ({r.Name})",
                 course.FixedRooms);
         }
-        if (expander.FindName("CoteachProfsPicker") is CheckListPickerControl coteachPicker)
+        if (expander.FindName("GroupCoteachProfsPicker") is CheckListPickerControl coteachPicker)
         {
             coteachPicker.DataContext = CheckListBinder.Bind(
                 Vm.Workspace.Professors.ToList(),
                 p => p.Id, p => $"{p.Id} ({p.Name})",
                 course.CoteachProfs);
         }
-        if (expander.FindName("FixedSlotsPicker") is TimeSlotPickerControl slotPicker)
+        if (expander.FindName("FixedSlotEditor") is FixedSlotEditorControl editor)
         {
-            slotPicker.DataContext = new TimeSlotPickerViewModel(course.FixedSlots);
+            editor.DataContext = FixedSlotEditorViewModel.Build(item, course.IsFixed);
         }
+    }
+
+    private void OnIsFixedCheckChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is not DependencyObject dep) return;
+        var item = FindCourseGroupItem(dep);
+        if (item == null) return;
+        var expander = FindAncestor<Expander>(dep);
+        if (expander == null) return;
+        var editor = FindDescendant<FixedSlotEditorControl>(expander);
+        if (editor != null)
+            editor.DataContext = FixedSlotEditorViewModel.Build(item, item.Sections[0].IsFixed);
+    }
+
+    private static T? FindAncestor<T>(DependencyObject start) where T : DependencyObject
+    {
+        var current = System.Windows.Media.VisualTreeHelper.GetParent(start);
+        while (current != null)
+        {
+            if (current is T match) return match;
+            current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+        }
+        return null;
+    }
+
+    private static T? FindDescendant<T>(DependencyObject start) where T : DependencyObject
+    {
+        int count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(start);
+        for (int i = 0; i < count; i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(start, i);
+            if (child is T match) return match;
+            var result = FindDescendant<T>(child);
+            if (result != null) return result;
+        }
+        return null;
+    }
+
+    private static CourseGroupItem? FindCourseGroupItem(DependencyObject start)
+    {
+        var current = System.Windows.Media.VisualTreeHelper.GetParent(start);
+        while (current != null)
+        {
+            if (current is Expander exp && exp.DataContext is CourseGroupItem item)
+                return item;
+            current = System.Windows.Media.VisualTreeHelper.GetParent(current);
+        }
+        return null;
+    }
+
+    private void OnCourseGroupSaveClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not DependencyObject dep || Vm == null) return;
+        var item = FindCourseGroupItem(dep);
+        if (item == null) return;
+
+        var rep = item.Sections[0];
+        if (rep.BlockStructure.Count > 0 && rep.BlockStructure.Sum() != rep.HoursPerWeek)
+        {
+            MessageBox.Show(
+                $"블록구조 합({rep.BlockStructure.Sum()})이 시수/주({rep.HoursPerWeek})와 일치하지 않습니다.\n" +
+                "해를 찾을 수 없으니 값을 맞춰주세요.",
+                "저장 불가",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
+
+        // Flush fixed slot editor values back to sections before save
+        var expander = FindAncestor<Expander>(dep);
+        var editorCtrl = expander != null ? FindDescendant<FixedSlotEditorControl>(expander) : null;
+        if (editorCtrl?.DataContext is FixedSlotEditorViewModel editorVm)
+        {
+            editorVm.ApplyTo(item);
+        }
+        if (item.IsFixedIndividual)
+            Vm.SaveSectionCommand.Execute(item);
+        else
+            Vm.SaveGroupCommand.Execute(item);
+    }
+
+    private void OnCourseGroupDeleteClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not DependencyObject dep || Vm == null) return;
+        var item = FindCourseGroupItem(dep);
+        if (item == null) return;
+        if (item.IsFixedIndividual)
+            Vm.DeleteSectionCommand.Execute(item);
+        else
+            Vm.DeleteGroupCommand.Execute(item);
+    }
+
+    private void OnAddSectionClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not DependencyObject dep || Vm == null) return;
+        var item = FindCourseGroupItem(dep);
+        if (item != null) Vm.AddSectionCommand.Execute(item);
+    }
+
+    private void OnRemoveSectionClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not DependencyObject dep || Vm == null) return;
+        var item = FindCourseGroupItem(dep);
+        if (item != null) Vm.RemoveSectionCommand.Execute(item);
     }
 
     private void OnProfessorSaveClick(object sender, RoutedEventArgs e)
@@ -109,17 +214,5 @@ public partial class DataInputView : UserControl
     {
         if (sender is FrameworkElement el && el.DataContext is Professor p && Vm != null)
             Vm.SelectedItem = p;
-    }
-
-    private void OnCourseSaveClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement el && el.DataContext is Course c && Vm != null)
-            Vm.SelectedItem = c;
-    }
-
-    private void OnCourseDeleteClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement el && el.DataContext is Course c && Vm != null)
-            Vm.SelectedItem = c;
     }
 }

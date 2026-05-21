@@ -41,6 +41,15 @@ public sealed class SqliteRepository
         using var conn = Open();
         conn.Execute(SqliteSchema.CreateAll);
         MigrateCoursePkIfNeeded(conn);
+        MigrateSavedTimetableSnapshot(conn);
+    }
+
+    private static void MigrateSavedTimetableSnapshot(SqliteConnection conn)
+    {
+        var columns = conn.Query("PRAGMA table_info(SavedTimetables)")
+            .Select(row => (string)row.name);
+        if (columns.Contains("SnapshotJson")) return;
+        conn.Execute("ALTER TABLE SavedTimetables ADD COLUMN SnapshotJson TEXT");
     }
 
     private static void MigrateCoursePkIfNeeded(SqliteConnection conn)
@@ -119,6 +128,7 @@ public sealed class SqliteRepository
         public string Name { get; set; } = "";
         public string CreatedAt { get; set; } = "";
         public string AssignmentsJson { get; set; } = "[]";
+        public string? SnapshotJson { get; set; }
     }
 
     private sealed class SavedManualCrossLinkDbRow
@@ -171,7 +181,8 @@ public sealed class SqliteRepository
                 r.Name,
                 DateTime.Parse(r.CreatedAt),
                 JsonSerializer.Deserialize<List<TimetableAssignmentRow>>(r.AssignmentsJson) ?? new(),
-                crossLinks.TryGetValue(r.Id, out var links) ? links : Array.Empty<SavedManualCrossLinkRow>()))
+                crossLinks.TryGetValue(r.Id, out var links) ? links : Array.Empty<SavedManualCrossLinkRow>(),
+                r.SnapshotJson))
             .ToList();
     }
 
@@ -180,14 +191,15 @@ public sealed class SqliteRepository
         using var conn = Open();
         using var tx = conn.BeginTransaction();
         conn.Execute(
-            @"INSERT OR REPLACE INTO SavedTimetables (Id, Name, CreatedAt, AssignmentsJson)
-              VALUES (@Id, @Name, @CreatedAt, @AssignmentsJson)",
+            @"INSERT OR REPLACE INTO SavedTimetables (Id, Name, CreatedAt, AssignmentsJson, SnapshotJson)
+              VALUES (@Id, @Name, @CreatedAt, @AssignmentsJson, @SnapshotJson)",
             new
             {
                 t.Id,
                 t.Name,
                 CreatedAt = t.CreatedAt.ToString("O"),
                 AssignmentsJson = JsonSerializer.Serialize(t.Assignments),
+                t.SnapshotJson,
             },
             tx);
 

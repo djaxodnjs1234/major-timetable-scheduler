@@ -55,6 +55,24 @@
         </Style>
     </UserControl.Resources>
     <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Step header -->
+        <Border Grid.Row="0" Style="{StaticResource StepHeaderBar}">
+            <StackPanel Orientation="Horizontal">
+                <Border Style="{StaticResource StepBadge}">
+                    <TextBlock Text="4단계" Style="{StaticResource StepBadgeText}" />
+                </Border>
+                <TextBlock Text="수동 편집" Style="{StaticResource StepTitle}" />
+                <TextBlock Text="시간표를 직접 조정한 뒤 저장하면 시간표 선택 화면으로 돌아갑니다."
+                           Style="{StaticResource StepCaption}" />
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="1">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
             <ColumnDefinition Width="320" />
@@ -70,13 +88,10 @@
 
             <Border Grid.Row="0" Background="#F5F5F5" Padding="12" CornerRadius="4">
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="베이스 해:" VerticalAlignment="Center" FontWeight="Bold" />
-                    <TextBlock Text="{Binding BaseSolution.Score.Total, StringFormat=총점 {0:F3}}"
-                               Margin="8,0,0,0" VerticalAlignment="Center" Foreground="#005FB8" />
                     <Button Content="🔄 초기화 (베이스로 되돌리기)"
                             Command="{Binding ResetCommand}"
                             Padding="8,4" Margin="20,0,0,0" />
-                    <Button Content="↶ 뒤로가기"
+                    <Button Content="↶ 직전 이동 취소"
                             Command="{Binding UndoLastMoveCommand}"
                             Padding="8,4" Margin="8,0,0,0" />
                     <Button Content="↷ 앞으로가기"
@@ -103,8 +118,54 @@
             </Border>
 
             <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="1" Margin="0,8,0,0">
-                <ctrl:UnifiedTimetableControl x:Name="GridControl"
-                                              DataContext="{Binding Grid}" />
+                <TabControl>
+                    <TabItem Header="통합 시간표">
+                        <ctrl:UnifiedTimetableControl x:Name="GridControl"
+                                                      DataContext="{Binding Grid}" />
+                    </TabItem>
+                    <TabItem Header="학년별">
+                        <TabControl ItemsSource="{Binding GradeViews}">
+                            <TabControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
+                                    <TextBlock Text="{Binding Name}" />
+                                </DataTemplate>
+                            </TabControl.ItemTemplate>
+                            <TabControl.ContentTemplate>
+                                <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
+                                    <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                </DataTemplate>
+                            </TabControl.ContentTemplate>
+                        </TabControl>
+                    </TabItem>
+                    <TabItem Header="강의실별">
+                        <TabControl ItemsSource="{Binding RoomViews}">
+                            <TabControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
+                                    <TextBlock Text="{Binding Name}" />
+                                </DataTemplate>
+                            </TabControl.ItemTemplate>
+                            <TabControl.ContentTemplate>
+                                <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
+                                    <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                </DataTemplate>
+                            </TabControl.ContentTemplate>
+                        </TabControl>
+                    </TabItem>
+                    <TabItem Header="교수별">
+                        <TabControl ItemsSource="{Binding ProfessorViews}">
+                            <TabControl.ItemTemplate>
+                                <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
+                                    <TextBlock Text="{Binding Name}" />
+                                </DataTemplate>
+                            </TabControl.ItemTemplate>
+                            <TabControl.ContentTemplate>
+                                <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
+                                    <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                </DataTemplate>
+                            </TabControl.ContentTemplate>
+                        </TabControl>
+                    </TabItem>
+                </TabControl>
             </Border>
 
             <Border Grid.Row="2" Background="White" BorderBrush="#DDD" BorderThickness="1"
@@ -259,5 +320,6 @@
                 </StackPanel>
             </ScrollViewer>
         </Border>
+        </Grid>
     </Grid>
 </UserControl>
