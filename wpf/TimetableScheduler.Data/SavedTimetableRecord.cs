@@ -5,7 +5,8 @@ public sealed record SavedTimetableRecord(
     string Name,
     DateTime CreatedAt,
     IReadOnlyList<TimetableAssignmentRow> Assignments,
-    IReadOnlyList<SavedManualCrossLinkRow>? ManualCrossLinks = null);
+    IReadOnlyList<SavedManualCrossLinkRow>? ManualCrossLinks = null,
+    string? SnapshotJson = null);
 
 public sealed record SavedManualCrossLinkRow(
     string SourceCourseId,

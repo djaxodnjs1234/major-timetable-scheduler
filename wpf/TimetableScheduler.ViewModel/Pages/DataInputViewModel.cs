@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using TimetableScheduler.Data;
 using TimetableScheduler.Domain;
 using TimetableScheduler.Scoring;
 using TimetableScheduler.Solver;
@@ -9,15 +10,37 @@ namespace TimetableScheduler.ViewModel.Pages;
 
 public enum InputCategory { Professor, Course, Room, Solve }
 
+/// <summary>
+/// One item in the course list: either a group of non-fixed sections (shown as a
+/// single row) or a single fixed section (shown individually).
+/// </summary>
+public sealed class CourseGroupItem
+{
+    public string BaseId { get; init; } = "";
+    public string DisplayLabel { get; init; } = "";
+    /// <summary>All sections in this group (N>1 for grouped, 1 for individual fixed).</summary>
+    public List<Course> Sections { get; init; } = new();
+    public bool IsFixedIndividual => Sections.Count == 1 && Sections[0].IsFixed;
+}
+
 public sealed partial class DataInputViewModel : PageViewModelBase
 {
-    private readonly WorkspaceService _workspace;
+    private WorkspaceService _workspace;
+    private readonly WorkspaceService _globalWorkspace;
     private readonly SolverService _solver;
     private CancellationTokenSource? _cts;
+    private EventHandler? _workspaceChangedHandler;
 
     public override string Title => "정보 입력";
 
     public WorkspaceService Workspace => _workspace;
+
+    /// <summary>True when editing an existing timetable's snapshot (session workspace).</summary>
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(GoToManualCommand))]
+    private bool isExistingMode;
+
+    public ObservableCollection<CourseGroupItem> CourseGroups { get; } = new();
 
     [ObservableProperty]
     private InputCategory selectedCategory = InputCategory.Course;
@@ -116,6 +139,93 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         _workspace.ImportFromXlsx(path);
     }
 
+    // ------------------------------------------------------------------
+    // Course group commands (used by DataInputView course list)
+    // ------------------------------------------------------------------
+
+    /// <summary>Apply shared fields to every section in the group.</summary>
+    [RelayCommand]
+    private void SaveGroup(CourseGroupItem item)
+    {
+        if (item is null || item.Sections.Count == 0) return;
+        var rep = item.Sections[0];
+        foreach (var sec in item.Sections)
+        {
+            if (!ReferenceEquals(sec, rep))
+            {
+                sec.Name = rep.Name;
+                sec.Grade = rep.Grade;
+                sec.HoursPerWeek = rep.HoursPerWeek;
+                sec.CourseType = rep.CourseType;
+                sec.ProfessorId = rep.ProfessorId;
+                sec.Department = rep.Department;
+                sec.IsFixed = rep.IsFixed;
+                sec.FixedRooms = new List<string>(rep.FixedRooms);
+                sec.BlockStructure = new List<int>(rep.BlockStructure);
+                sec.CoteachProfs = new List<string>(rep.CoteachProfs);
+                // FixedSlots intentionally not copied — each section has its own slots
+            }
+            _workspace.UpdateCourse(sec);
+        }
+    }
+
+    /// <summary>Delete all sections in the group.</summary>
+    [RelayCommand]
+    private void DeleteGroup(CourseGroupItem item)
+    {
+        if (item is null) return;
+        foreach (var sec in item.Sections.ToList())
+            _workspace.DeleteCourse(sec);
+    }
+
+    /// <summary>Save a single fixed section (IsFixedIndividual=true).</summary>
+    [RelayCommand]
+    private void SaveSection(CourseGroupItem item)
+    {
+        if (item is null || item.Sections.Count != 1) return;
+        _workspace.UpdateCourse(item.Sections[0]);
+    }
+
+    /// <summary>Delete a single fixed section (IsFixedIndividual=true).</summary>
+    [RelayCommand]
+    private void DeleteSection(CourseGroupItem item)
+    {
+        if (item is null || item.Sections.Count != 1) return;
+        _workspace.DeleteCourse(item.Sections[0]);
+    }
+
+    /// <summary>Add the next-numbered section to the group, copying shared fields from Sections[0].</summary>
+    [RelayCommand]
+    private void AddSection(CourseGroupItem item)
+    {
+        if (item is null || item.Sections.Count == 0) return;
+        var rep = item.Sections[0];
+        var next = item.Sections.Max(s => s.Section) + 1;
+        var newId = $"{item.BaseId}-{next:D2}";
+        if (_workspace.Courses.Any(c => c.Id == newId)) return;
+        _workspace.AddCourse(new Course
+        {
+            Id = newId,
+            Name = rep.Name,
+            Grade = rep.Grade,
+            HoursPerWeek = rep.HoursPerWeek,
+            CourseType = rep.CourseType,
+            ProfessorId = rep.ProfessorId,
+            Department = rep.Department,
+            Section = next,
+            BlockStructure = new List<int>(rep.BlockStructure),
+        });
+    }
+
+    /// <summary>Remove the last section from the group. No-op if only one section remains.</summary>
+    [RelayCommand]
+    private void RemoveSection(CourseGroupItem item)
+    {
+        if (item is null || item.Sections.Count <= 1) return;
+        var last = item.Sections.OrderByDescending(s => s.Section).First();
+        _workspace.DeleteCourse(last);
+    }
+
     [ObservableProperty]
     private int totalSolutions = 3;
 
@@ -155,16 +265,142 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     public event EventHandler<IReadOnlyList<RankedSolution>>? SolveCompleted;
     public event EventHandler? GoToSelectionRequested;
+    public event EventHandler? GoToManualRequested;
 
     [RelayCommand(CanExecute = nameof(CanGoToSelection))]
     private void GoToSelection() => GoToSelectionRequested?.Invoke(this, EventArgs.Empty);
     private bool CanGoToSelection() => IsSolveComplete;
 
+    /// <summary>
+    /// Skip the solver and hand the existing timetable's base assignments straight to
+    /// manual editing. Only valid in existing-timetable mode (a base layout exists).
+    /// </summary>
+    [RelayCommand(CanExecute = nameof(CanGoToManual))]
+    private void GoToManual() => GoToManualRequested?.Invoke(this, EventArgs.Empty);
+    private bool CanGoToManual() => IsExistingMode;
+
+    /// <summary>The base assignments + snapshot for handing off to manual editing.</summary>
+    public RankedSolution? BuildEditHandoff()
+    {
+        if (_editBaseAssignments == null) return null;
+        return new RankedSolution(_editBaseAssignments, new SolutionScore(0, 0, 0, 0));
+    }
+
+    public AppData CurrentSnapshot() => _workspace.Snapshot();
+
     public DataInputViewModel(WorkspaceService workspace, SolverService solver)
     {
-        _workspace = workspace;
+        _globalWorkspace = workspace;
         _solver = solver;
-        _workspace.Changed += (_, _) => SolveCommand.NotifyCanExecuteChanged();
+        _workspaceChangedHandler = (_, _) =>
+        {
+            SolveCommand.NotifyCanExecuteChanged();
+            RebuildCourseGroups();
+        };
+        _workspace = workspace;
+        _workspace.Changed += _workspaceChangedHandler;
+        RebuildCourseGroups();
+    }
+
+    private void SwitchWorkspace(WorkspaceService target)
+    {
+        if (ReferenceEquals(_workspace, target)) return;
+        _workspace.Changed -= _workspaceChangedHandler;
+        _workspace = target;
+        _workspace.Changed += _workspaceChangedHandler;
+        OnPropertyChanged(nameof(Workspace));
+        RebuildCourseGroups();
+        SolveCommand.NotifyCanExecuteChanged();
+        SelectedItem = null;
+        IsSolveComplete = false;
+        StatusMessage = "";
+    }
+
+    /// <summary>Enter "new timetable" mode — edits the global workspace.</summary>
+    public void LoadForNewTimetable()
+    {
+        SwitchWorkspace(_globalWorkspace);
+        IsExistingMode = false;
+        SelectedCategory = InputCategory.Course;
+    }
+
+    /// <summary>
+    /// Enter "existing timetable" mode — edits an in-memory session workspace seeded
+    /// from the timetable's constraint snapshot. The global workspace is untouched.
+    /// </summary>
+    public void LoadForExistingTimetable(SavedTimetableRecord record)
+    {
+        var snapshot = record.SnapshotJson is { Length: > 0 } json
+            ? System.Text.Json.JsonSerializer.Deserialize<AppData>(json) ?? AppData.Empty()
+            : AppData.Empty();
+        SwitchWorkspace(WorkspaceService.CreateSession(snapshot));
+        IsExistingMode = true;
+        SelectedCategory = InputCategory.Course;
+        _editBaseAssignments = record.Assignments
+            .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
+            .ToList();
+        _editBaseName = record.Name;
+    }
+
+    private IReadOnlyList<SolutionAssignment>? _editBaseAssignments;
+    private string _editBaseName = "";
+
+    /// <summary>Name of the timetable being re-edited (for the manual-edit save field).</summary>
+    public string EditBaseName => _editBaseName;
+
+    private static readonly string[] SectionLetters = { "A","B","C","D","E","F" };
+
+    private static string SectionLetter(int section) =>
+        section >= 1 && section <= SectionLetters.Length
+            ? SectionLetters[section - 1] : section.ToString();
+
+    private void RebuildCourseGroups()
+    {
+        CourseGroups.Clear();
+
+        var byBase = _workspace.Courses
+            .GroupBy(c => DomainHelpers.BaseId(c.Id))
+            .OrderBy(g => g.First().Grade)
+            .ThenBy(g => g.First().CourseType)
+            .ThenBy(g => g.Key);
+
+        foreach (var g in byBase)
+        {
+            var sections = g.OrderBy(c => c.Section).ToList();
+
+            if (sections.Any(c => c.IsFixed))
+            {
+                // Fixed: one row per section
+                foreach (var sec in sections)
+                {
+                    var letter = SectionLetter(sec.Section);
+                    var label = sections.Count > 1
+                        ? $"{sec.Id}  {sec.Name}  {sec.Grade}학년  ★"
+                        : $"{sec.Id}  {sec.Name}  {sec.Grade}학년  ★";
+                    CourseGroups.Add(new CourseGroupItem
+                    {
+                        BaseId = g.Key,
+                        DisplayLabel = label,
+                        Sections = new List<Course> { sec },
+                    });
+                }
+            }
+            else
+            {
+                // Non-fixed: one row for the whole group
+                var rep = sections[0];
+                var secPart = sections.Count > 1
+                    ? $"  ({string.Join("·", sections.Select(s => SectionLetter(s.Section)))}분반)"
+                    : "";
+                var label = $"{g.Key}  {rep.Name}  {rep.Grade}학년  {rep.HoursPerWeek}h{secPart}";
+                CourseGroups.Add(new CourseGroupItem
+                {
+                    BaseId = g.Key,
+                    DisplayLabel = label,
+                    Sections = sections,
+                });
+            }
+        }
     }
 
     [RelayCommand(CanExecute = nameof(CanSolve))]

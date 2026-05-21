@@ -37,15 +37,4 @@ public partial class TimetableSelectionView : UserControl
             Vm.DeleteTimetableCommand.Execute(record);
     }
 
-    private void OnImportXlsxClick(object sender, RoutedEventArgs e)
-    {
-        if (Vm == null) return;
-        var dlg = new OpenFileDialog
-        {
-            Filter = "Excel files (*.xlsx)|*.xlsx|All files (*.*)|*.*",
-            Title = "시간표 xlsx 불러오기",
-        };
-        if (dlg.ShowDialog() == true)
-            Vm.ImportXlsxCommand.Execute(dlg.FileName);
-    }
 }

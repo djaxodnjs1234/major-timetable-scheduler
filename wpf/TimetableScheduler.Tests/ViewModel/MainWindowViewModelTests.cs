@@ -51,47 +51,68 @@ public class MainWindowViewModelTests : IDisposable
     }
 
     [Fact]
-    public void GoToInputCommand_NavigatesToInputPage()
+    public void CreateNew_NavigatesToInputPage()
     {
         var main = _sp.GetRequiredService<MainWindowViewModel>();
-        main.GoToInputCommand.Execute(null);
+        main.Selection.CreateNewCommand.Execute(null);
         Assert.IsType<DataInputViewModel>(main.CurrentPage);
-    }
-
-    [Fact]
-    public void EditSelectedTimetableCommand_OpensManualEditPageWithSavedAssignments()
-    {
-        var workspace = _sp.GetRequiredService<WorkspaceService>();
-        workspace.SaveTimetable("저장본", new[]
-        {
-            new SolutionAssignment("C1", 0, 1, "R1"),
-        });
-
-        var selection = _sp.GetRequiredService<TimetableSelectionViewModel>();
-        selection.SelectedTimetable = selection.SavedTimetables.First();
-
-        var main = _sp.GetRequiredService<MainWindowViewModel>();
-        selection.EditSelectedTimetableCommand.Execute(null);
-
-        var manual = Assert.IsType<ManualEditViewModel>(main.CurrentPage);
-        Assert.NotNull(manual.BaseSolution);
-        var assignment = Assert.Single(manual.BaseSolution!.Assignment);
-        Assert.Equal("C1", assignment.CourseId);
-        Assert.Equal(0, assignment.Day);
-        Assert.Equal(1, assignment.Period);
-        Assert.Equal("R1", assignment.RoomId);
-        Assert.Equal("저장본", manual.SaveName);
-        Assert.Contains("저장된 시간표", manual.StatusMessage);
-    }
-
-    [Fact]
-    public void Title_ChangesWithPage()
-    {
-        var main = _sp.GetRequiredService<MainWindowViewModel>();
-        Assert.Equal("시간표 선택", main.CurrentPage.Title);
-        main.GoToInputCommand.Execute(null);
         Assert.Equal("정보 입력", main.CurrentPage.Title);
-        main.GoToResultsCommand.Execute(null);
-        Assert.Equal("해 미리보기", main.CurrentPage.Title);
+    }
+
+    [Fact]
+    public void Edit_NavigatesToInputPageInExistingMode()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var workspace = _sp.GetRequiredService<WorkspaceService>();
+        workspace.SaveTimetable("nav-test", Array.Empty<TimetableScheduler.Solver.SolutionAssignment>());
+        var record = workspace.SavedTimetables.First(t => t.Name == "nav-test");
+
+        main.Selection.EditCommand.Execute(record);
+
+        Assert.IsType<DataInputViewModel>(main.CurrentPage);
+        Assert.Equal("정보 입력", main.CurrentPage.Title);
+        Assert.True(main.Input.IsExistingMode);
+    }
+
+    [Fact]
+    public void EditThenGoToManual_NavigatesToManualPage()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var workspace = _sp.GetRequiredService<WorkspaceService>();
+        workspace.SaveTimetable("nav-test", Array.Empty<TimetableScheduler.Solver.SolutionAssignment>());
+        var record = workspace.SavedTimetables.First(t => t.Name == "nav-test");
+
+        main.Selection.EditCommand.Execute(record);
+        main.Input.GoToManualCommand.Execute(null);
+
+        Assert.IsType<ManualEditViewModel>(main.CurrentPage);
+        Assert.Equal("수동 편집", main.CurrentPage.Title);
+        Assert.Equal("nav-test", main.Manual.SaveName);
+    }
+
+    [Fact]
+    public void CreateNew_DisablesGoToManual()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        main.Selection.CreateNewCommand.Execute(null);
+
+        Assert.False(main.Input.IsExistingMode);
+        Assert.False(main.Input.GoToManualCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void SaveTimetable_NavigatesBackToSelectionPage()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var workspace = _sp.GetRequiredService<WorkspaceService>();
+        workspace.SaveTimetable("nav-test", Array.Empty<TimetableScheduler.Solver.SolutionAssignment>());
+        var record = workspace.SavedTimetables.First(t => t.Name == "nav-test");
+        main.Selection.EditCommand.Execute(record);
+        main.Input.GoToManualCommand.Execute(null);
+
+        main.Manual.SaveTimetableCommand.Execute(null);
+
+        Assert.IsType<TimetableSelectionViewModel>(main.CurrentPage);
+        Assert.Equal("시간표 선택", main.CurrentPage.Title);
     }
 }

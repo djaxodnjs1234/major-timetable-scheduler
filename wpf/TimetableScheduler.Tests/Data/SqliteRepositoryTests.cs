@@ -106,6 +106,38 @@ public class SqliteRepositoryTests : IDisposable
     }
 
     [Fact]
+    public void EnsureCreated_OnOldSchema_AddsSnapshotColumnPreservingData()
+    {
+        // Simulate a pre-snapshot DB: SavedTimetables without the SnapshotJson column.
+        using (var conn = new Microsoft.Data.Sqlite.SqliteConnection(
+                   new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = _dbPath }.ToString()))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                "CREATE TABLE SavedTimetables (Id TEXT PRIMARY KEY, Name TEXT NOT NULL, " +
+                "CreatedAt TEXT NOT NULL, AssignmentsJson TEXT NOT NULL);" +
+                "INSERT INTO SavedTimetables VALUES ('id1', 'old', '2026-01-01T00:00:00.0000000', '[]');";
+            cmd.ExecuteNonQuery();
+        }
+
+        var repo = new SqliteRepository(_dbPath);
+        repo.EnsureCreated();
+
+        var saved = repo.LoadSavedTimetables();
+        Assert.Single(saved);
+        Assert.Equal("old", saved[0].Name);
+        Assert.Null(saved[0].SnapshotJson);
+
+        // New saves with a snapshot work after migration.
+        repo.UpsertSavedTimetable(new SavedTimetableRecord(
+            "id2", "new", DateTime.Now,
+            new List<TimetableAssignmentRow>(), SnapshotJson: "{\"snapshot\":true}"));
+        Assert.Equal("{\"snapshot\":true}",
+            repo.LoadSavedTimetables().Single(t => t.Name == "new").SnapshotJson);
+    }
+
+    [Fact]
     public void SaveAll_OverwritesPreviousData()
     {
         var repo = new SqliteRepository(_dbPath);

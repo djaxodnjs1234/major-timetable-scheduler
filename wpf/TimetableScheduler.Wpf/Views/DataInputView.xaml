@@ -106,22 +106,36 @@
             </Expander>
         </DataTemplate>
 
-        <DataTemplate x:Key="CourseRowTemplate" DataType="{x:Type dom:Course}">
-            <Expander Margin="0,0,0,4" Expanded="OnCourseExpanded">
+        <!-- Shared field editor: binds to Sections[0], SaveGroup propagates to all sections -->
+        <DataTemplate x:Key="CourseGroupRowTemplate" DataType="{x:Type vm:CourseGroupItem}">
+            <Expander Margin="0,0,0,4" Expanded="OnCourseGroupExpanded">
                 <Expander.Header>
                     <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding Id}" FontWeight="Bold" Width="120" />
-                        <TextBlock Text="{Binding Name}" Width="200" />
-                        <TextBlock Text="{Binding Grade, StringFormat={}{0}학년}" Width="60"
-                                   Foreground="{StaticResource OnSurfaceVariant}" />
-                        <TextBlock Text="{Binding HoursPerWeek, StringFormat={}{0}시간}" Width="60"
-                                   Foreground="{StaticResource OnSurfaceVariant}" />
-                        <TextBlock Text="{Binding ProfessorId}"
-                                   Foreground="{StaticResource OnSurfaceVariant}" />
+                        <TextBlock Text="{Binding DisplayLabel}" FontWeight="Bold" />
                     </StackPanel>
                 </Expander.Header>
-                <Border Background="White" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1">
-                    <StackPanel>
+                <Border Background="White" Padding="16"
+                        BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1">
+                    <StackPanel DataContext="{Binding Sections[0]}">
+                        <!-- Section count controls (non-fixed groups only) -->
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,8"
+                                    Visibility="{Binding DataContext.IsFixedIndividual,
+                                                 RelativeSource={RelativeSource AncestorType=Expander},
+                                                 Converter={StaticResource BoolToVisibility},
+                                                 ConverterParameter=Inverse}">
+                            <TextBlock Text="분반 수:"
+                                       FontSize="11" FontWeight="Bold" VerticalAlignment="Center"
+                                       Margin="0,0,8,0" Foreground="{StaticResource OnSurfaceVariant}" />
+                            <TextBlock Text="{Binding DataContext.Sections.Count,
+                                               RelativeSource={RelativeSource AncestorType=Expander}}"
+                                       FontWeight="Bold" VerticalAlignment="Center" Margin="0,0,8,0" />
+                            <Button Content="+" Click="OnAddSectionClick"
+                                    Padding="10,4" Margin="0,0,4,0"
+                                    Background="{StaticResource PrimaryBrush}" Foreground="White" />
+                            <Button Content="-" Click="OnRemoveSectionClick"
+                                    Padding="10,4"
+                                    Background="{StaticResource SurfaceContainer}" />
+                        </StackPanel>
                         <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="120" />
@@ -136,78 +150,66 @@
                                 <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="ID" Margin="0,4" />
-                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Id, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,4,16,4" Padding="6,4" />
-                            <TextBlock Grid.Row="0" Grid.Column="2" Text="이름" Margin="0,4" />
-                            <TextBox Grid.Row="0" Grid.Column="3" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,4" Padding="6,4" />
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="이름" Margin="0,4" />
+                            <TextBox Grid.Row="0" Grid.Column="1" Margin="0,4,16,4" Padding="6,4"
+                                     Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Grid.Row="0" Grid.Column="2" Text="학년" Margin="0,4" />
+                            <TextBox Grid.Row="0" Grid.Column="3" Margin="0,4" Padding="6,4"
+                                     Text="{Binding Grade, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
 
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="학년" Margin="0,4" />
-                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Grade, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,4,16,4" Padding="6,4" />
-                            <TextBlock Grid.Row="1" Grid.Column="2" Text="시수/주" Margin="0,4" />
-                            <TextBox Grid.Row="1" Grid.Column="3" Text="{Binding HoursPerWeek, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,4" Padding="6,4" />
-
-                            <TextBlock Grid.Row="2" Grid.Column="0" Text="유형" Margin="0,4" />
-                            <ComboBox Grid.Row="2" Grid.Column="1" SelectedItem="{Binding CourseType, Mode=TwoWay}"
-                                      Margin="0,4,16,4" Padding="6,4">
+                            <TextBlock Grid.Row="1" Grid.Column="0" Text="시수/주" Margin="0,4" />
+                            <TextBox Grid.Row="1" Grid.Column="1" Margin="0,4,16,4" Padding="6,4"
+                                     Text="{Binding HoursPerWeek, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Grid.Row="1" Grid.Column="2" Text="유형" Margin="0,4" />
+                            <ComboBox Grid.Row="1" Grid.Column="3" Margin="0,4" Padding="6,4"
+                                      SelectedItem="{Binding CourseType, Mode=TwoWay}">
                                 <sys:String xmlns:sys="clr-namespace:System;assembly=mscorlib">전필</sys:String>
                                 <sys:String xmlns:sys="clr-namespace:System;assembly=mscorlib">전선</sys:String>
                                 <sys:String xmlns:sys="clr-namespace:System;assembly=mscorlib">교양</sys:String>
                             </ComboBox>
-                            <TextBlock Grid.Row="2" Grid.Column="2" Text="분반" Margin="0,4" />
-                            <TextBox Grid.Row="2" Grid.Column="3" Text="{Binding Section, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,4" Padding="6,4" />
 
-                            <TextBlock Grid.Row="3" Grid.Column="0" Text="교수 ID" Margin="0,4" />
-                            <TextBox Grid.Row="3" Grid.Column="1" Text="{Binding ProfessorId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,4,16,4" Padding="6,4" />
-                            <TextBlock Grid.Row="3" Grid.Column="2" Text="학과" Margin="0,4" />
-                            <TextBox Grid.Row="3" Grid.Column="3" Text="{Binding Department, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,4" Padding="6,4" />
+                            <TextBlock Grid.Row="2" Grid.Column="0" Text="교수 ID" Margin="0,4" />
+                            <TextBox Grid.Row="2" Grid.Column="1" Margin="0,4,16,4" Padding="6,4"
+                                     Text="{Binding ProfessorId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                            <TextBlock Grid.Row="2" Grid.Column="2" Text="학과" Margin="0,4" />
+                            <TextBox Grid.Row="2" Grid.Column="3" Margin="0,4" Padding="6,4"
+                                     Text="{Binding Department, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+
+                            <TextBlock Grid.Row="3" Grid.Column="0" Text="블록구조" Margin="0,4" />
+                            <TextBox Grid.Row="3" Grid.Column="1" Margin="0,4,16,4" Padding="6,4"
+                                     Text="{Binding BlockStructure, Mode=TwoWay,
+                                            Converter={StaticResource IntListToCsv},
+                                            UpdateSourceTrigger=LostFocus}" />
                         </Grid>
 
-                        <TextBlock Text="시수 분할 (BlockStructure, 콤마 구분 e.g. 2,1)"
+                        <TextBlock Text="고정 강의실 (빈=자동 / N개=동시점유)"
                                    FontSize="11" FontWeight="Bold" Margin="0,12,0,4"
                                    Foreground="{StaticResource OnSurfaceVariant}" />
-                        <TextBox Padding="6,4" Width="200" HorizontalAlignment="Left"
-                                 Text="{Binding BlockStructure, Mode=TwoWay,
-                                        Converter={StaticResource IntListToCsv},
-                                        UpdateSourceTrigger=PropertyChanged}" />
+                        <ctrl:CheckListPickerControl x:Name="GroupFixedRoomsPicker" />
 
-                        <TextBlock Text="고정 강의실 (FixedRooms: 빈=자동 / N개=동시점유 캡스톤형)"
+                        <TextBlock Text="팀티칭 교수"
                                    FontSize="11" FontWeight="Bold" Margin="0,12,0,4"
                                    Foreground="{StaticResource OnSurfaceVariant}" />
-                        <ctrl:CheckListPickerControl x:Name="FixedRoomsPicker" />
+                        <ctrl:CheckListPickerControl x:Name="GroupCoteachProfsPicker" />
 
-                        <TextBlock Text="팀티칭 교수 (CoteachProfs)"
-                                   FontSize="11" FontWeight="Bold" Margin="0,12,0,4"
-                                   Foreground="{StaticResource OnSurfaceVariant}" />
-                        <ctrl:CheckListPickerControl x:Name="CoteachProfsPicker" />
-
-                        <CheckBox Content="고정 과목 (사전 배정 시간 슬롯 사용)"
+                        <CheckBox Content="고정 과목 (사전 배정 시간 슬롯 사용 — HC-13)"
                                   IsChecked="{Binding IsFixed, Mode=TwoWay}"
-                                  Margin="0,16,0,4" FontWeight="Bold" />
+                                  Margin="0,16,0,4" FontWeight="Bold"
+                                  Checked="OnIsFixedCheckChanged"
+                                  Unchecked="OnIsFixedCheckChanged" />
 
-                        <TextBlock Text="고정 시간 (IsFixed=true일 때만 적용 — HC-13)"
-                                   FontSize="11" Margin="0,4,0,4"
+                        <TextBlock Text="고정 시간 슬롯"
+                                   FontSize="11" FontWeight="Bold" Margin="0,4,0,4"
                                    Foreground="{StaticResource OnSurfaceVariant}" />
-                        <ctrl:TimeSlotPickerControl x:Name="FixedSlotsPicker"
-                                                    Width="380" HorizontalAlignment="Left" />
+                        <ctrl:FixedSlotEditorControl x:Name="FixedSlotEditor" />
 
-                        <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                        <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                             <Button Content="저장"
-                                    Command="{Binding DataContext.SaveSelectedCommand,
-                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                    Click="OnCourseSaveClick"
+                                    Click="OnCourseGroupSaveClick"
                                     Padding="12,6" Margin="0,0,8,0"
                                     Background="{StaticResource PrimaryBrush}" Foreground="White" />
                             <Button Content="삭제"
-                                    Command="{Binding DataContext.DeleteSelectedCommand,
-                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                    Click="OnCourseDeleteClick"
+                                    Click="OnCourseGroupDeleteClick"
                                     Padding="12,6"
                                     Background="#BA1A1A" Foreground="White" />
                         </StackPanel>
@@ -261,6 +263,24 @@
     </UserControl.Resources>
 
     <Grid Background="{StaticResource Surface}">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Step header -->
+        <Border Grid.Row="0" Style="{StaticResource StepHeaderBar}">
+            <StackPanel Orientation="Horizontal">
+                <Border Style="{StaticResource StepBadge}">
+                    <TextBlock Text="2단계" Style="{StaticResource StepBadgeText}" />
+                </Border>
+                <TextBlock Text="정보 입력" Style="{StaticResource StepTitle}" />
+                <TextBlock Text="교과목·교수·강의실 정보를 입력하고 시간표를 자동 생성합니다."
+                           Style="{StaticResource StepCaption}" />
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="1">
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="260" />
             <ColumnDefinition Width="*" />
@@ -396,8 +416,8 @@
                                       ItemTemplate="{StaticResource ProfessorRowTemplate}"
                                       Visibility="{Binding IsProfessorSelected, Converter={StaticResource BoolToVisibility}}"
                                       Margin="8" />
-                        <ItemsControl ItemsSource="{Binding Workspace.Courses}"
-                                      ItemTemplate="{StaticResource CourseRowTemplate}"
+                        <ItemsControl ItemsSource="{Binding CourseGroups}"
+                                      ItemTemplate="{StaticResource CourseGroupRowTemplate}"
                                       Visibility="{Binding IsCourseSelected, Converter={StaticResource BoolToVisibility}}"
                                       Margin="8" />
                         <ItemsControl ItemsSource="{Binding Workspace.Rooms}"
@@ -461,7 +481,7 @@
                             </Border>
 
                             <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                <Button Content="시간표 자동 생성"
+                                <Button Content="시간표 자동 생성 (해 계산)"
                                         Command="{Binding SolveCommand}"
                                         Padding="20,10" FontWeight="Bold" FontSize="13"
                                         Margin="0,0,8,0">
@@ -475,16 +495,22 @@
                                 <Button Content="취소" Command="{Binding CancelCommand}"
                                         Padding="14,10"
                                         IsEnabled="{Binding IsSolving}" />
-                                <Button Content="다음으로 넘어가기 →"
+                                <Button Content="해 미리보기로 →"
                                         Command="{Binding GoToSelectionCommand}"
                                         Padding="14,10" Margin="8,0,0,0"
                                         Background="#2E7D32" Foreground="White"
                                         Visibility="{Binding IsSolveComplete, Converter={StaticResource BoolToVisibility}}" />
+                                <Button Content="수동 편집으로 →"
+                                        Command="{Binding GoToManualCommand}"
+                                        Padding="14,10" Margin="8,0,0,0"
+                                        Background="#2E7D32" Foreground="White"
+                                        Visibility="{Binding IsExistingMode, Converter={StaticResource BoolToVisibility}}" />
                             </StackPanel>
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>
             </Border>
+        </Grid>
         </Grid>
     </Grid>
 </UserControl>

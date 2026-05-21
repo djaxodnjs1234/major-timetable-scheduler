@@ -23,6 +23,52 @@
                 </Style.Triggers>
             </Style>
 
+            <!-- Shared design tokens -->
+            <SolidColorBrush x:Key="AppPrimary" Color="#005FB8" />
+            <SolidColorBrush x:Key="AppOnSurface" Color="#191C21" />
+            <SolidColorBrush x:Key="AppOnSurfaceVariant" Color="#5A6068" />
+
+            <!-- Step header: shown at the top of each page so the user knows
+                 which stage of the workflow they are on. -->
+            <Style x:Key="StepHeaderBar" TargetType="Border">
+                <Setter Property="Background" Value="White" />
+                <Setter Property="BorderBrush" Value="#E1E2EA" />
+                <Setter Property="BorderThickness" Value="0,0,0,1" />
+                <Setter Property="Padding" Value="20,12" />
+            </Style>
+            <Style x:Key="StepBadge" TargetType="Border">
+                <Setter Property="Background" Value="{StaticResource AppPrimary}" />
+                <Setter Property="CornerRadius" Value="10" />
+                <Setter Property="Padding" Value="9,3" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Margin" Value="0,0,10,0" />
+            </Style>
+            <Style x:Key="StepBadgeText" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="White" />
+                <Setter Property="FontSize" Value="11" />
+                <Setter Property="FontWeight" Value="Bold" />
+            </Style>
+            <Style x:Key="StepTitle" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{StaticResource AppOnSurface}" />
+                <Setter Property="FontSize" Value="18" />
+                <Setter Property="FontWeight" Value="Bold" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+            </Style>
+            <Style x:Key="StepCaption" TargetType="TextBlock">
+                <Setter Property="Foreground" Value="{StaticResource AppOnSurfaceVariant}" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="VerticalAlignment" Value="Center" />
+                <Setter Property="Margin" Value="12,0,0,0" />
+            </Style>
+            <Style x:Key="PrimaryButton" TargetType="Button">
+                <Setter Property="Background" Value="{StaticResource AppPrimary}" />
+                <Setter Property="Foreground" Value="White" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Padding" Value="14,7" />
+                <Setter Property="BorderThickness" Value="0" />
+                <Setter Property="Cursor" Value="Hand" />
+            </Style>
+
             <DataTemplate DataType="{x:Type vm:TimetableSelectionViewModel}">
                 <views:TimetableSelectionView />
             </DataTemplate>

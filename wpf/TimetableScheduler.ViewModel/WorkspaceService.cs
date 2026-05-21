@@ -7,7 +7,8 @@ namespace TimetableScheduler.ViewModel;
 
 public sealed class WorkspaceService
 {
-    private readonly SqliteRepository _repo;
+    // Null for a session workspace: CRUD stays in memory, never touches a DB.
+    private readonly SqliteRepository? _repo;
 
     public ObservableCollection<Course> Courses { get; } = new();
     public ObservableCollection<Professor> Professors { get; } = new();
@@ -15,6 +16,9 @@ public sealed class WorkspaceService
     public ObservableCollection<CrossGroup> CrossGroups { get; } = new();
     public ObservableCollection<RetakeScenario> RetakeScenarios { get; } = new();
     public ObservableCollection<SavedTimetableRecord> SavedTimetables { get; } = new();
+
+    /// <summary>True for a session workspace (snapshot-backed, no DB persistence).</summary>
+    public bool IsSession => _repo == null;
 
     public event EventHandler? Changed;
 
@@ -25,8 +29,36 @@ public sealed class WorkspaceService
         Reload();
     }
 
+    private WorkspaceService(AppData snapshot)
+    {
+        _repo = null;
+        LoadFrom(snapshot);
+    }
+
+    /// <summary>
+    /// Create an in-memory session workspace seeded from a saved timetable's snapshot.
+    /// CRUD on it never persists to any DB.
+    /// </summary>
+    public static WorkspaceService CreateSession(AppData snapshot) => new(snapshot);
+
+    private void LoadFrom(AppData data)
+    {
+        Courses.Clear();
+        foreach (var c in data.Courses) Courses.Add(c);
+        Professors.Clear();
+        foreach (var p in data.Professors) Professors.Add(p);
+        Rooms.Clear();
+        foreach (var r in data.Rooms) Rooms.Add(r);
+        CrossGroups.Clear();
+        foreach (var g in data.CrossGroups) CrossGroups.Add(g);
+        RetakeScenarios.Clear();
+        foreach (var r in data.RetakeScenarios) RetakeScenarios.Add(r);
+        RaiseChanged();
+    }
+
     public void Reload()
     {
+        if (_repo == null) return;
         var data = _repo.LoadAll();
         Courses.Clear();
         foreach (var c in data.Courses) Courses.Add(c);
@@ -43,6 +75,8 @@ public sealed class WorkspaceService
         RaiseChanged();
     }
 
+    // SaveTimetable / DeleteSavedTimetable / Export/ImportDatabase are global-only:
+    // a session workspace (_repo == null) is never expected to call them.
     public void SaveTimetable(
         string name,
         IReadOnlyList<SolutionAssignment> assignments,
@@ -51,28 +85,30 @@ public sealed class WorkspaceService
         var rows = assignments
             .Select(a => new TimetableAssignmentRow(a.CourseId, a.Day, a.Period, a.RoomId))
             .ToList();
+        var snapshotJson = System.Text.Json.JsonSerializer.Serialize(Snapshot());
         var record = new SavedTimetableRecord(
             Guid.NewGuid().ToString(),
             name,
             DateTime.Now,
             rows,
-            manualCrossLinks?.ToList() ?? new List<SavedManualCrossLinkRow>());
-        _repo.UpsertSavedTimetable(record);
+            manualCrossLinks?.ToList() ?? new List<SavedManualCrossLinkRow>(),
+            snapshotJson);
+        _repo!.UpsertSavedTimetable(record);
         SavedTimetables.Insert(0, record);
     }
 
     public void DeleteSavedTimetable(string id)
     {
-        _repo.DeleteSavedTimetable(id);
+        _repo!.DeleteSavedTimetable(id);
         var item = SavedTimetables.FirstOrDefault(t => t.Id == id);
         if (item != null) SavedTimetables.Remove(item);
     }
 
-    public void ExportDatabase(string destPath) => _repo.ExportTo(destPath);
+    public void ExportDatabase(string destPath) => _repo!.ExportTo(destPath);
 
     public void ImportDatabase(string sourcePath)
     {
-        _repo.ReplaceWith(sourcePath);
+        _repo!.ReplaceWith(sourcePath);
         Reload();
     }
 
@@ -80,7 +116,7 @@ public sealed class WorkspaceService
     {
         var loaded = XlsxLoader.Load(path);
         Courses.Clear();
-        foreach (var c in loaded.Courses) Courses.Add(c);
+        foreach (var c in DomainHelpers.ExpandSections(loaded.Courses)) Courses.Add(c);
         Professors.Clear();
         foreach (var p in loaded.Professors) Professors.Add(p);
         Rooms.Clear();
@@ -179,7 +215,7 @@ public sealed class WorkspaceService
 
     private void Persist()
     {
-        _repo.SaveAll(Snapshot());
+        _repo?.SaveAll(Snapshot());
         RaiseChanged();
     }
 
