@@ -12,9 +12,12 @@ public partial class ManualEditView : UserControl
     {
         InitializeComponent();
         GridControl.EnableCrossHover = true;
+        GridControl.EnableSwapHover = true;
         GridControl.CellClicked += OnCellClicked;
         GridControl.CrossHoverEvaluator = EvaluateCrossHover;
+        GridControl.SwapHoverEvaluator = EvaluateSwapHover;
         GridControl.CrossAddRequested += OnCrossAddRequested;
+        GridControl.SwapRequested += OnSwapRequested;
         Loaded += (_, _) => Focus();
     }
 
@@ -31,10 +34,23 @@ public partial class ManualEditView : UserControl
         return CrossHoverState.Hidden();
     }
 
+    private SwapHoverState EvaluateSwapHover(UnifiedTimetableControl.CellClickedEventArgs e)
+    {
+        if (DataContext is ManualEditViewModel vm)
+            return vm.EvaluateSwapHover(e.Day, e.Period, e.Grade, e.SubColumnIdx, e.Assignment);
+        return SwapHoverState.Hidden();
+    }
+
     private void OnCrossAddRequested(object? sender, UnifiedTimetableControl.CellClickedEventArgs e)
     {
         if (DataContext is ManualEditViewModel vm && e.Assignment != null)
             vm.HandleCrossAddRequested(e.Day, e.Period, e.Grade, e.SubColumnIdx, e.Assignment);
+    }
+
+    private void OnSwapRequested(object? sender, UnifiedTimetableControl.CellClickedEventArgs e)
+    {
+        if (DataContext is ManualEditViewModel vm && e.Assignment != null)
+            vm.HandleSwapRequested(e.Day, e.Period, e.Grade, e.SubColumnIdx, e.Assignment);
     }
 
     protected override void OnKeyDown(KeyEventArgs e)

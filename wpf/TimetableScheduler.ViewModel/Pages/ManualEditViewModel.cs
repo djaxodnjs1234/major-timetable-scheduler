@@ -13,6 +13,8 @@ namespace TimetableScheduler.ViewModel.Pages;
 public sealed partial class ManualEditViewModel : PageViewModelBase
 {
     private const string ManualCrossPolicyType = "HC11_ONLY_EXCEPTION";
+    private const string OneHourAboveTwoHourBlockedReason =
+        "같은 과목·같은 분반의 1시간 수업 바로 아래에는 2시간 이상 블록을 배치할 수 없습니다.";
 
     public sealed record ManualCrossLink(
         string CourseIdA,
@@ -199,6 +201,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         _workspace = workspace;
         _dialog = dialog;
         Grid.ExpandAllGrades = true;
+        Grid.MergeOnlyStructuredBlocks = true;
     }
 
     public void LoadFromSolution(RankedSolution solution)
@@ -344,6 +347,49 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             StatusMessage = reason;
             return;
         }
+    }
+
+    public SwapHoverState EvaluateSwapHover(
+        int day,
+        int period,
+        int grade,
+        int subColumnIdx,
+        CellAssignment? target)
+    {
+        if (SelectedAssignment == null || SelectedDay is not int selectedDay || SelectedPeriod is not int selectedPeriod)
+            return SwapHoverState.Hidden();
+        if (target == null)
+            return SwapHoverState.Hidden();
+        if (IsSameMovingCell(
+                new UnifiedCell(day, period, grade, subColumnIdx, target),
+                SelectedAssignment,
+                selectedDay,
+                selectedPeriod))
+            return SwapHoverState.Hidden("현재 선택한 수업입니다.");
+        if (target.Grade != SelectedAssignment.Grade)
+            return SwapHoverState.Hidden("같은 학년 수업끼리만 교환할 수 있습니다.");
+
+        var reason = ValidateSwap(SelectedAssignment, selectedDay, selectedPeriod, target, day, period);
+        return reason == null ? SwapHoverState.Available() : SwapHoverState.Hidden(reason);
+    }
+
+    public void HandleSwapRequested(
+        int day,
+        int period,
+        int grade,
+        int subColumnIdx,
+        CellAssignment target)
+    {
+        var state = EvaluateSwapHover(day, period, grade, subColumnIdx, target);
+        if (!state.CanSwap || SelectedAssignment == null || SelectedDay is not int selectedDay || SelectedPeriod is not int selectedPeriod)
+        {
+            if (!string.IsNullOrWhiteSpace(state.Reason))
+                StatusMessage = state.Reason;
+            return;
+        }
+
+        if (!TrySwapSelectedWith(target, day, period, out var reason))
+            StatusMessage = reason;
     }
 
     public void SelectCell(int day, int period, int grade, int subColumnIdx, CellAssignment? assignment)
@@ -527,6 +573,115 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         return true;
     }
 
+    private bool TrySwapSelectedWith(
+        CellAssignment target,
+        int targetDay,
+        int targetPeriod,
+        out string reason)
+    {
+        reason = "";
+        if (SelectedAssignment == null || SelectedDay is not int selectedDay || SelectedPeriod is not int selectedPeriod)
+        {
+            reason = "선택한 수업이 없습니다.";
+            return false;
+        }
+
+        var validationReason = ValidateSwap(SelectedAssignment, selectedDay, selectedPeriod, target, targetDay, targetPeriod);
+        if (validationReason != null)
+        {
+            reason = validationReason;
+            return false;
+        }
+
+        var snapshot = CaptureSnapshot();
+        var selectedCourseId = SelectedAssignment.CourseId;
+        var targetCourseId = target.CourseId;
+        var candidate = BuildSwappedCandidate(SelectedAssignment, selectedDay, selectedPeriod, target, targetDay, targetPeriod);
+        _working = candidate;
+        Rerender();
+        PushUndoSnapshot(snapshot);
+        var removedLinks = RemoveInvalidCrossesAfterMove();
+        StatusMessage = $"{selectedCourseId} ↔ {targetCourseId} 위치를 교환했습니다."
+            + (removedLinks > 0 ? " 수업 식별 또는 학년 조건 변경으로 크로스 관계가 해제되었습니다." : "");
+        ClearSelectionCore();
+        return true;
+    }
+
+    private string? ValidateSwap(
+        CellAssignment selected,
+        int selectedDay,
+        int selectedPeriod,
+        CellAssignment target,
+        int targetDay,
+        int targetPeriod)
+    {
+        if (selected.CourseId == target.CourseId
+            && selectedDay == targetDay
+            && selectedPeriod == targetPeriod
+            && selected.Rooms.SequenceEqual(target.Rooms))
+            return "현재 선택한 수업입니다.";
+        if (selected.Grade != target.Grade)
+            return "같은 학년 수업끼리만 교환할 수 있습니다.";
+
+        var selectedCourse = _workspace.ExpandedCourses.FirstOrDefault(c => c.Id == selected.CourseId);
+        var targetCourse = _workspace.ExpandedCourses.FirstOrDefault(c => c.Id == target.CourseId);
+        if (selectedCourse == null || targetCourse == null)
+            return "수업 정보를 확인할 수 없습니다.";
+        if (selectedCourse.IsFixed || targetCourse.IsFixed)
+            return "HC-13 고정 시간표 보존 위반: 고정된 수업은 교환할 수 없습니다.";
+
+        var selectedAtTarget = GetOccupiedPeriods(targetPeriod, selected.RowSpan);
+        var targetAtSelected = GetOccupiedPeriods(selectedPeriod, target.RowSpan);
+        if (selectedAtTarget.Concat(targetAtSelected).Any(p => !Constants.Periods.Contains(p)))
+            return "수업 블록이 시간표 범위를 벗어납니다.";
+        if (selectedAtTarget.Concat(targetAtSelected).Contains(Constants.LunchPeriod))
+            return "HC-12 점심시간 보장 위반: 점심시간에는 수업을 배정할 수 없습니다.";
+
+        var candidate = BuildSwappedCandidate(selected, selectedDay, selectedPeriod, target, targetDay, targetPeriod);
+        if (WouldCreateOneHourAboveMultiHourPattern(candidate, new[] { selected.CourseId, target.CourseId }))
+            return OneHourAboveTwoHourBlockedReason;
+
+        return null;
+    }
+
+    private List<SolutionAssignment> BuildSwappedCandidate(
+        CellAssignment selected,
+        int selectedDay,
+        int selectedPeriod,
+        CellAssignment target,
+        int targetDay,
+        int targetPeriod)
+    {
+        var selectedAssignments = _working
+            .Where(a => IsSameMovingAssignment(a, selected, selectedDay, selectedPeriod))
+            .OrderBy(a => a.Period)
+            .ToList();
+        var targetAssignments = _working
+            .Where(a => IsSameMovingAssignment(a, target, targetDay, targetPeriod))
+            .OrderBy(a => a.Period)
+            .ToList();
+
+        var candidate = _working
+            .Where(a => !IsSameMovingAssignment(a, selected, selectedDay, selectedPeriod)
+                && !IsSameMovingAssignment(a, target, targetDay, targetPeriod))
+            .ToList();
+
+        foreach (var a in selectedAssignments)
+            candidate.Add(new SolutionAssignment(
+                a.CourseId,
+                targetDay,
+                targetPeriod + (a.Period - selectedPeriod),
+                a.RoomId));
+        foreach (var a in targetAssignments)
+            candidate.Add(new SolutionAssignment(
+                a.CourseId,
+                selectedDay,
+                selectedPeriod + (a.Period - targetPeriod),
+                a.RoomId));
+
+        return candidate;
+    }
+
     private bool TryForceMoveSelectedTo(
         int targetDay,
         int targetPeriod,
@@ -535,6 +690,12 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         IReadOnlyList<string> blockedReasons)
     {
         if (SelectedAssignment == null || SelectedDay == null || SelectedPeriod == null) return false;
+        var placementGuardReason = blockedReasons.FirstOrDefault(IsPlacementGuardReason);
+        if (placementGuardReason != null)
+        {
+            StatusMessage = placementGuardReason;
+            return false;
+        }
         if (targetDay < 0 || targetDay >= Constants.Days || !Constants.Periods.Contains(targetPeriod))
         {
             StatusMessage = "화면에 존재하지 않는 시간 슬롯으로는 이동할 수 없습니다.";
@@ -694,6 +855,15 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return new[] { "수업 블록이 시간표 범위를 벗어납니다." };
         if (targetPeriods.Contains(Constants.LunchPeriod))
             return new[] { "HC-12 점심시간 보장 위반: 점심시간에는 수업을 배정할 수 없습니다." };
+        if (WouldCreateOneHourAboveMultiHourPattern(
+                assignment,
+                sourceDay,
+                sourcePeriod,
+                targetDay,
+                targetPeriod,
+                targetGrade,
+                targetSubColumnIdx))
+            return new[] { OneHourAboveTwoHourBlockedReason };
         if (assignment.RowSpan == 2 && !Constants.Len2StartPeriods.Contains(targetPeriod))
             return new[] { "HC-19 블록 시작 교시 위반: 2시간 수업은 1, 3, 6, 8교시에만 시작할 수 있습니다." };
 
@@ -738,6 +908,155 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return "이동은 가능하지만 주의가 필요합니다: 금요일 오후는 권장되지 않는 시간대입니다.";
         return null;
     }
+
+    private bool WouldCreateOneHourAboveMultiHourPattern(
+        CellAssignment assignment,
+        int sourceDay,
+        int sourcePeriod,
+        int targetDay,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx)
+    {
+        if (WouldCreatePatternAroundTarget(assignment, targetDay, targetPeriod, targetGrade))
+            return true;
+
+        var baselinePatterns = GetOneHourAboveMultiHourPatterns(RenderManualCells(_working));
+        var candidate = BuildMovedCandidate(assignment, sourceDay, sourcePeriod, targetDay, targetPeriod);
+        var candidatePatterns = GetOneHourAboveMultiHourPatterns(RenderManualCells(candidate));
+
+        return candidatePatterns.Any(p =>
+            !baselinePatterns.Contains(p)
+            && (p.OneHour.CourseId == assignment.CourseId || p.MultiHour.CourseId == assignment.CourseId));
+    }
+
+    private bool WouldCreateOneHourAboveMultiHourPattern(
+        IReadOnlyList<SolutionAssignment> candidate,
+        IReadOnlyCollection<string> changedCourseIds)
+    {
+        var baselinePatterns = GetOneHourAboveMultiHourPatterns(RenderManualCells(_working));
+        var candidatePatterns = GetOneHourAboveMultiHourPatterns(RenderManualCells(candidate));
+        return candidatePatterns.Any(p =>
+            !baselinePatterns.Contains(p)
+            && (changedCourseIds.Contains(p.OneHour.CourseId) || changedCourseIds.Contains(p.MultiHour.CourseId)));
+    }
+
+    private bool WouldCreatePatternAroundTarget(
+        CellAssignment assignment,
+        int targetDay,
+        int targetPeriod,
+        int targetGrade)
+    {
+        var currentCells = RenderManualCells(_working);
+        if (assignment.RowSpan >= 2)
+        {
+            var abovePeriod = targetPeriod - 1;
+            return Constants.Periods.Contains(abovePeriod)
+                && currentCells.Any(c => c.Day == targetDay
+                    && c.Period == abovePeriod
+                    && c.Grade == targetGrade
+                    && c.Assignment.RowSpan == 1
+                    && IsSameLogicalCourseSection(c.Assignment, assignment));
+        }
+
+        if (assignment.RowSpan == 1)
+        {
+            var belowPeriod = targetPeriod + 1;
+            return Constants.Periods.Contains(belowPeriod)
+                && currentCells.Any(c => c.Day == targetDay
+                    && c.Period == belowPeriod
+                    && c.Grade == targetGrade
+                    && c.Assignment.RowSpan >= 2
+                    && IsSameLogicalCourseSection(assignment, c.Assignment));
+        }
+
+        return false;
+    }
+
+    private IReadOnlyList<UnifiedCell> RenderManualCells(IReadOnlyList<SolutionAssignment> assignments)
+    {
+        var rendered = new UnifiedTimetableViewModel
+        {
+            ExpandAllGrades = Grid.ExpandAllGrades,
+            MergeOnlyStructuredBlocks = Grid.MergeOnlyStructuredBlocks,
+        };
+        rendered.SetCrossParallelOrder(BuildCrossParallelOrder());
+        rendered.Render(assignments, _workspace.ExpandedCourses);
+        return rendered.Cells.ToList();
+    }
+
+    private static HashSet<OneHourAboveMultiHourPattern> GetOneHourAboveMultiHourPatterns(
+        IEnumerable<UnifiedCell> cells)
+    {
+        var cellList = cells.ToList();
+        var patterns = new HashSet<OneHourAboveMultiHourPattern>();
+        foreach (var oneHourCell in cellList.Where(c => c.Assignment.RowSpan == 1))
+        {
+            var belowPeriod = oneHourCell.Period + 1;
+            if (!Constants.Periods.Contains(belowPeriod)) continue;
+
+            foreach (var multiHourCell in cellList.Where(c =>
+                         c.Day == oneHourCell.Day
+                         && c.Grade == oneHourCell.Grade
+                         && c.Period == belowPeriod
+                         && c.Assignment.RowSpan >= 2
+                         && IsSameLogicalCourseSection(oneHourCell.Assignment, c.Assignment)))
+            {
+                patterns.Add(new OneHourAboveMultiHourPattern(
+                    oneHourCell.Day,
+                    oneHourCell.Grade,
+                    oneHourCell.Period,
+                    PatternBlock.From(oneHourCell.Assignment),
+                    PatternBlock.From(multiHourCell.Assignment)));
+            }
+        }
+
+        return patterns;
+    }
+
+    private static bool IsSameLogicalCourseSection(CellAssignment left, CellAssignment right)
+    {
+        if (left.Grade != right.Grade) return false;
+        if (left.Section <= 0 || right.Section <= 0) return false;
+
+        var sameCourseId = string.Equals(left.CourseId, right.CourseId, StringComparison.OrdinalIgnoreCase);
+        var sameCourseName = string.Equals(left.CourseName.Trim(), right.CourseName.Trim(), StringComparison.OrdinalIgnoreCase);
+        var sameSection = left.Section == right.Section;
+        if (!sameSection) return false;
+
+        if (sameCourseId) return true;
+
+        return sameCourseName
+            && string.Equals(left.ProfessorId, right.ProfessorId, StringComparison.OrdinalIgnoreCase);
+    }
+
+    private readonly record struct OneHourAboveMultiHourPattern(
+        int Day,
+        int Grade,
+        int OneHourPeriod,
+        PatternBlock OneHour,
+        PatternBlock MultiHour);
+
+    private readonly record struct PatternBlock(
+        string CourseId,
+        string CourseName,
+        int Grade,
+        int Section,
+        string ProfessorId,
+        string RoomsKey)
+    {
+        public static PatternBlock From(CellAssignment assignment) =>
+            new(
+                assignment.CourseId,
+                assignment.CourseName,
+                assignment.Grade,
+                assignment.Section,
+                assignment.ProfessorId,
+                string.Join("|", assignment.Rooms.OrderBy(r => r, StringComparer.Ordinal)));
+    }
+
+    private static bool IsPlacementGuardReason(string reason) =>
+        reason == OneHourAboveTwoHourBlockedReason;
 
     private List<SolutionAssignment> GetBlockingAssignments(
         CellAssignment assignment,

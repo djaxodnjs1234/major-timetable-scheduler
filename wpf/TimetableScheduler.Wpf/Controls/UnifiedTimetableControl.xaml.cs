@@ -48,9 +48,12 @@ public partial class UnifiedTimetableControl : UserControl
 
     public event EventHandler<CellClickedEventArgs>? CellClicked;
     public event EventHandler<CellClickedEventArgs>? CrossAddRequested;
+    public event EventHandler<CellClickedEventArgs>? SwapRequested;
 
     public bool EnableCrossHover { get; set; }
     public Func<CellClickedEventArgs, CrossHoverState>? CrossHoverEvaluator { get; set; }
+    public bool EnableSwapHover { get; set; }
+    public Func<CellClickedEventArgs, SwapHoverState>? SwapHoverEvaluator { get; set; }
 
     public UnifiedTimetableControl()
     {
@@ -193,7 +196,7 @@ public partial class UnifiedTimetableControl : UserControl
                             }
                             border.Tag = (dg.Day, p, g, k, match.Assignment);
                             border.MouseLeftButtonDown += OnCellClicked;
-                            if (EnableCrossHover)
+                            if (EnableCrossHover || EnableSwapHover)
                             {
                                 border.MouseEnter += OnCourseMouseEnter;
                                 border.MouseLeave += OnCourseMouseLeave;
@@ -333,7 +336,7 @@ public partial class UnifiedTimetableControl : UserControl
         if (border.Child is Grid g)
         {
             overlay = g;
-            RemoveCrossBadge(overlay);
+            RemoveHoverBadges(overlay);
         }
         else if (border.Child is StackPanel sp)
         {
@@ -345,9 +348,38 @@ public partial class UnifiedTimetableControl : UserControl
         else return;
 
         var args = new CellClickedEventArgs(tup.Item1, tup.Item2, tup.Item3, tup.Item4, tup.Item5);
-        var state = CrossHoverEvaluator?.Invoke(args) ?? CrossHoverState.Hidden();
-        border.ToolTip = NullIfBlank(state.Reason);
-        if (!state.CanCreate) return;
+        var crossState = EnableCrossHover
+            ? CrossHoverEvaluator?.Invoke(args) ?? CrossHoverState.Hidden()
+            : CrossHoverState.Hidden();
+        var swapState = EnableSwapHover
+            ? SwapHoverEvaluator?.Invoke(args) ?? SwapHoverState.Hidden()
+            : SwapHoverState.Hidden();
+        border.ToolTip = NullIfBlank(crossState.CanCreate ? crossState.Reason : swapState.Reason ?? crossState.Reason);
+
+        if (swapState.CanSwap)
+        {
+            var swapBadge = new Button
+            {
+                Content = "⇄",
+                Width = 22,
+                Height = 18,
+                Padding = new Thickness(0),
+                FontSize = 11,
+                FontWeight = FontWeights.Bold,
+                HorizontalAlignment = HorizontalAlignment.Left,
+                VerticalAlignment = VerticalAlignment.Top,
+                Margin = new Thickness(2, 2, 0, 0),
+                Background = new SolidColorBrush(Color.FromRgb(0x55, 0x6B, 0x2F)),
+                Foreground = Brushes.White,
+                BorderThickness = new Thickness(0),
+                ToolTip = NullIfBlank(swapState.Reason),
+                Tag = args,
+            };
+            swapBadge.Click += OnSwapBadgeClick;
+            overlay.Children.Add(swapBadge);
+        }
+
+        if (!crossState.CanCreate) return;
 
         var badge = new Button
         {
@@ -363,6 +395,7 @@ public partial class UnifiedTimetableControl : UserControl
             Background = new SolidColorBrush(Color.FromRgb(0x00, 0x5F, 0xB8)),
             Foreground = Brushes.White,
             BorderThickness = new Thickness(0),
+            ToolTip = NullIfBlank(crossState.Reason),
             Tag = args,
         };
         badge.Click += OnCrossBadgeClick;
@@ -372,7 +405,7 @@ public partial class UnifiedTimetableControl : UserControl
     private static void OnCourseMouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
         if (sender is not Border border || border.Child is not Grid overlay) return;
-        RemoveCrossBadge(overlay);
+        RemoveHoverBadges(overlay);
         // Unwrap back to StackPanel when no badge remains
         if (overlay.Children.Count == 1 && overlay.Children[0] is StackPanel sp)
         {
@@ -388,10 +421,16 @@ public partial class UnifiedTimetableControl : UserControl
         e.Handled = true;
     }
 
-    private static void RemoveCrossBadge(Grid root)
+    private void OnSwapBadgeClick(object sender, RoutedEventArgs e)
     {
-        var badge = root.Children.OfType<Button>().FirstOrDefault();
-        if (badge != null)
+        if (sender is not Button button || button.Tag is not CellClickedEventArgs args) return;
+        SwapRequested?.Invoke(this, args);
+        e.Handled = true;
+    }
+
+    private static void RemoveHoverBadges(Grid root)
+    {
+        foreach (var badge in root.Children.OfType<Button>().ToList())
             root.Children.Remove(badge);
     }
 

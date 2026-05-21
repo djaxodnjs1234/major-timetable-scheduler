@@ -43,6 +43,12 @@ public sealed record CrossHoverState(bool CanCreate, string Reason)
     public static CrossHoverState Available(string reason = "크로스 가능: + 클릭 시 선택 수업이 대상 수업 시간대로 이동하고 HC-11 예외가 생성됩니다.") => new(true, reason);
 }
 
+public sealed record SwapHoverState(bool CanSwap, string Reason)
+{
+    public static SwapHoverState Hidden(string reason = "") => new(false, reason);
+    public static SwapHoverState Available(string reason = "교환 가능: 클릭 시 선택 수업과 대상 수업의 위치를 서로 바꿉니다.") => new(true, reason);
+}
+
 public sealed partial class UnifiedTimetableViewModel : ObservableObject
 {
     [ObservableProperty]
@@ -62,6 +68,8 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
 
     public IReadOnlyDictionary<string, int> CrossParallelOrder { get; private set; } =
         new Dictionary<string, int>();
+
+    public bool MergeOnlyStructuredBlocks { get; set; }
 
     public IReadOnlyList<int> Periods => Constants.Periods;
 
@@ -96,30 +104,23 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
             set.Add(a.RoomId);
         }
 
-        var runs = ComputeVisualRuns(roomsBySlot, courseMap);
+        var runs = ComputeVisualRuns(roomsBySlot, courseMap, MergeOnlyStructuredBlocks);
 
-        // For each (day, period), count distinct courses per grade — used to determine column width.
-        // max_width[(d, grade)] = max over periods of (# courses of that grade in that slot)
+        var visualBlocks = BuildVisualBlocks(roomsBySlot, courseMap, runs);
+        AssignSubColumns(visualBlocks, courseMap);
+
+        // For each (day, grade), use the number of sub-columns needed by visual blocks.
         var maxWidth = new Dictionary<(int Day, int Grade), int>();
         for (int d = 0; d < Constants.Days; d++)
             foreach (var g in new[] { 1, 2, 3, 4 })
                 maxWidth[(d, g)] = 0;
 
-        for (int d = 0; d < Constants.Days; d++)
+        foreach (var block in visualBlocks)
         {
-            foreach (var p in Constants.Periods)
-            {
-                if (p == Constants.LunchPeriod) continue;
-                var countByGrade = new Dictionary<int, int>();
-                foreach (var ((cid, day, period), _) in roomsBySlot)
-                {
-                    if (day != d || period != p) continue;
-                    var g = courseMap[cid].Grade;
-                    countByGrade[g] = countByGrade.GetValueOrDefault(g) + 1;
-                }
-                foreach (var (g, cnt) in countByGrade)
-                    if (cnt > maxWidth[(d, g)]) maxWidth[(d, g)] = cnt;
-            }
+            var g = courseMap[block.CourseId].Grade;
+            var requiredWidth = block.SubColumnIdx + 1;
+            if (requiredWidth > maxWidth[(block.Day, g)])
+                maxWidth[(block.Day, g)] = requiredWidth;
         }
 
         // Build day groups.
@@ -152,22 +153,17 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
                 foreach (var col in dayGroup.Grades)
                 {
                     if (col.Grade is not int g) continue;
-                    var coursesHere = roomsBySlot
-                        .Where(kv => kv.Key.Day == d && kv.Key.Period == p && courseMap[kv.Key.Cid].Grade == g)
-                        .OrderBy(kv => CrossParallelOrder.GetValueOrDefault(kv.Key.Cid, int.MaxValue))
-                        .ThenBy(kv => courseMap[kv.Key.Cid].Section)
+                    var coursesHere = visualBlocks
+                        .Where(b => b.Day == d && b.StartPeriod == p && courseMap[b.CourseId].Grade == g)
+                        .OrderBy(b => b.SubColumnIdx)
                         .ToList();
 
-                    int subIdx = 0;
-                    foreach (var kv in coursesHere)
+                    foreach (var block in coursesHere)
                     {
-                        if (runs.Inside.Contains((kv.Key.Cid, d, p))) { subIdx++; continue; }
-                        var c = courseMap[kv.Key.Cid];
-                        int rs = runs.RunLen.TryGetValue((kv.Key.Cid, d, p), out int n) ? n : 1;
+                        var c = courseMap[block.CourseId];
                         cells.Add(new UnifiedCell(
-                            d, p, g, subIdx,
-                            CellAssignment.FromCourse(c, kv.Value, rs)));
-                        subIdx++;
+                            d, p, g, block.SubColumnIdx,
+                            CellAssignment.FromCourse(c, block.Rooms, block.RowSpan)));
                     }
                 }
             }
@@ -179,7 +175,8 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
 
     private static RunInfo ComputeVisualRuns(
         IReadOnlyDictionary<(string Cid, int Day, int Period), HashSet<string>> roomsBySlot,
-        IReadOnlyDictionary<string, Course> courseMap)
+        IReadOnlyDictionary<string, Course> courseMap,
+        bool mergeOnlyStructuredBlocks)
     {
         var runLen = new Dictionary<(string CourseId, int Day, int Period), int>();
         var inside = new HashSet<(string CourseId, int Day, int Period)>();
@@ -193,11 +190,15 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
                 int j = i;
                 while (j + 1 < ordered.Count
                        && ordered[j + 1].Period == ordered[j].Period + 1
+                       && (!mergeOnlyStructuredBlocks
+                           || (courseMap.TryGetValue(ordered[i].Cid, out var course)
+                               && j - i + 1 < MaxStructuredBlockLength(course)))
                        && CanMergeAsSameVisualBlock(
                            ordered[j],
                            ordered[j + 1],
                            roomsBySlot,
-                           courseMap))
+                           courseMap,
+                           mergeOnlyStructuredBlocks))
                 {
                     j++;
                 }
@@ -216,11 +217,76 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         return new RunInfo(runLen, inside);
     }
 
+    private sealed class VisualBlock
+    {
+        public required string CourseId { get; init; }
+        public required int Day { get; init; }
+        public required int StartPeriod { get; init; }
+        public required int RowSpan { get; init; }
+        public required IReadOnlySet<string> Rooms { get; init; }
+        public int EndPeriod => StartPeriod + RowSpan - 1;
+        public int SubColumnIdx { get; set; }
+    }
+
+    private static List<VisualBlock> BuildVisualBlocks(
+        IReadOnlyDictionary<(string Cid, int Day, int Period), HashSet<string>> roomsBySlot,
+        IReadOnlyDictionary<string, Course> courseMap,
+        RunInfo runs)
+    {
+        var blocks = new List<VisualBlock>();
+        foreach (var ((cid, d, p), rooms) in roomsBySlot)
+        {
+            if (!courseMap.ContainsKey(cid)) continue;
+            if (runs.Inside.Contains((cid, d, p))) continue;
+            var rowSpan = runs.RunLen.TryGetValue((cid, d, p), out var n) ? n : 1;
+            blocks.Add(new VisualBlock
+            {
+                CourseId = cid,
+                Day = d,
+                StartPeriod = p,
+                RowSpan = rowSpan,
+                Rooms = rooms,
+            });
+        }
+
+        return blocks;
+    }
+
+    private void AssignSubColumns(
+        IReadOnlyList<VisualBlock> blocks,
+        IReadOnlyDictionary<string, Course> courseMap)
+    {
+        foreach (var group in blocks.GroupBy(b => (b.Day, courseMap[b.CourseId].Grade)))
+        {
+            var columns = new List<VisualBlock>();
+            foreach (var block in group
+                         .OrderBy(b => b.StartPeriod)
+                         .ThenBy(b => CrossParallelOrder.GetValueOrDefault(b.CourseId, int.MaxValue))
+                         .ThenBy(b => courseMap[b.CourseId].Section)
+                         .ThenBy(b => b.CourseId, StringComparer.Ordinal))
+            {
+                var col = 0;
+                while (col < columns.Count && BlocksOverlap(columns[col], block))
+                    col++;
+
+                block.SubColumnIdx = col;
+                if (col == columns.Count)
+                    columns.Add(block);
+                else
+                    columns[col] = block;
+            }
+        }
+    }
+
+    private static bool BlocksOverlap(VisualBlock a, VisualBlock b) =>
+        a.Day == b.Day && a.StartPeriod <= b.EndPeriod && b.StartPeriod <= a.EndPeriod;
+
     private static bool CanMergeAsSameVisualBlock(
         (string Cid, int Day, int Period) a,
         (string Cid, int Day, int Period) b,
         IReadOnlyDictionary<(string Cid, int Day, int Period), HashSet<string>> roomsBySlot,
-        IReadOnlyDictionary<string, Course> courseMap)
+        IReadOnlyDictionary<string, Course> courseMap,
+        bool mergeOnlyStructuredBlocks)
     {
         if (a.Cid != b.Cid || a.Day != b.Day) return false;
         if (!courseMap.TryGetValue(a.Cid, out var left) ||
@@ -232,8 +298,16 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
             && left.Section == right.Section
             && left.ProfessorId == right.ProfessorId
             && left.Name == right.Name
-            && roomsBySlot[a].SetEquals(roomsBySlot[b]);
+            && roomsBySlot[a].SetEquals(roomsBySlot[b])
+            && (!mergeOnlyStructuredBlocks || HasConsecutiveBlockEvidence(left));
     }
+
+    private static bool HasConsecutiveBlockEvidence(Course course) =>
+        course.BlockStructure.Any(length => length > 1)
+        || (course.BlockStructure.Count == 0 && course.HoursPerWeek > 1);
+
+    private static int MaxStructuredBlockLength(Course course) =>
+        course.BlockStructure.Count == 0 ? Math.Max(1, course.HoursPerWeek) : course.BlockStructure.Max();
 
     public void SetEditState(
         UnifiedCellKey? selectedCell,
