@@ -9,7 +9,8 @@
 ├── prototype-py/   Python 프로토타입 (CP-SAT + Tkinter GUI) — 회귀 베이스라인
 ├── wpf/            C#/WPF 본 제품 — 현재 포팅 진행 중
 ├── docs/           공유 설계 문서 + UI 디자인 목업
-├── CLAUDE.md       LLM 협업 가이드 + 프로젝트 컨텍스트
+├── AGENTS.md       Codex 협업 가이드 + 프로젝트 컨텍스트
+├── CLAUDE.md       (legacy) Claude 협업 가이드
 └── MILESTONE.md    진행 마일스톤
 ```
 
@@ -23,7 +24,7 @@ pip install -r requirements.txt
 python main.py
 ```
 
-상세 설계: [CLAUDE.md](CLAUDE.md)
+상세 설계: [AGENTS.md](AGENTS.md)
 
 ## wpf — C#/WPF
 
@@ -48,4 +49,4 @@ Visual Studio 또는 `dotnet build wpf/TimetableScheduler.slnx`.
 - 시간 슬롯: 월~금, 1~9교시 (5교시=점심 금지)
 - 21개 하드 제약(HC) + 3개 소프트 제약(SC) 4단계 lex 최적화
 
-자세한 HC/SC 매핑·결정 변수·솔버 흐름은 [CLAUDE.md](CLAUDE.md) 참조.
+자세한 HC/SC 매핑·결정 변수·솔버 흐름은 [AGENTS.md](AGENTS.md) 참조.

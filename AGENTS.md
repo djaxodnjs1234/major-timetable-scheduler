@@ -1,5 +1,9 @@
 # AGENTS.md
 
+Codex-compatible project instructions. These preserve the useful guidance from
+`CLAUDE.md` without relying on Claude-specific commands, slash commands,
+agents, or tool assumptions.
+
 Behavioral guidelines to reduce common LLM coding mistakes. Merge with project-specific instructions as needed.
 
 **Tradeoff:** These guidelines bias toward caution over speed. For trivial tasks, use judgment.
@@ -59,6 +63,39 @@ For multi-step tasks, state a brief plan:
 ```
 
 Strong success criteria let you loop independently. Weak criteria ("make it work") require constant clarification.
+
+## 5. Plan File & Test Workflow
+
+**Every non-trivial task: write a plan file first, test after implementing, then archive.**
+
+1. **Create the plan file** — Before starting, create a plan file (`.md`) in
+   `docs/implementation/`. Include steps and a verify check for each step.
+   - **Write the plan file in English** — it is read by AI, so keep it clear and concise
+     in English regardless of the conversation language.
+   - **Number the plan file** — prefix the filename with a zero-padded sequence number
+     based on the existing files in `docs/implementation/` and `docs/implementation/archive/`
+     (e.g. `06-edit-existing-timetable.md`).
+2. **Implement** — Follow the plan.
+3. **Test** — When implementation is done, always run tests (the project's test suite,
+   or run the real app to confirm behavior). Never report a task complete without testing.
+4. **Archive** — When the task is fully done, move the plan file to
+   `docs/implementation/archive/`.
+
+Trivial tasks (typo fixes, etc.) are left to judgment.
+
+## 6. Explain Hard Concepts
+
+**When a reply uses a technical concept the user may not know, add a glossary at the bottom.**
+
+The user has told us that terms like "DI singleton", "session mode", "CRUD",
+"binding-target instance", and "snapshot data" are hard to follow.
+
+- When a user-facing reply leans on a non-trivial technical term, append a short
+  **용어 정리 / Glossary** section at the end of that reply.
+- Define each term in one or two plain sentences, tied to this project where possible.
+- Only include terms actually used in that reply; do not pad. Skip the glossary entirely
+  for replies that use no such terms.
+- The conversation language is Korean — write the glossary in Korean.
 
 ---
 
