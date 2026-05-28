@@ -18,6 +18,11 @@ public sealed class CourseGroupItem
 {
     public string BaseId { get; init; } = "";
     public string DisplayLabel { get; init; } = "";
+    public string HeaderCode { get; init; } = "";
+    public string HeaderName { get; init; } = "";
+    public string HeaderGrade { get; init; } = "";
+    public string HeaderHours { get; init; } = "";
+    public string HeaderSectionInfo { get; init; } = "";
     /// <summary>All sections in this group (N>1 for grouped, 1 for individual fixed).</summary>
     public List<Course> Sections { get; init; } = new();
     public bool IsFixedIndividual => Sections.Count == 1 && Sections[0].IsFixed;
@@ -373,14 +378,16 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 // Fixed: one row per section
                 foreach (var sec in sections)
                 {
-                    var letter = SectionLetter(sec.Section);
-                    var label = sections.Count > 1
-                        ? $"{sec.Id}  {sec.Name}  {sec.Grade}학년  ★"
-                        : $"{sec.Id}  {sec.Name}  {sec.Grade}학년  ★";
+                    var label = $"{sec.Id}  {sec.Name}  {sec.Grade}학년  ★";
                     CourseGroups.Add(new CourseGroupItem
                     {
                         BaseId = g.Key,
                         DisplayLabel = label,
+                        HeaderCode = sec.Id,
+                        HeaderName = sec.Name,
+                        HeaderGrade = $"{sec.Grade}학년",
+                        HeaderHours = $"{sec.HoursPerWeek}h",
+                        HeaderSectionInfo = "★",
                         Sections = new List<Course> { sec },
                     });
                 }
@@ -397,6 +404,13 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 {
                     BaseId = g.Key,
                     DisplayLabel = label,
+                    HeaderCode = g.Key,
+                    HeaderName = rep.Name,
+                    HeaderGrade = $"{rep.Grade}학년",
+                    HeaderHours = $"{rep.HoursPerWeek}h",
+                    HeaderSectionInfo = sections.Count > 1
+                        ? $"({string.Join("·", sections.Select(s => SectionLetter(s.Section)))}분반)"
+                        : "",
                     Sections = sections,
                 });
             }
