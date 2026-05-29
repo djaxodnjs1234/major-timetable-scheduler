@@ -16,6 +16,7 @@ public enum ConflictType
     BlockStartViolation,
     ProfAllowedRoomViolation,
     ProfRoomInconsistent,
+    SameCourseSameDayConflict,
 }
 
 public sealed record ConflictItem(
@@ -160,6 +161,34 @@ public static class ConflictDetector
             }
         }
 
+        // HC-20: same course/section/professor must not appear as multiple block occurrences on the same day.
+        foreach (var g in assignment
+                     .Where(a => courseMap.ContainsKey(a.CourseId))
+                     .Select(a => (Assignment: a, Course: courseMap[a.CourseId]))
+                     .Select(x => (x.Assignment, x.Course, Key: BuildHc20Key(x.Course, x.Assignment.Day)))
+                     .Where(x => x.Key != null)
+                     .GroupBy(x => x.Key!))
+        {
+            var periods = g
+                .Select(x => x.Assignment.Period)
+                .Distinct()
+                .OrderBy(p => p)
+                .ToList();
+            var occurrenceRanges = BuildConsecutiveRanges(periods);
+            var groupCourses = g.Select(x => x.Course).DistinctBy(c => c.Id).ToList();
+            if (!HasMultipleHc20Occurrences(periods, occurrenceRanges, groupCourses)) continue;
+
+            var sample = g.First().Course;
+            var firstRange = occurrenceRanges[0];
+            var rangesText = string.Join(", ", occurrenceRanges.Select(FormatPeriodRange));
+            list.Add(new ConflictItem(
+                ConflictType.SameCourseSameDayConflict,
+                ConflictSeverity.Error,
+                $"HC-20: 동일 교과목·분반·교수 수업은 같은 요일에 두 번 이상 배치할 수 없습니다. ({sample.Name} / {SectionLabel(sample.Section)}분반 / {ProfessorIdentity(sample)} / {DayName(g.Key.Day)}요일 / {rangesText})",
+                g.Key.Day,
+                firstRange.Start));
+        }
+
         // HC-21: professor's auto-placed courses (no FixedRooms) should all share one room
         var autoRoomsByProf = new Dictionary<string, HashSet<string>>();
         foreach (var a in assignment)
@@ -256,4 +285,81 @@ public static class ConflictDetector
         0 => "월", 1 => "화", 2 => "수", 3 => "목", 4 => "금",
         _ => "?"
     };
+
+    private sealed record Hc20Key(int Day, string CourseIdentity, int Section, string ProfessorIdentity);
+
+    private static Hc20Key? BuildHc20Key(Course course, int day)
+    {
+        if (course.Section <= 0) return null;
+        var courseIdentity = CourseIdentity(course);
+        var professorIdentity = ProfessorIdentity(course);
+        if (string.IsNullOrWhiteSpace(courseIdentity) || string.IsNullOrWhiteSpace(professorIdentity)) return null;
+        return new Hc20Key(day, courseIdentity, course.Section, professorIdentity);
+    }
+
+    private static string CourseIdentity(Course course)
+    {
+        var name = Normalize(course.Name);
+        return string.IsNullOrWhiteSpace(name) ? Normalize(course.Id) : name;
+    }
+
+    private static string ProfessorIdentity(Course course) =>
+        string.Join("|", DomainHelpers.CourseProfIds(course)
+            .Where(pid => !string.IsNullOrWhiteSpace(pid))
+            .Select(Normalize)
+            .OrderBy(pid => pid, StringComparer.Ordinal));
+
+    private static string Normalize(string value) => value.Trim().ToUpperInvariant();
+
+    private static string SectionLabel(int section) =>
+        section >= 1 ? ((char)('A' + section - 1)).ToString() : section.ToString();
+
+    private static List<(int Start, int End)> BuildConsecutiveRanges(IReadOnlyList<int> periods)
+    {
+        var ranges = new List<(int Start, int End)>();
+        if (periods.Count == 0) return ranges;
+
+        var start = periods[0];
+        var end = periods[0];
+        for (var i = 1; i < periods.Count; i++)
+        {
+            if (periods[i] == end + 1)
+            {
+                end = periods[i];
+                continue;
+            }
+
+            ranges.Add((start, end));
+            start = end = periods[i];
+        }
+
+        ranges.Add((start, end));
+        return ranges;
+    }
+
+    private static bool HasMultipleHc20Occurrences(
+        IReadOnlyList<int> periods,
+        IReadOnlyList<(int Start, int End)> consecutiveRanges,
+        IReadOnlyList<Course> courses)
+    {
+        if (periods.Count <= 1) return false;
+        if (consecutiveRanges.Count > 1) return true;
+
+        var singleRangeLength = consecutiveRanges[0].End - consecutiveRanges[0].Start + 1;
+        return !courses.Any(course => KnownBlockLengths(course).Contains(singleRangeLength));
+    }
+
+    private static IReadOnlySet<int> KnownBlockLengths(Course course)
+    {
+        var lengths = course.BlockStructure.Count > 0
+            ? course.BlockStructure
+            : new List<int> { course.HoursPerWeek };
+
+        return lengths
+            .Where(length => length > 0)
+            .ToHashSet();
+    }
+
+    private static string FormatPeriodRange((int Start, int End) range) =>
+        range.Start == range.End ? $"{range.Start}교시" : $"{range.Start}~{range.End}교시";
 }
