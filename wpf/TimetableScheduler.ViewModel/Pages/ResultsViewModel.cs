@@ -1,6 +1,7 @@
 using System.Collections.ObjectModel;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
+using TimetableScheduler.Data;
 using TimetableScheduler.Domain;
 using TimetableScheduler.Scoring;
 using TimetableScheduler.ViewModel.Grid;
@@ -15,6 +16,19 @@ public sealed partial class ResultsViewModel : PageViewModelBase
 
     private readonly WorkspaceService _workspace;
 
+    // Snapshot of the workspace that produced the current solutions (session edit mode).
+    // Null → use the live global workspace.
+    private AppData? _sessionData;
+    private IReadOnlyList<Course> SessionCourses =>
+        (IReadOnlyList<Course>?)_sessionData?.Courses ?? _workspace.ExpandedCourses;
+    private IReadOnlyList<Professor> SessionProfessors =>
+        (IReadOnlyList<Professor>?)_sessionData?.Professors ?? _workspace.Professors;
+    private IReadOnlyList<Room> SessionRooms =>
+        (IReadOnlyList<Room>?)_sessionData?.Rooms ?? _workspace.Rooms;
+
+    /// <summary>The snapshot behind the current solutions, for handing to manual editing.</summary>
+    public AppData? SessionSnapshot => _sessionData;
+
     public override string Title => "해 미리보기";
 
     public ObservableCollection<RankedSolution> Solutions { get; } = new();
@@ -26,15 +40,24 @@ public sealed partial class ResultsViewModel : PageViewModelBase
     public ObservableCollection<NamedGridViewModel> ProfessorViews { get; } = new();
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(EditSelectedCommand))]
     private RankedSolution? selectedSolution;
+
+    public event EventHandler? EditSelectedRequested;
 
     public ResultsViewModel(WorkspaceService workspace)
     {
         _workspace = workspace;
     }
 
-    public void SetSolutions(IEnumerable<RankedSolution> ranked)
+    [RelayCommand(CanExecute = nameof(CanEditSelected))]
+    private void EditSelected() => EditSelectedRequested?.Invoke(this, EventArgs.Empty);
+
+    private bool CanEditSelected() => SelectedSolution != null;
+
+    public void SetSolutions(IEnumerable<RankedSolution> ranked, AppData? sessionData = null)
     {
+        _sessionData = sessionData;
         Solutions.Clear();
         foreach (var r in ranked) Solutions.Add(r);
 
@@ -88,7 +111,7 @@ public sealed partial class ResultsViewModel : PageViewModelBase
     private void RenderCurrent()
     {
         var assignment = SelectedSolution?.Assignment ?? Array.Empty<Solver.SolutionAssignment>();
-        var courses = _workspace.ExpandedCourses;
+        var courses = SessionCourses;
 
         Unified.Render(assignment, courses);
 
@@ -101,7 +124,7 @@ public sealed partial class ResultsViewModel : PageViewModelBase
         }
 
         RoomViews.Clear();
-        foreach (var r in _workspace.Rooms)
+        foreach (var r in SessionRooms)
         {
             var vm = new TimetableGridViewModel();
             vm.Render(assignment, courses, (_, rid) => rid == r.Id);
@@ -109,7 +132,7 @@ public sealed partial class ResultsViewModel : PageViewModelBase
         }
 
         ProfessorViews.Clear();
-        foreach (var p in _workspace.Professors)
+        foreach (var p in SessionProfessors)
         {
             var vm = new TimetableGridViewModel();
             vm.Render(assignment, courses, (c, _) => c.ProfessorId == p.Id);

@@ -1,0 +1,73 @@
+<UserControl x:Class="TimetableScheduler.Wpf.Controls.FixedSlotEditorControl"
+             xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+             xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:vm="clr-namespace:TimetableScheduler.ViewModel.Editors;assembly=TimetableScheduler.ViewModel"
+             xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
+             xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
+             mc:Ignorable="d"
+             d:DataContext="{d:DesignInstance Type=vm:FixedSlotEditorViewModel}">
+    <StackPanel>
+        <!-- Not-fixed state -->
+        <TextBlock Text="(고정 해제 상태 — 솔버가 자동 배정)"
+                   Foreground="#888" FontStyle="Italic" Margin="0,4">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Visibility" Value="Collapsed" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsFixed}" Value="False">
+                            <Setter Property="Visibility" Value="Visible" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+
+        <!-- Fixed state -->
+        <StackPanel>
+            <StackPanel.Style>
+                <Style TargetType="StackPanel">
+                    <Setter Property="Visibility" Value="Visible" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsFixed}" Value="False">
+                            <Setter Property="Visibility" Value="Collapsed" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </StackPanel.Style>
+
+            <TextBlock Text="{Binding BlockSummary}"
+                       FontSize="11" FontWeight="Bold" Margin="0,4,0,8"
+                       Foreground="#424752" />
+
+            <ItemsControl ItemsSource="{Binding SectionEditors}">
+                <ItemsControl.ItemTemplate>
+                    <DataTemplate DataType="{x:Type vm:SectionSlotEditor}">
+                        <GroupBox Header="{Binding SectionLabel}" Margin="0,0,0,8" Padding="8,4">
+                            <ItemsControl ItemsSource="{Binding BlockEntries}">
+                                <ItemsControl.ItemTemplate>
+                                    <DataTemplate DataType="{x:Type vm:BlockSlotEntry}">
+                                        <StackPanel Orientation="Horizontal" Margin="0,3">
+                                            <TextBlock Text="{Binding BlockLabel}"
+                                                       Width="110" VerticalAlignment="Center"
+                                                       FontSize="11" />
+                                            <TextBlock Text="요일" VerticalAlignment="Center"
+                                                       FontSize="11" Margin="0,0,4,0" />
+                                            <ComboBox ItemsSource="{Binding DayOptions}"
+                                                      SelectedIndex="{Binding SelectedDayIndex, Mode=TwoWay}"
+                                                      Width="54" Padding="4,3" />
+                                            <TextBlock Text="시작교시" VerticalAlignment="Center"
+                                                       FontSize="11" Margin="12,0,4,0" />
+                                            <ComboBox ItemsSource="{Binding PeriodOptions}"
+                                                      SelectedItem="{Binding SelectedPeriod, Mode=TwoWay}"
+                                                      Width="54" Padding="4,3" />
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </GroupBox>
+                    </DataTemplate>
+                </ItemsControl.ItemTemplate>
+            </ItemsControl>
+        </StackPanel>
+    </StackPanel>
+</UserControl>

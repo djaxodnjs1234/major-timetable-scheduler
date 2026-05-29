@@ -13,7 +13,25 @@
         <conv:DensityToBrushConverter x:Key="DensityToBrush" />
     </UserControl.Resources>
 
-    <Grid Margin="12">
+    <Grid>
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+        </Grid.RowDefinitions>
+
+        <!-- Step header -->
+        <Border Grid.Row="0" Style="{StaticResource StepHeaderBar}">
+            <StackPanel Orientation="Horizontal">
+                <Border Style="{StaticResource StepBadge}">
+                    <TextBlock Text="3단계" Style="{StaticResource StepBadgeText}" />
+                </Border>
+                <TextBlock Text="해 미리보기" Style="{StaticResource StepTitle}" />
+                <TextBlock Text="생성된 시간표 후보를 비교하고 편집할 해를 고릅니다."
+                           Style="{StaticResource StepCaption}" />
+            </StackPanel>
+        </Border>
+
+        <Grid Grid.Row="1" Margin="12">
         <Grid.RowDefinitions>
             <RowDefinition Height="Auto" />
             <RowDefinition Height="*" />
@@ -22,7 +40,13 @@
         <!-- Top: 해 밀도 미리보기 카드 스트립 -->
         <Border Grid.Row="0" Background="#F8F9FA" BorderBrush="#DDD" BorderThickness="1"
                 Padding="8" Margin="0,0,0,8">
-            <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
+            <DockPanel>
+                <Button DockPanel.Dock="Right" Content="선택한 해 수동 편집 →"
+                        Command="{Binding EditSelectedCommand}"
+                        VerticalAlignment="Center" Margin="8,0,0,0"
+                        Padding="14,10" FontWeight="Bold"
+                        Background="#2E7D32" Foreground="White" />
+                <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                 <ItemsControl ItemsSource="{Binding SolutionCards}">
                     <ItemsControl.ItemsPanel>
                         <ItemsPanelTemplate>
@@ -91,6 +115,7 @@
                     </ItemsControl.ItemTemplate>
                 </ItemsControl>
             </ScrollViewer>
+            </DockPanel>
         </Border>
 
         <!-- Tabs -->
@@ -144,6 +169,7 @@
                 </TabControl>
             </TabItem>
         </TabControl>
+        </Grid>
     </Grid>
 </UserControl>
 

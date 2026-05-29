@@ -44,6 +44,18 @@ _ReSharper*/
 *.swo
 *~
 
+# ===== WPF 데이터 폴더 (wpf/data/) =====
+# xlsx 입력 파일은 추적 (개설강좌 편람.xlsx)
+# DB 런타임 파일과 내보낸 시간표는 추적하지 않음
+wpf/data/*.db
+wpf/data/수동편집결과*.xlsx
+wpf/data/2026*.xlsx
+wpf/data/ww.xlsx
+
+# ===== 프로토타입 데이터 파일 (prototype-py/data_files/) =====
+prototype-py/data_files/*.xlsx
+prototype-py/data_files/*.db
+
 # ===== OS =====
 .DS_Store
 Thumbs.db

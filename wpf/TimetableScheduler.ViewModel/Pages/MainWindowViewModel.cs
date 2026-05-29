@@ -1,5 +1,4 @@
 using CommunityToolkit.Mvvm.ComponentModel;
-using CommunityToolkit.Mvvm.Input;
 
 namespace TimetableScheduler.ViewModel.Pages;
 
@@ -31,33 +30,50 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         _input.SolveCompleted += (_, ranked) =>
         {
-            _results.SetSolutions(ranked);
+            // In existing-edit mode the solver ran on the session workspace, so the
+            // results/manual screens must render against that session snapshot too.
+            _results.SetSolutions(
+                ranked, _input.IsExistingMode ? _input.CurrentSnapshot() : null);
         };
         _input.GoToSelectionRequested += (_, _) => NavigateTo(_results);
-        _selection.EditRequested += (_, timetable) =>
+        _input.GoToManualRequested += (_, _) =>
         {
-            _manual.LoadFromSavedTimetable(timetable);
+            var handoff = _input.BuildEditHandoff();
+            if (handoff != null)
+            {
+                _manual.LoadFromSnapshot(
+                    _input.CurrentSnapshot(), handoff, _input.EditBaseName);
+            }
             NavigateTo(_manual);
         };
 
+        _selection.CreateNewRequested += (_, _) =>
+        {
+            _input.LoadForNewTimetable();
+            NavigateTo(_input);
+        };
+        _selection.EditRequested += (_, record) =>
+        {
+            _input.LoadForExistingTimetable(record);
+            NavigateTo(_input);
+        };
+
+        _results.EditSelectedRequested += (_, _) =>
+        {
+            if (_results.SelectedSolution != null)
+            {
+                if (_results.SessionSnapshot != null)
+                    _manual.LoadFromSnapshot(
+                        _results.SessionSnapshot, _results.SelectedSolution, "");
+                else
+                    _manual.LoadFromSolution(_results.SelectedSolution);
+            }
+            NavigateTo(_manual);
+        };
+
+        _manual.SavedRequested += (_, _) => NavigateTo(_selection);
+
         currentPage = _selection;
-    }
-
-    [RelayCommand]
-    private void GoToSelection() => NavigateTo(_selection);
-
-    [RelayCommand]
-    private void GoToInput() => NavigateTo(_input);
-
-    [RelayCommand]
-    private void GoToResults() => NavigateTo(_results);
-
-    [RelayCommand]
-    private void GoToManual()
-    {
-        if (_results.SelectedSolution != null)
-            _manual.LoadFromSolution(_results.SelectedSolution);
-        NavigateTo(_manual);
     }
 
     private void NavigateTo(PageViewModelBase target)

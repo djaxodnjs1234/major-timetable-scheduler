@@ -3,8 +3,9 @@
 모든 비즈니스 로직은 ``AppState`` 가 담당, 이 클래스는 위젯 생성/이벤트 와이어/
 state 변경 시 다시 그리기에 집중. WPF 이식 시 이 모듈은 통째로 교체된다.
 """
+import os
 import tkinter as tk
-from tkinter import ttk, messagebox
+from tkinter import ttk, messagebox, filedialog
 
 from .theme import GRADES, GRADE_COLORS, EMPTY_BG, FIXED_LIST_BG
 from .widgets import compute_runs
@@ -83,6 +84,10 @@ class TimetableApp:
                 self.auto_retakes_var.get()),
         ).pack(side=tk.LEFT, padx=(8, 0))
 
+        ttk.Button(top, text="📂 불러오기",
+                   command=self._on_load_file
+                   ).pack(side=tk.LEFT, padx=(8, 0))
+
         ttk.Button(top, text="📤 코드 내보내기",
                    command=lambda: export_to_data_source(self.state,
                                                          self.root)
@@ -118,10 +123,13 @@ class TimetableApp:
         paned.add(left, weight=0)
         self.sidebar = Sidebar(left, self.root, self.state)
 
-        right = ttk.Frame(paned)
-        paned.add(right, weight=1)
+        self._right_frame = ttk.Frame(paned)
+        paned.add(self._right_frame, weight=1)
 
-        self.notebook = ttk.Notebook(right)
+        self._build_notebook()
+
+    def _build_notebook(self):
+        self.notebook = ttk.Notebook(self._right_frame)
         self.notebook.pack(fill=tk.BOTH, expand=True)
 
         self.tabs = {}
@@ -134,6 +142,12 @@ class TimetableApp:
         self._add_category("교수별",
                            [(p.name, p.id) for p in self.state.professors])
 
+    def _rebuild_notebook(self):
+        """rooms/professors 변경 후 탭 재구성."""
+        self.notebook.destroy()
+        self._build_notebook()
+        self.render()
+
     def _add_category(self, name, items):
         outer = ttk.Frame(self.notebook)
         self.notebook.add(outer, text=name)
@@ -145,6 +159,77 @@ class TimetableApp:
             inner.add(frame, text=label)
             entries[key] = frame
         self.tabs[name] = entries
+
+    # ------------------------------------------------------------------
+    # 파일 불러오기
+    # ------------------------------------------------------------------
+    def _on_load_file(self):
+        import __main__
+        main_dir = os.path.dirname(os.path.abspath(
+            getattr(__main__, "__file__", os.getcwd())))
+        data_dir = os.path.join(main_dir, "data_files")
+        if not os.path.isdir(data_dir):
+            data_dir = main_dir
+
+        path = filedialog.askopenfilename(
+            title="파일 불러오기",
+            initialdir=data_dir,
+            filetypes=[
+                ("지원 형식", "*.xlsx *.db"),
+                ("Excel 파일 (개설강좌)", "*.xlsx"),
+                ("SQLite DB", "*.db"),
+            ],
+            parent=self.root,
+        )
+        if not path:
+            return
+
+        self.label.config(text="불러오는 중…")
+        self.root.config(cursor="watch")
+        self.root.update_idletasks()
+
+        try:
+            if path.lower().endswith(".db"):
+                from data import load_from_db
+                courses, professors, rooms, crosses, retakes, solutions = \
+                    load_from_db(path)
+            else:
+                from data import load_from_xlsx
+                courses, professors, rooms = load_from_xlsx(path)
+                crosses, retakes, solutions = [], [], []
+
+            self.state.reload_data(
+                courses, professors, rooms,
+                crosses=crosses, retakes=retakes,
+                solutions=solutions or None,
+            )
+            self._rebuild_notebook()
+            self.sidebar.refresh()
+
+            if not solutions:
+                self.root.config(cursor="")
+                messagebox.showinfo(
+                    "데이터 로드 완료",
+                    f"{os.path.basename(path)} 로드됨.\n"
+                    f"과목 {len(self.state.courses)}개 — '재계산' 버튼으로 시간표를 생성하세요.",
+                    parent=self.root,
+                )
+            else:
+                n_sol = len(solutions)
+                self.combo["values"] = self._combo_values()
+                if self.state.solutions:
+                    self.combo.current(0)
+                messagebox.showinfo(
+                    "DB 불러오기 완료",
+                    f"{os.path.basename(path)}\n"
+                    f"과목 {len(self.state.courses)}개 · "
+                    f"저장된 시간표 {n_sol}개 로드 완료",
+                    parent=self.root,
+                )
+        except Exception as e:
+            messagebox.showerror("불러오기 실패", str(e), parent=self.root)
+        finally:
+            self.root.config(cursor="")
 
     # ------------------------------------------------------------------
     # 재계산

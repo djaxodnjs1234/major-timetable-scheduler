@@ -378,3 +378,22 @@ class AppState:
         self._clean_auto_retakes_backup = None
         self._dirty = 0
         self._emit("rollback")
+
+    def reload_data(self, courses, professors, rooms,
+                    crosses=None, retakes=None,
+                    solutions=None, scores=None):
+        """파일에서 데이터 전체 교체. solutions 있으면 솔버 불필요."""
+        self.courses = list(_expand_sections(courses))
+        self.professors = list(professors)
+        self.rooms = list(rooms)
+        self.crosses = list(crosses or [])
+        self.manual_retakes = list(retakes or [])
+        self.solutions = list(solutions or [])
+        self.scores = list(scores) if scores else None
+        self.idx = 0
+        self._clean_courses_backup = None
+        self._clean_crosses_backup = None
+        self._clean_auto_retakes_backup = None
+        # 솔루션이 없으면 재계산 필요 표시
+        self._dirty = 0 if solutions else 1
+        self._emit("recalc")
