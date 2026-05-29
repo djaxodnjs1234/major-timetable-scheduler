@@ -198,4 +198,179 @@ public class ConflictDetectorTests
         var conflicts = ConflictDetector.Detect(assignment, courses);
         Assert.Contains(conflicts, c => c.Type == ConflictType.GradeConflict);
     }
+
+    [Fact]
+    public void SameCourseSectionProfessorSameDayTwoOccurrences_DetectsHc20()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "DS-A", Name = "자료구조", Section = 1, ProfessorId = "P1", Grade = 2 },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("DS-A", 0, 1, "R1"),
+            new("DS-A", 0, 3, "R1"),
+        };
+
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+
+        var hc20 = Assert.Single(conflicts.Where(c => c.Type == ConflictType.SameCourseSameDayConflict));
+        Assert.Equal(ConflictSeverity.Error, hc20.Severity);
+        Assert.Contains("HC-20", hc20.Description);
+    }
+
+    [Fact]
+    public void SameCourseSectionProfessorConsecutiveBlock_DoesNotDetectHc20()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "DS-A", Name = "자료구조", Section = 1, ProfessorId = "P1", Grade = 2, HoursPerWeek = 2, BlockStructure = new List<int> { 2 } },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("DS-A", 0, 1, "R1"),
+            new("DS-A", 0, 2, "R1"),
+        };
+
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+
+        Assert.DoesNotContain(conflicts, c => c.Type == ConflictType.SameCourseSameDayConflict);
+    }
+
+    [Fact]
+    public void SameCourseSectionProfessorAdjacentOneHourAndTwoHourBlocks_DetectsHc20()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "DS-A", Name = "자료구조", Section = 1, ProfessorId = "P1", Grade = 2, HoursPerWeek = 3, BlockStructure = new List<int> { 1, 2 } },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("DS-A", 0, 1, "R1"),
+            new("DS-A", 0, 2, "R1"),
+            new("DS-A", 0, 3, "R1"),
+        };
+
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+
+        Assert.Contains(conflicts, c => c.Type == ConflictType.SameCourseSameDayConflict);
+    }
+
+    [Fact]
+    public void ManualGradeOverlapException_DoesNotSuppressAdjacentHc20Blocks()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "DS-A", Name = "자료구조", Section = 1, ProfessorId = "P1", Grade = 2, HoursPerWeek = 3, BlockStructure = new List<int> { 1, 2 } },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("DS-A", 0, 1, "R1"),
+            new("DS-A", 0, 2, "R1"),
+            new("DS-A", 0, 3, "R1"),
+        };
+
+        var conflicts = ConflictDetector.Detect(
+            assignment,
+            courses,
+            isManualGradeOverlapAllowed: (_, _, _, _) => true);
+
+        Assert.Contains(conflicts, c => c.Type == ConflictType.SameCourseSameDayConflict);
+    }
+
+    [Fact]
+    public void SameCourseSectionProfessorDifferentDays_DoesNotDetectHc20()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "DS-A", Name = "자료구조", Section = 1, ProfessorId = "P1", Grade = 2 },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("DS-A", 0, 1, "R1"),
+            new("DS-A", 1, 3, "R1"),
+        };
+
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+
+        Assert.DoesNotContain(conflicts, c => c.Type == ConflictType.SameCourseSameDayConflict);
+    }
+
+    [Fact]
+    public void SameCourseDifferentSectionSameDay_DoesNotDetectHc20()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "DS-A", Name = "자료구조", Section = 1, ProfessorId = "P1", Grade = 2 },
+            new() { Id = "DS-B", Name = "자료구조", Section = 2, ProfessorId = "P1", Grade = 2 },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("DS-A", 0, 1, "R1"),
+            new("DS-B", 0, 3, "R1"),
+        };
+
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+
+        Assert.DoesNotContain(conflicts, c => c.Type == ConflictType.SameCourseSameDayConflict);
+    }
+
+    [Fact]
+    public void DifferentCourseSameSectionProfessorSameDay_DoesNotDetectHc20()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "DS-A", Name = "자료구조", Section = 1, ProfessorId = "P1", Grade = 2 },
+            new() { Id = "OS-A", Name = "운영체제", Section = 1, ProfessorId = "P1", Grade = 2 },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("DS-A", 0, 1, "R1"),
+            new("OS-A", 0, 3, "R1"),
+        };
+
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+
+        Assert.DoesNotContain(conflicts, c => c.Type == ConflictType.SameCourseSameDayConflict);
+    }
+
+    [Fact]
+    public void SameCourseSectionDifferentProfessorSameDay_DoesNotDetectHc20()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "DS-A-P1", Name = "자료구조", Section = 1, ProfessorId = "P1", Grade = 2 },
+            new() { Id = "DS-A-P2", Name = "자료구조", Section = 1, ProfessorId = "P2", Grade = 2 },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("DS-A-P1", 0, 1, "R1"),
+            new("DS-A-P2", 0, 3, "R1"),
+        };
+
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+
+        Assert.DoesNotContain(conflicts, c => c.Type == ConflictType.SameCourseSameDayConflict);
+    }
+
+    [Fact]
+    public void ManualGradeOverlapException_DoesNotSuppressHc20()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "DS-A", Name = "자료구조", Section = 1, ProfessorId = "P1", Grade = 2 },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("DS-A", 0, 1, "R1"),
+            new("DS-A", 0, 3, "R1"),
+        };
+
+        var conflicts = ConflictDetector.Detect(
+            assignment,
+            courses,
+            isManualGradeOverlapAllowed: (_, _, _, _) => true);
+
+        Assert.Contains(conflicts, c => c.Type == ConflictType.SameCourseSameDayConflict);
+    }
 }
