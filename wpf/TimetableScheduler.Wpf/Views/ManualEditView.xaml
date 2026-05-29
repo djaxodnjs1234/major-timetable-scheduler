@@ -57,7 +57,7 @@
     <Grid>
         <Grid.ColumnDefinitions>
             <ColumnDefinition Width="*" />
-            <ColumnDefinition Width="320" />
+            <ColumnDefinition Width="300" />
         </Grid.ColumnDefinitions>
 
         <!-- Center: Unified timetable -->
@@ -86,12 +86,34 @@
                             Command="{Binding ClearSelectionCommand}"
                             Padding="8,4" Margin="8,0,0,0" />
                     <Separator Width="1" Margin="16,4" Background="#AAA" />
-                    <TextBlock Text="이름:" VerticalAlignment="Center" Margin="0,0,4,0" />
-                    <TextBox Width="180" Padding="4,2" VerticalAlignment="Center"
-                             Text="{Binding SaveName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                    <Grid Width="180" Height="34" VerticalAlignment="Center">
+                        <TextBox Padding="10,0"
+                                 Height="34"
+                                 VerticalContentAlignment="Center"
+                                 Text="{Binding SaveName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                        <TextBlock Text="시간표 이름"
+                                   Margin="12,0,0,0"
+                                   VerticalAlignment="Center"
+                                   Foreground="#8A8A8A"
+                                   FontSize="12"
+                                   IsHitTestVisible="False">
+                            <TextBlock.Style>
+                                <Style TargetType="{x:Type TextBlock}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding SaveName}" Value="">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                    </Grid>
                     <Button Content="💾 저장"
                             Command="{Binding SaveTimetableCommand}"
-                            Padding="8,4" Margin="4,0,0,0">
+                            Height="34"
+                            Padding="12,0" Margin="6,0,0,0"
+                            VerticalAlignment="Center">
                         <Button.Style>
                             <Style TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
                                 <Setter Property="Background" Value="#005FB8" />
@@ -116,13 +138,15 @@
         <!-- Right: Inspector + Conflicts -->
         <Border Grid.Column="1" BorderBrush="#CCC" BorderThickness="1,0,0,0" Background="White">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel>
-                    <Expander Header="Inspector" IsExpanded="True" Margin="16,12">
-                        <StackPanel Margin="0,10,0,0">
-                            <Border Padding="12"
+                <StackPanel Margin="0,4,0,8">
+                    <Expander Header="Inspector" IsExpanded="True" Margin="12,10,12,8">
+                        <StackPanel Margin="0,8,0,0">
+                            <Border MinHeight="48"
+                                    Padding="12,10"
                                     Background="#F8F9FA"
                                     BorderBrush="#DDD"
                                     BorderThickness="1"
+                                    CornerRadius="2"
                                     Visibility="{Binding HasNoSelection, Converter={StaticResource BoolToVisibility}}">
                                 <TextBlock Text="수업을 선택하세요."
                                            Foreground="#666"
@@ -131,7 +155,8 @@
 
                             <StackPanel Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}">
                                 <Border Background="#F8F9FA" BorderBrush="#DDD" BorderThickness="1"
-                                        Padding="12" Margin="0,0,0,10">
+                                        CornerRadius="2"
+                                        Padding="12" Margin="0,0,0,8">
                                     <StackPanel>
                                         <TextBlock Text="{Binding SelectedAssignment.CourseName}"
                                                    FontWeight="Bold" FontSize="14" />
@@ -146,7 +171,7 @@
                                     </StackPanel>
                                 </Border>
 
-                                <StackPanel Margin="0,0,0,10">
+                                <StackPanel Margin="0,0,0,8">
                                     <TextBlock Text="수업 속성" FontSize="10" Foreground="#999"
                                                FontWeight="Bold" Margin="0,0,0,4" />
                                     <TextBlock Text="{Binding SelectedProfessorName, StringFormat=교수: {0}}"
@@ -165,7 +190,7 @@
                                                FontSize="12" />
                                 </StackPanel>
 
-                                <StackPanel Margin="0,0,0,10">
+                                <StackPanel Margin="0,0,0,8">
                                     <TextBlock Text="이동 상태" FontSize="10" Foreground="#999"
                                                FontWeight="Bold" Margin="0,0,0,4" />
                                     <TextBlock Text="{Binding SelectedMoveStateText}"
@@ -179,7 +204,7 @@
                                                FontSize="11" Foreground="#666" TextWrapping="Wrap" />
                                 </StackPanel>
 
-                                <StackPanel Margin="0,0,0,10">
+                                <StackPanel Margin="0,0,0,8">
                                     <TextBlock Text="Cross 관계" FontSize="10" Foreground="#999"
                                                FontWeight="Bold" Margin="0,0,0,4" />
                                     <TextBlock Text="{Binding SelectedCrossGroupText, StringFormat=연결 수업: {0}}"
@@ -189,6 +214,7 @@
                                 </StackPanel>
 
                                 <Border Background="#F8F9FA" BorderBrush="#DDD" BorderThickness="1"
+                                        CornerRadius="2"
                                         Padding="12">
                                     <StackPanel>
                                         <TextBlock Text="강의실 변경" FontSize="10" Foreground="#999"
@@ -199,7 +225,8 @@
 
                                         <Button Content="✓ Apply Changes"
                                                 Command="{Binding ApplyRoomChangeCommand}"
-                                                Padding="8,8" FontWeight="Bold">
+                                                Height="34"
+                                                Padding="10,0" FontWeight="Bold">
                                             <Button.Style>
                                                 <Style TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
                                                     <Setter Property="Background" Value="#005FB8" />
@@ -213,7 +240,7 @@
                         </StackPanel>
                     </Expander>
 
-                    <Expander IsExpanded="True" Margin="16,8">
+                    <Expander IsExpanded="True" Margin="12,6,12,8">
                         <Expander.Header>
                             <StackPanel Orientation="Horizontal">
                                 <TextBlock Text="제약조건 위반" FontSize="11"
@@ -224,38 +251,41 @@
                                 </Border>
                             </StackPanel>
                         </Expander.Header>
-                        <ItemsControl ItemsSource="{Binding Conflicts}" Margin="0,8,0,0">
-                            <ItemsControl.ItemTemplate>
-                                <DataTemplate DataType="{x:Type slv:ConflictItem}">
-                                    <Border Background="White" BorderBrush="#BA1A1A"
-                                            BorderThickness="0,0,0,0"
-                                            Padding="12,8" Margin="0,0,0,6">
-                                        <Border.Style>
-                                            <Style TargetType="Border">
-                                                <Setter Property="BorderThickness" Value="4,1,1,1" />
-                                                <Setter Property="BorderBrush" Value="#BA1A1A" />
-                                            </Style>
-                                        </Border.Style>
-                                        <StackPanel>
-                                            <TextBlock Text="{Binding Type}" FontWeight="Bold"
-                                                       Foreground="#BA1A1A" FontSize="11" />
-                                            <TextBlock Text="{Binding Description}" FontSize="11"
-                                                       TextWrapping="Wrap" Margin="0,2,0,0" />
-                                        </StackPanel>
-                                    </Border>
-                                </DataTemplate>
-                            </ItemsControl.ItemTemplate>
-                        </ItemsControl>
+                        <Border MinHeight="52"
+                                Background="#FAFAFA"
+                                BorderBrush="#E1E1E1"
+                                BorderThickness="1"
+                                CornerRadius="2"
+                                Padding="12,8"
+                                Margin="0,8,0,0">
+                            <Grid>
+                                <TextBlock Text="현재 제약조건 위반이 없습니다."
+                                           Foreground="#2E7D32"
+                                           FontSize="12"
+                                           VerticalAlignment="Center"
+                                           TextWrapping="Wrap"
+                                           Visibility="{Binding Conflicts.Count, Converter={StaticResource BoolToVisibility}, ConverterParameter=Zero}" />
+                                <ItemsControl ItemsSource="{Binding Conflicts}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate DataType="{x:Type slv:ConflictItem}">
+                                            <Border Background="White"
+                                                    BorderBrush="#BA1A1A"
+                                                    BorderThickness="4,1,1,1"
+                                                    CornerRadius="2"
+                                                    Padding="12,8" Margin="0,0,0,6">
+                                                <StackPanel>
+                                                    <TextBlock Text="{Binding Type}" FontWeight="Bold"
+                                                               Foreground="#BA1A1A" FontSize="11" />
+                                                    <TextBlock Text="{Binding Description}" FontSize="11"
+                                                               TextWrapping="Wrap" Margin="0,2,0,0" />
+                                                </StackPanel>
+                                            </Border>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
+                            </Grid>
+                        </Border>
                     </Expander>
-
-                    <Border Background="#E8F5E9" Padding="12,8" Margin="16,8"
-                            Visibility="{Binding Conflicts.Count, Converter={StaticResource BoolToVisibility}, ConverterParameter=Zero}">
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="✓" Foreground="#2E7D32" FontWeight="Bold" />
-                            <TextBlock Text=" NO CONFLICTS" Foreground="#2E7D32"
-                                       FontWeight="Bold" FontSize="11" />
-                        </StackPanel>
-                    </Border>
                 </StackPanel>
             </ScrollViewer>
         </Border>
