@@ -8,6 +8,7 @@ namespace TimetableScheduler.Wpf.Controls;
 
 public partial class UnifiedTimetableControl : UserControl
 {
+    private const string DragDataFormat = "TimetableScheduler.UnifiedCellDrag";
     private static readonly Brush EmptyBg = Brushes.White;
     private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
     private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
@@ -46,14 +47,32 @@ public partial class UnifiedTimetableControl : UserControl
         }
     }
 
+    public sealed class CellDropMoveEventArgs : EventArgs
+    {
+        public CellClickedEventArgs Source { get; }
+        public CellClickedEventArgs Target { get; }
+
+        public CellDropMoveEventArgs(CellClickedEventArgs source, CellClickedEventArgs target)
+        {
+            Source = source;
+            Target = target;
+        }
+    }
+
     public event EventHandler<CellClickedEventArgs>? CellClicked;
     public event EventHandler<CellClickedEventArgs>? CrossAddRequested;
     public event EventHandler<CellClickedEventArgs>? SwapRequested;
+    public event EventHandler<CellDropMoveEventArgs>? DropMoveRequested;
 
     public bool EnableCrossHover { get; set; }
     public Func<CellClickedEventArgs, CrossHoverState>? CrossHoverEvaluator { get; set; }
     public bool EnableSwapHover { get; set; }
     public Func<CellClickedEventArgs, SwapHoverState>? SwapHoverEvaluator { get; set; }
+    public bool EnableDragDropMove { get; set; }
+    public Func<CellDropMoveEventArgs, bool>? DropMoveEvaluator { get; set; }
+
+    private Point? _dragStartPoint;
+    private CellClickedEventArgs? _dragSource;
 
     public UnifiedTimetableControl()
     {
@@ -195,6 +214,11 @@ public partial class UnifiedTimetableControl : UserControl
                                 border.BorderThickness = new Thickness(2);
                             }
                             border.Tag = (dg.Day, p, g, k, match.Assignment);
+                            border.AllowDrop = EnableDragDropMove;
+                            border.PreviewMouseLeftButtonDown += OnDragSourceMouseDown;
+                            border.MouseMove += OnDragSourceMouseMove;
+                            border.DragOver += OnCellDragOver;
+                            border.Drop += OnCellDrop;
                             border.MouseLeftButtonDown += OnCellClicked;
                             if (EnableCrossHover || EnableSwapHover)
                             {
@@ -313,8 +337,72 @@ public partial class UnifiedTimetableControl : UserControl
             Cursor = System.Windows.Input.Cursors.Hand,
             ToolTip = NullIfBlank(tooltip),
         };
+        border.AllowDrop = EnableDragDropMove;
+        border.DragOver += OnCellDragOver;
+        border.Drop += OnCellDrop;
         border.MouseLeftButtonDown += OnCellClicked;
         return border;
+    }
+
+    private void OnDragSourceMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
+    {
+        _dragStartPoint = e.GetPosition(this);
+        _dragSource = TryBuildArgs(sender);
+    }
+
+    private void OnDragSourceMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
+    {
+        if (!EnableDragDropMove
+            || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed
+            || _dragStartPoint is not Point start
+            || _dragSource == null
+            || _dragSource.Assignment == null)
+            return;
+
+        var current = e.GetPosition(this);
+        if (Math.Abs(current.X - start.X) < SystemParameters.MinimumHorizontalDragDistance
+            && Math.Abs(current.Y - start.Y) < SystemParameters.MinimumVerticalDragDistance)
+            return;
+
+        var data = new DataObject(DragDataFormat, _dragSource);
+        DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
+        _dragStartPoint = null;
+        _dragSource = null;
+    }
+
+    private void OnCellDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = DragDropEffects.None;
+        if (EnableDragDropMove
+            && e.Data.GetDataPresent(DragDataFormat)
+            && e.Data.GetData(DragDataFormat) is CellClickedEventArgs source
+            && TryBuildArgs(sender) is { } target)
+        {
+            var canDrop = DropMoveEvaluator?.Invoke(new CellDropMoveEventArgs(source, target)) ?? true;
+            e.Effects = canDrop ? DragDropEffects.Move : DragDropEffects.None;
+        }
+        e.Handled = true;
+    }
+
+    private void OnCellDrop(object sender, DragEventArgs e)
+    {
+        if (EnableDragDropMove
+            && e.Data.GetDataPresent(DragDataFormat)
+            && e.Data.GetData(DragDataFormat) is CellClickedEventArgs source
+            && TryBuildArgs(sender) is { } target)
+        {
+            DropMoveRequested?.Invoke(this, new CellDropMoveEventArgs(source, target));
+            e.Handled = true;
+        }
+        _dragStartPoint = null;
+        _dragSource = null;
+    }
+
+    private static CellClickedEventArgs? TryBuildArgs(object sender)
+    {
+        if (sender is not Border b || b.Tag is not ValueTuple<int, int, int, int, CellAssignment?> tup)
+            return null;
+        return new CellClickedEventArgs(tup.Item1, tup.Item2, tup.Item3, tup.Item4, tup.Item5);
     }
 
     private void OnCellClicked(object sender, System.Windows.Input.MouseButtonEventArgs e)

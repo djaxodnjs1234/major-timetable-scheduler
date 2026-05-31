@@ -197,13 +197,13 @@
         </Grid>
 
         <!-- Right: Inspector + Conflicts -->
-        <Border Grid.Column="1" BorderBrush="#CCC" BorderThickness="1,0,0,0" Background="White">
+        <Border Grid.Column="1" BorderBrush="#CCC" BorderThickness="1,0,0,0" Background="White" Padding="10,8">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
-                <StackPanel Margin="0,4,0,8">
-                    <Expander Header="Inspector" IsExpanded="True" Margin="12,10,12,8">
-                        <StackPanel Margin="0,8,0,0">
-                            <Border MinHeight="48"
-                                    Padding="12,10"
+                <StackPanel Margin="0,0,0,6">
+                    <Expander Header="📌 Inspector" IsExpanded="True" Margin="0,0,0,8">
+                        <StackPanel Margin="0,6,0,0">
+                            <Border MinHeight="44"
+                                    Padding="12,8"
                                     Background="#F8F9FA"
                                     BorderBrush="#DDD"
                                     BorderThickness="1"
@@ -211,7 +211,8 @@
                                     Visibility="{Binding HasNoSelection, Converter={StaticResource BoolToVisibility}}">
                                 <TextBlock Text="수업을 선택하세요."
                                            Foreground="#666"
-                                           FontSize="12" />
+                                           FontSize="12"
+                                           VerticalAlignment="Center" />
                             </Border>
 
                             <StackPanel Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}">
@@ -301,10 +302,10 @@
                         </StackPanel>
                     </Expander>
 
-                    <Expander IsExpanded="True" Margin="12,6,12,8">
+                    <Expander IsExpanded="True" Margin="0,4,0,8">
                         <Expander.Header>
                             <StackPanel Orientation="Horizontal">
-                                <TextBlock Text="제약조건 위반" FontSize="11"
+                                <TextBlock Text="⚠ 제약조건" FontSize="11"
                                            FontWeight="Bold" Foreground="#005FB8" />
                                 <Border Background="#BA1A1A" CornerRadius="8" Padding="6,1" Margin="8,0,0,0">
                                     <TextBlock Text="{Binding Conflicts.Count}" Foreground="White"
@@ -312,7 +313,7 @@
                                 </Border>
                             </StackPanel>
                         </Expander.Header>
-                        <Border MinHeight="52"
+                        <Border MinHeight="44"
                                 Background="#FAFAFA"
                                 BorderBrush="#E1E1E1"
                                 BorderThickness="1"

@@ -17,6 +17,12 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         "같은 과목·같은 분반의 1시간 수업 바로 아래에는 2시간 이상 블록을 배치할 수 없습니다.";
     private const string CrossDisplayColumnBlockedReason =
         "Cross 표시용 열에는 일반 이동할 수 없습니다.";
+    private const string BlockRangeOverlapBlockedReason =
+        "수업 블록의 전체 점유 범위가 다른 수업과 겹칩니다.";
+    private const string CrossDurationMismatchReason =
+        "서로 다른 길이의 수업은 Cross할 수 없습니다.";
+    private const string CrossTimeRangeMismatchReason =
+        "같은 수업시간의 수업끼리만 Cross할 수 있습니다.";
 
     public sealed record ManualCrossLink(
         string CourseIdA,
@@ -370,6 +376,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return CrossHoverState.Hidden("현재 선택한 수업입니다.");
         if (target.Grade != SelectedAssignment.Grade)
             return CrossHoverState.Hidden("같은 학년 수업끼리만 크로스를 만들 수 있습니다.");
+        if (!HasSameCrossDuration(SelectedAssignment, target))
+            return CrossHoverState.Hidden(CrossDurationMismatchReason);
+        if (!IsCrossTargetRangeStart(target, day, period, grade, subColumnIdx))
+            return CrossHoverState.Hidden(CrossTimeRangeMismatchReason);
 
         var selectedCourse = SessionCourses.FirstOrDefault(c => c.Id == SelectedAssignment.CourseId);
         var targetCourse = SessionCourses.FirstOrDefault(c => c.Id == target.CourseId);
@@ -409,6 +419,46 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             StatusMessage = reason;
             return;
         }
+    }
+
+    public bool CanDropMove(
+        int sourceDay,
+        int sourcePeriod,
+        int sourceGrade,
+        int sourceSubColumnIdx,
+        CellAssignment? assignment,
+        int targetDay,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx)
+    {
+        if (assignment == null) return false;
+        return ValidateManualMove(
+            assignment,
+            sourceDay,
+            sourcePeriod,
+            targetDay,
+            targetPeriod,
+            targetGrade,
+            targetSubColumnIdx,
+            allowManualCrossOverlap: false,
+            allowCrossDisplayColumn: false).Count == 0;
+    }
+
+    public bool HandleDropMove(
+        int sourceDay,
+        int sourcePeriod,
+        int sourceGrade,
+        int sourceSubColumnIdx,
+        CellAssignment? assignment,
+        int targetDay,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx)
+    {
+        if (assignment == null) return false;
+        SelectCell(sourceDay, sourcePeriod, sourceGrade, sourceSubColumnIdx, assignment);
+        return TryMoveSelectedTo(targetDay, targetPeriod, targetGrade, targetSubColumnIdx);
     }
 
     public SwapHoverState EvaluateSwapHover(
@@ -978,6 +1028,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return new[] { "수업 블록이 시간표 범위를 벗어납니다." };
         if (targetPeriods.Contains(Constants.LunchPeriod))
             return new[] { "HC-12 점심시간 보장 위반: 점심시간에는 수업을 배정할 수 없습니다." };
+        if (!allowCrossDisplayColumn && IsCrossDisplayOnlyColumn(targetDay, targetPeriod, targetGrade, targetSubColumnIdx))
+            return new[] { CrossDisplayColumnBlockedReason };
         if (WouldCreateOneHourAboveMultiHourPattern(
                 assignment,
                 sourceDay,
@@ -997,7 +1049,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             targetDay,
             targetPeriods,
             targetGrade,
-            targetSubColumnIdx);
+            targetSubColumnIdx,
+            allowManualCrossOverlap);
         if (blockingAssignments.Count > 0)
         {
             var blockingCourses = blockingAssignments
@@ -1008,7 +1061,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             if (blockingCourses.Any(c => c.IsFixed))
                 return new[] { "HC-13 고정 시간표 보존 위반: 고정 수업 위로 이동할 수 없습니다." };
 
-            return new[] { "HC-06 연속 블록 보장 위반: 연속 수업에 필요한 시간 슬롯이 비어 있지 않습니다. 해당 시간대에 이미 다른 수업이 배정되어 있습니다." };
+            return new[] { BlockRangeOverlapBlockedReason };
         }
 
         var candidate = BuildMovedCandidate(assignment, sourceDay, sourcePeriod, targetDay, targetPeriod);
@@ -1019,7 +1072,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .Where(c => !(allowManualCrossOverlap && c.Type == ConflictType.GradeConflict))
             .ToList();
 
-        return newConflicts.Select(ToUserReason).ToList(); 
+        return newConflicts.Select(ToUserReason).ToList();
     }
 
     private static List<int> GetOccupiedPeriods(int startPeriod, int rowSpan) =>
@@ -1188,7 +1241,24 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .OrderBy(pid => pid, StringComparer.Ordinal));
 
     private static bool IsPlacementGuardReason(string reason) =>
-        reason == OneHourAboveTwoHourBlockedReason;
+        reason == OneHourAboveTwoHourBlockedReason
+        || reason == CrossDisplayColumnBlockedReason
+        || reason == BlockRangeOverlapBlockedReason;
+
+    private bool IsCrossDisplayOnlyColumn(int targetDay, int targetPeriod, int targetGrade, int targetSubColumnIdx)
+    {
+        if (targetSubColumnIdx <= 0) return false;
+
+        // Sub-columns beyond 0 are created to display parallel/Cross blocks.  If there is
+        // no real visual block occupying this exact row range, it must not become a
+        // separate "empty" move target.
+        return !Grid.Cells.Any(c =>
+            c.Day == targetDay
+            && c.Grade == targetGrade
+            && c.SubColumnIdx == targetSubColumnIdx
+            && targetPeriod >= c.Period
+            && targetPeriod < c.Period + c.Assignment.RowSpan);
+    }
 
     private List<SolutionAssignment> GetBlockingAssignments(
         CellAssignment assignment,
@@ -1197,24 +1267,26 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         int targetDay,
         IReadOnlyList<int> targetPeriods,
         int targetGrade,
-        int targetSubColumnIdx)
+        int targetSubColumnIdx,
+        bool allowManualCrossOverlap)
     {
+        if (allowManualCrossOverlap)
+            return new List<SolutionAssignment>();
+
         var occupiedCells = Grid.Cells
             .Where(c => c.Day == targetDay
                 && c.Grade == targetGrade
-                && c.SubColumnIdx == targetSubColumnIdx
                 && targetPeriods.Any(p => p >= c.Period && p < c.Period + c.Assignment.RowSpan))
             .Where(c => !IsSameMovingCell(c, assignment, sourceDay, sourcePeriod))
             .ToList();
 
         var blockedCourseIds = occupiedCells
-            .Where(c => !CanShareSlotByCross(assignment, c.Assignment))
             .Select(c => c.Assignment.CourseId)
             .ToHashSet();
 
         return _working
             .Where(a => blockedCourseIds.Contains(a.CourseId))
-            .Where(a => a.Day == targetDay && targetPeriods.Contains(a.Period))
+            .Where(a => a.Day == targetDay)
             .ToList();
     }
 
@@ -1422,6 +1494,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             reason = "이미 다른 수업과 크로스된 과목입니다. 크로스는 두 과목끼리만 설정할 수 있습니다.";
             return false;
         }
+        if (!HasSameCrossDuration(selected, target))
+        {
+            reason = CrossDurationMismatchReason;
+            return false;
+        }
 
         var reasons = ValidateCrossMoveWithProvisionalLink(
             selected, target, day, targetPeriod, targetGrade, targetSubColumnIdx, null);
@@ -1451,7 +1528,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 targetGrade,
                 targetSubColumnIdx,
                 out var candidate,
-                out var moveReasons))
+                out var moveReasons,
+                allowManualCrossOverlap: true,
+                allowCrossDisplayColumn: true))
         {
             _workingCrossLinks.Remove(provisionalLink);
             reason = moveReasons.FirstOrDefault() ?? "크로스 이동을 완료할 수 없습니다.";
@@ -1500,6 +1579,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             reason = "이미 다른 수업과 크로스된 과목입니다. 크로스는 두 과목끼리만 설정할 수 있습니다.";
             return false;
         }
+        if (!HasSameCrossDuration(selected, target))
+        {
+            reason = CrossDurationMismatchReason;
+            return false;
+        }
 
         var reasons = ValidateCrossMoveWithProvisionalLink(
             selected, target, day, targetPeriod, targetGrade, targetSubColumnIdx, existingLink);
@@ -1532,7 +1616,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 targetGrade,
                 targetSubColumnIdx,
                 out var candidate,
-                out var moveReasons))
+                out var moveReasons,
+                allowManualCrossOverlap: true,
+                allowCrossDisplayColumn: true))
         {
             RestoreCrossLinks(crossSnapshot);
             _working = workingSnapshot;
@@ -1868,6 +1954,12 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         if (targetGrade != selected.Grade || target.Grade != selected.Grade)
             return new[] { "같은 학년 수업끼리만 크로스를 만들 수 있습니다." };
+        if (!HasSameCrossDuration(selected, target))
+            return new[] { CrossDurationMismatchReason };
+        var selectedDay = SelectedDay ?? targetDay;
+        var selectedPeriod = SelectedPeriod ?? targetPeriod;
+        if (!IsCrossTargetRangeStart(target, targetDay, targetPeriod, targetGrade, targetSubColumnIdx))
+            return new[] { CrossTimeRangeMismatchReason };
 
         var targetPeriods = GetOccupiedPeriods(targetPeriod, selected.RowSpan);
         var assignmentsAtTarget = Grid.Cells
@@ -1883,8 +1975,6 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (distinctTargetCourses.Any(cid => cid != target.CourseId))
             return new[] { "3개 이상의 과목 크로스는 허용되지 않습니다." };
 
-        var selectedDay = SelectedDay ?? targetDay;
-        var selectedPeriod = SelectedPeriod ?? targetPeriod;
         var provisional = new ManualCrossLink(
             selected.CourseId,
             target.CourseId,
@@ -1906,6 +1996,25 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         allowCrossDisplayColumn: true);
         _workingCrossLinks.Remove(provisional);
         return reasons;
+    }
+
+    private static bool HasSameCrossDuration(CellAssignment selected, CellAssignment target) =>
+        selected.RowSpan == target.RowSpan;
+
+    private bool IsCrossTargetRangeStart(
+        CellAssignment target,
+        int targetDay,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx)
+    {
+        var targetCells = Grid.Cells
+            .Where(c => c.Grade == targetGrade
+                && c.Assignment.CourseId == target.CourseId
+                && c.Assignment.RowSpan == target.RowSpan)
+            .ToList();
+        return targetCells.Count == 0
+            || targetCells.Any(c => c.Day == targetDay && c.Period == targetPeriod);
     }
 
     private UnifiedCellKey? FindGridCellKey(string courseId, int day, int period, int grade)
