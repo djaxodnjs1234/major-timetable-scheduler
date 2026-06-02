@@ -275,6 +275,10 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public event EventHandler<IReadOnlyList<RankedSolution>>? SolveCompleted;
     public event EventHandler? GoToSelectionRequested;
     public event EventHandler? GoToManualRequested;
+    public event EventHandler? BackRequested;
+
+    [RelayCommand]
+    private void Back() => BackRequested?.Invoke(this, EventArgs.Empty);
 
     [RelayCommand(CanExecute = nameof(CanGoToSelection))]
     private void GoToSelection() => GoToSelectionRequested?.Invoke(this, EventArgs.Empty);
