@@ -42,7 +42,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
             if (handoff != null)
             {
                 _manual.LoadFromSnapshot(
-                    _input.CurrentSnapshot(), handoff, _input.EditBaseName);
+                    _input.CurrentSnapshot(),
+                    handoff.Solution,
+                    _input.EditBaseName,
+                    handoff.ManualCrossLinks);
             }
             NavigateTo(_manual);
         };

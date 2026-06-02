@@ -10,6 +10,10 @@ namespace TimetableScheduler.ViewModel.Pages;
 
 public enum InputCategory { Professor, Course, Room, Solve }
 
+public sealed record ManualEditHandoff(
+    RankedSolution Solution,
+    IReadOnlyList<SavedManualCrossLinkRow> ManualCrossLinks);
+
 /// <summary>
 /// One item in the course list: either a group of non-fixed sections (shown as a
 /// single row) or a single fixed section (shown individually).
@@ -284,11 +288,12 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void GoToManual() => GoToManualRequested?.Invoke(this, EventArgs.Empty);
     private bool CanGoToManual() => IsExistingMode;
 
-    /// <summary>The base assignments + snapshot for handing off to manual editing.</summary>
-    public RankedSolution? BuildEditHandoff()
+    /// <summary>The base assignments + saved manual cross links for handing off to manual editing.</summary>
+    public ManualEditHandoff? BuildEditHandoff()
     {
         if (_editBaseAssignments == null) return null;
-        return new RankedSolution(_editBaseAssignments, new SolutionScore(0, 0, 0, 0));
+        var solution = new RankedSolution(_editBaseAssignments, new SolutionScore(0, 0, 0, 0));
+        return new ManualEditHandoff(solution, _editBaseManualCrossLinks);
     }
 
     public AppData CurrentSnapshot() => _workspace.Snapshot();
@@ -326,6 +331,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     {
         SwitchWorkspace(_globalWorkspace);
         IsExistingMode = false;
+        _editBaseAssignments = null;
+        _editBaseManualCrossLinks = Array.Empty<SavedManualCrossLinkRow>();
+        _editBaseName = "";
         SelectedCategory = InputCategory.Course;
     }
 
@@ -344,10 +352,13 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         _editBaseAssignments = record.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
             .ToList();
+        _editBaseManualCrossLinks = (record.ManualCrossLinks ?? Array.Empty<SavedManualCrossLinkRow>())
+            .ToList();
         _editBaseName = record.Name;
     }
 
     private IReadOnlyList<SolutionAssignment>? _editBaseAssignments;
+    private IReadOnlyList<SavedManualCrossLinkRow> _editBaseManualCrossLinks = Array.Empty<SavedManualCrossLinkRow>();
     private string _editBaseName = "";
 
     /// <summary>Name of the timetable being re-edited (for the manual-edit save field).</summary>

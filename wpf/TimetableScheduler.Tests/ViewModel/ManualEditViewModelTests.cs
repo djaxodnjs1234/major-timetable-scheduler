@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using TimetableScheduler.Data;
 using TimetableScheduler.Domain;
 using TimetableScheduler.Scoring;
 using TimetableScheduler.Solver;
@@ -54,6 +55,31 @@ public class ManualEditViewModelTests : IDisposable
         var score = new SolutionScore(1, 1, 1, 3);
         return new RankedSolution(assignments.ToList(), score);
     }
+
+    private SavedTimetableRecord MakeSavedRecordWithManualCross(
+        string id,
+        string name,
+        IReadOnlyList<TimetableAssignmentRow> assignments,
+        SavedManualCrossLinkRow manualCrossLink) =>
+        new(
+            id,
+            name,
+            DateTime.Now,
+            assignments,
+            new[] { manualCrossLink },
+            System.Text.Json.JsonSerializer.Serialize(_ws.Snapshot()));
+
+    private static SavedManualCrossLinkRow SavedCross(
+        string sourceCourseId = "X-01",
+        string targetCourseId = "Y-01",
+        int sourceDay = 0,
+        int sourcePeriod = 1,
+        int targetDay = 0,
+        int targetPeriod = 1) =>
+        new(
+            sourceCourseId, 2, "1", sourceDay, sourcePeriod, "R1",
+            targetCourseId, 2, "1", targetDay, targetPeriod, "R2",
+            "HC11_ONLY_EXCEPTION");
 
     private static TimetableScheduler.ViewModel.Grid.CellAssignment AssignmentAt(
         ManualEditViewModel vm,
@@ -952,6 +978,322 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
+    public void SaveReload_CrossMovedFromDifferentTime_RestoresSavedManualCrossLink()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 1, 3, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R2")));
+        var selected = vm.Grid.Cells.First(c => c.Assignment.CourseId == "X-01");
+        var target = vm.Grid.Cells.First(c => c.Assignment.CourseId == "Y-01");
+        vm.HandleCellClick(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+        vm.HandleCrossAddRequested(target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+        vm.SaveName = "크로스이동저장";
+
+        vm.SaveTimetableCommand.Execute(null);
+
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "크로스이동저장"));
+        Assert.Single(saved.ManualCrossLinks ?? Array.Empty<TimetableScheduler.Data.SavedManualCrossLinkRow>());
+
+        vm.LoadFromSavedTimetable(saved);
+
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.GradeConflict);
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.CourseId == "X-01" && c.Day == 0 && c.Period == 1);
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.CourseId == "Y-01" && c.Day == 0 && c.Period == 1);
+        Assert.True(vm.IsSavedCrossValidationSuppressed);
+        Assert.False(vm.HasUserEditedAfterLoad);
+        Assert.Equal(1, vm.LastSavedCrossLinkCount);
+        Assert.Equal(1, vm.LastRestoredCrossLinkCount);
+        Assert.Equal(0, vm.LastIgnoredCrossLinkCount);
+    }
+
+    [Fact]
+    public void ExistingTimetableHandoff_PassesSavedManualCrossLinksToManualEdit()
+    {
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        var input = _sp.GetRequiredService<DataInputViewModel>();
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var saved = MakeSavedRecordWithManualCross(
+            "handoff-cross",
+            "handoff",
+            new[]
+            {
+                new TimetableAssignmentRow("X-01", 0, 1, "R1"),
+                new TimetableAssignmentRow("Y-01", 0, 1, "R2"),
+            },
+            SavedCross());
+
+        input.LoadForExistingTimetable(saved);
+        var handoff = Assert.IsType<ManualEditHandoff>(input.BuildEditHandoff());
+        vm.LoadFromSnapshot(input.CurrentSnapshot(), handoff.Solution, "handoff", handoff.ManualCrossLinks);
+
+        Assert.Single(handoff.ManualCrossLinks);
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.Equal(1, vm.LastSavedCrossLinkCount);
+        Assert.Equal(1, vm.LastRestoredCrossLinkCount);
+    }
+
+    [Fact]
+    public void LoadFromSnapshot_WithSavedManualCrossLink_RerenderDoesNotShowHc11()
+    {
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        var input = _sp.GetRequiredService<DataInputViewModel>();
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var saved = MakeSavedRecordWithManualCross(
+            "snapshot-cross",
+            "snapshot",
+            new[]
+            {
+                new TimetableAssignmentRow("X-01", 0, 1, "R1"),
+                new TimetableAssignmentRow("Y-01", 0, 1, "R2"),
+            },
+            SavedCross());
+
+        input.LoadForExistingTimetable(saved);
+        var handoff = input.BuildEditHandoff()!;
+        vm.LoadFromSnapshot(input.CurrentSnapshot(), handoff.Solution, "snapshot", handoff.ManualCrossLinks);
+
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.GradeConflict);
+    }
+
+    [Fact]
+    public void LoadFromSnapshot_WithSavedManualCrossLink_KeepsSuppressionThroughSelection()
+    {
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        var input = _sp.GetRequiredService<DataInputViewModel>();
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var saved = MakeSavedRecordWithManualCross(
+            "snapshot-suppress",
+            "snapshot",
+            new[]
+            {
+                new TimetableAssignmentRow("X-01", 0, 1, "R1"),
+                new TimetableAssignmentRow("Y-01", 0, 1, "R2"),
+            },
+            SavedCross(sourceDay: 1, sourcePeriod: 3, targetDay: 2, targetPeriod: 4));
+
+        input.LoadForExistingTimetable(saved);
+        var handoff = input.BuildEditHandoff()!;
+        vm.LoadFromSnapshot(input.CurrentSnapshot(), handoff.Solution, "snapshot", handoff.ManualCrossLinks);
+        var selected = vm.Grid.Cells.First(c => c.Assignment.CourseId == "X-01");
+
+        vm.HandleCellClick(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+
+        Assert.True(vm.IsSavedCrossValidationSuppressed);
+        Assert.False(vm.HasUserEditedAfterLoad);
+        Assert.False(vm.LastCrossCleanupExecuted);
+        Assert.Single(vm.WorkingCrossLinks);
+    }
+
+    [Fact]
+    public void LoadFromSnapshot_AfterSuccessfulMove_ReleasesSavedCrossSuppression()
+    {
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        var input = _sp.GetRequiredService<DataInputViewModel>();
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var saved = MakeSavedRecordWithManualCross(
+            "snapshot-move",
+            "snapshot",
+            new[]
+            {
+                new TimetableAssignmentRow("X-01", 0, 1, "R1"),
+                new TimetableAssignmentRow("Y-01", 0, 1, "R2"),
+            },
+            SavedCross());
+        input.LoadForExistingTimetable(saved);
+        var handoff = input.BuildEditHandoff()!;
+        vm.LoadFromSnapshot(input.CurrentSnapshot(), handoff.Solution, "snapshot", handoff.ManualCrossLinks);
+        var selected = vm.Grid.Cells.First(c => c.Assignment.CourseId == "X-01");
+        vm.HandleCellClick(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+
+        vm.HandleCellClick(0, 3, 2, 0, null);
+
+        Assert.False(vm.IsSavedCrossValidationSuppressed);
+        Assert.True(vm.HasUserEditedAfterLoad);
+        Assert.True(vm.LastCrossCleanupExecuted);
+    }
+
+    [Fact]
+    public void LoadFromSnapshot_WithSavedManualCrossLink_DoesNotSuppressHc20()
+    {
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        var input = _sp.GetRequiredService<DataInputViewModel>();
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var saved = MakeSavedRecordWithManualCross(
+            "snapshot-hc20",
+            "snapshot",
+            new[]
+            {
+                new TimetableAssignmentRow("X-01", 0, 1, "R1"),
+                new TimetableAssignmentRow("Y-01", 0, 1, "R2"),
+                new TimetableAssignmentRow("X-01", 0, 3, "R1"),
+            },
+            SavedCross());
+
+        input.LoadForExistingTimetable(saved);
+        var handoff = input.BuildEditHandoff()!;
+        vm.LoadFromSnapshot(input.CurrentSnapshot(), handoff.Solution, "snapshot", handoff.ManualCrossLinks);
+
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.GradeConflict);
+        Assert.Contains(vm.Conflicts, c => c.Type == ConflictType.SameCourseSameDayConflict);
+    }
+
+    [Fact]
+    public void LoadFromSavedTimetable_StaleSavedCrossSlotStillRestoresFromCurrentAssignments()
+    {
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var saved = new TimetableScheduler.Data.SavedTimetableRecord(
+            "saved-cross-stale",
+            "크로스저장본",
+            DateTime.Now,
+            new[]
+            {
+                new TimetableScheduler.Data.TimetableAssignmentRow("X-01", 0, 1, "R1"),
+                new TimetableScheduler.Data.TimetableAssignmentRow("Y-01", 0, 1, "R2"),
+            },
+            new[]
+            {
+                new TimetableScheduler.Data.SavedManualCrossLinkRow(
+                    "X-01", 2, "1", 1, 3, "R1",
+                    "Y-01", 2, "1", 0, 1, "R2",
+                    "HC11_ONLY_EXCEPTION"),
+            });
+
+        vm.LoadFromSavedTimetable(saved);
+
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.GradeConflict);
+        Assert.Equal(1, vm.LastSavedCrossLinkCount);
+        Assert.Equal(1, vm.LastRestoredCrossLinkCount);
+        Assert.Equal(0, vm.LastIgnoredCrossLinkCount);
+    }
+
+    [Fact]
+    public void LoadFromSavedTimetable_NonOverlappingSavedCrossPairIsKeptWithoutHc11Exception()
+    {
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var saved = new TimetableScheduler.Data.SavedTimetableRecord(
+            "saved-cross-non-overlap",
+            "비겹침크로스저장본",
+            DateTime.Now,
+            new[]
+            {
+                new TimetableScheduler.Data.TimetableAssignmentRow("X-01", 0, 1, "R1"),
+                new TimetableScheduler.Data.TimetableAssignmentRow("Y-01", 1, 3, "R2"),
+            },
+            new[]
+            {
+                new TimetableScheduler.Data.SavedManualCrossLinkRow(
+                    "X-01", 2, "1", 0, 1, "R1",
+                    "Y-01", 2, "1", 0, 1, "R2",
+                    "HC11_ONLY_EXCEPTION"),
+            });
+
+        vm.LoadFromSavedTimetable(saved);
+
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.GradeConflict);
+        Assert.True(vm.IsSavedCrossValidationSuppressed);
+        Assert.False(vm.HasUserEditedAfterLoad);
+    }
+
+    [Fact]
+    public void LoadFromSavedTimetable_SelectAndBuildMoveStates_DoesNotReleaseSavedCrossSuppression()
+    {
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var saved = new TimetableScheduler.Data.SavedTimetableRecord(
+            "saved-cross-select",
+            "선택크로스저장본",
+            DateTime.Now,
+            new[]
+            {
+                new TimetableScheduler.Data.TimetableAssignmentRow("X-01", 0, 1, "R1"),
+                new TimetableScheduler.Data.TimetableAssignmentRow("Y-01", 0, 1, "R2"),
+            },
+            new[]
+            {
+                new TimetableScheduler.Data.SavedManualCrossLinkRow(
+                    "X-01", 2, "1", 1, 3, "R1",
+                    "Y-01", 2, "1", 2, 4, "R2",
+                    "STALE_POLICY_NAME"),
+            });
+        vm.LoadFromSavedTimetable(saved);
+        var selected = vm.Grid.Cells.First(c => c.Assignment.CourseId == "X-01");
+
+        vm.HandleCellClick(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.True(vm.IsSavedCrossValidationSuppressed);
+        Assert.False(vm.HasUserEditedAfterLoad);
+        Assert.False(vm.LastCrossCleanupExecuted);
+        Assert.Empty(vm.IgnoredSavedCrossLinkReasons);
+    }
+
+    [Fact]
+    public void LoadFromSavedTimetable_MissingReferencedAssignmentIsOnlyRestoreFailure()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var saved = new TimetableScheduler.Data.SavedTimetableRecord(
+            "saved-cross-missing-assignment",
+            "누락크로스저장본",
+            DateTime.Now,
+            new[]
+            {
+                new TimetableScheduler.Data.TimetableAssignmentRow("X-01", 0, 1, "R1"),
+            },
+            new[]
+            {
+                new TimetableScheduler.Data.SavedManualCrossLinkRow(
+                    "X-01", 2, "1", 0, 1, "R1",
+                    "Y-01", 2, "1", 0, 1, "R2",
+                    "HC11_ONLY_EXCEPTION"),
+            });
+
+        vm.LoadFromSavedTimetable(saved);
+
+        Assert.Empty(vm.WorkingCrossLinks);
+        Assert.Equal(1, vm.LastSavedCrossLinkCount);
+        Assert.Equal(0, vm.LastRestoredCrossLinkCount);
+        Assert.Equal(1, vm.LastIgnoredCrossLinkCount);
+        Assert.Single(vm.IgnoredSavedCrossLinkReasons);
+        Assert.Contains("assignment가 없습니다", vm.IgnoredSavedCrossLinkReasons[0]);
+    }
+
+    [Fact]
+    public void SaveTimetable_WithoutManualCrossLink_Hc11GradeOverlapBlocksSave()
+    {
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R2")));
+        vm.SaveName = "크로스없는중복";
+
+        vm.SaveTimetableCommand.Execute(null);
+
+        Assert.Contains(vm.Conflicts, c => c.Type == ConflictType.GradeConflict);
+        Assert.Contains("저장 차단", vm.StatusMessage);
+        Assert.DoesNotContain(_ws.SavedTimetables, t => t.Name == "크로스없는중복");
+    }
+
+    [Fact]
     public void LoadFromSavedTimetable_IgnoresUnknownPolicyAndSelfLink()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
@@ -979,6 +1321,10 @@ public class ManualEditViewModelTests : IDisposable
 
         Assert.Empty(vm.WorkingCrossLinks);
         Assert.Contains("유효하지 않아", vm.StatusMessage);
+        Assert.Equal(2, vm.LastSavedCrossLinkCount);
+        Assert.Equal(0, vm.LastRestoredCrossLinkCount);
+        Assert.Equal(2, vm.LastIgnoredCrossLinkCount);
+        Assert.Equal(2, vm.IgnoredSavedCrossLinkReasons.Count);
     }
 
     [Fact]
@@ -1176,6 +1522,9 @@ public class ManualEditViewModelTests : IDisposable
         vm.HandleCellClick(0, 3, 2, 0, null);
 
         Assert.Empty(vm.WorkingCrossLinks);
+        Assert.False(vm.IsSavedCrossValidationSuppressed);
+        Assert.True(vm.HasUserEditedAfterLoad);
+        Assert.True(vm.LastCrossCleanupExecuted);
         Assert.True(vm.UndoCommand.CanExecute(null));
     }
 

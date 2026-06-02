@@ -200,7 +200,13 @@
         <Border Grid.Column="1" BorderBrush="#CCC" BorderThickness="1,0,0,0" Background="White" Padding="10,8">
             <ScrollViewer VerticalScrollBarVisibility="Auto">
                 <StackPanel Margin="0,0,0,6">
-                    <Expander Header="📌 Inspector" IsExpanded="True" Margin="0,0,0,8">
+                    <Expander IsExpanded="True" Margin="0,0,0,8">
+                        <Expander.Header>
+                            <TextBlock Text="📌 Inspector"
+                                       Padding="6,4"
+                                       FontWeight="Bold"
+                                       Foreground="{StaticResource AppOnSurfaceVariant}" />
+                        </Expander.Header>
                         <StackPanel Margin="0,6,0,0">
                             <Border MinHeight="44"
                                     Padding="12,8"
@@ -304,9 +310,9 @@
 
                     <Expander IsExpanded="True" Margin="0,4,0,8">
                         <Expander.Header>
-                            <StackPanel Orientation="Horizontal">
+                            <StackPanel Orientation="Horizontal" Margin="6,4">
                                 <TextBlock Text="⚠ 제약조건" FontSize="11"
-                                           FontWeight="Bold" Foreground="#005FB8" />
+                                           FontWeight="Bold" Foreground="{StaticResource AppOnSurfaceVariant}" />
                                 <Border Background="#BA1A1A" CornerRadius="8" Padding="6,1" Margin="8,0,0,0">
                                     <TextBlock Text="{Binding Conflicts.Count}" Foreground="White"
                                                FontSize="10" FontWeight="Bold" />
@@ -322,7 +328,7 @@
                                 Margin="0,8,0,0">
                             <Grid>
                                 <TextBlock Text="현재 제약조건 위반이 없습니다."
-                                           Foreground="#2E7D32"
+                                           Foreground="{StaticResource AppOnSurfaceVariant}"
                                            FontSize="12"
                                            VerticalAlignment="Center"
                                            TextWrapping="Wrap"

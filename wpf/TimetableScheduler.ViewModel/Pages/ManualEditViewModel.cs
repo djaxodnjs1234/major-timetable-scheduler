@@ -38,7 +38,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             || (CourseIdA == right && CourseIdB == left);
 
         public bool Covers(string left, string right, int day, int period) =>
-            MatchesPair(left, right);
+            MatchesPair(left, right)
+            && day == Day
+            && IsInside(period, PeriodA, RowSpanA)
+            && IsInside(period, PeriodB, RowSpanB);
+
+        private static bool IsInside(int period, int start, int span) =>
+            period >= start && period < start + span;
     }
 
     private readonly WorkspaceService _workspace;
@@ -46,7 +52,15 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private List<SolutionAssignment> _working = new();
     private List<CrossGroup> _workingCrossGroups = new();
     private readonly List<ManualCrossLink> _workingCrossLinks = new();
+    private readonly List<string> _ignoredSavedCrossLinkReasons = new();
     private bool _isRestoringSavedTimetable;
+    private bool _suppressSavedCrossValidation;
+    private bool _hasUserEditedAfterLoad;
+    private int _lastSavedCrossLinkCount;
+    private int _lastRestoredCrossLinkCount;
+    private int _lastIgnoredCrossLinkCount;
+    private bool _lastCrossCleanupExecuted;
+    private string _lastCrossCleanupSkipReason = "";
     private sealed class ManualEditSnapshot
     {
         public List<SolutionAssignment> Assignments { get; init; } = new();
@@ -77,6 +91,14 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     public ObservableCollection<ConflictItem> Conflicts { get; } = new();
     public IReadOnlyList<ManualCrossLink> WorkingCrossLinks => _workingCrossLinks;
+    public IReadOnlyList<string> IgnoredSavedCrossLinkReasons => _ignoredSavedCrossLinkReasons;
+    public int LastSavedCrossLinkCount => _lastSavedCrossLinkCount;
+    public int LastRestoredCrossLinkCount => _lastRestoredCrossLinkCount;
+    public int LastIgnoredCrossLinkCount => _lastIgnoredCrossLinkCount;
+    public bool IsSavedCrossValidationSuppressed => _suppressSavedCrossValidation;
+    public bool HasUserEditedAfterLoad => _hasUserEditedAfterLoad;
+    public bool LastCrossCleanupExecuted => _lastCrossCleanupExecuted;
+    public string LastCrossCleanupSkipReason => _lastCrossCleanupSkipReason;
     public IReadOnlyList<CrossGroup> WorkingCrossGroups => _workingCrossGroups;
     public IReadOnlyList<string> PendingCrossExportLabels =>
         _workingCrossLinks.Select(FormatCrossLink).ToList();
@@ -249,15 +271,33 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     /// Enter manual editing for an existing timetable being re-edited via screen 2:
     /// the constraint snapshot was modified there, so use it as the session data.
     /// </summary>
-    public void LoadFromSnapshot(AppData snapshot, RankedSolution solution, string saveName)
+    public void LoadFromSnapshot(
+        AppData snapshot,
+        RankedSolution solution,
+        string saveName,
+        IReadOnlyList<SavedManualCrossLinkRow>? manualCrossLinks = null)
     {
         _sessionData = snapshot;
-        LoadCore(solution);
+        LoadCore(
+            solution,
+            manualCrossLinks,
+            suppressSavedCrossValidation: manualCrossLinks is { Count: > 0 });
         SaveName = saveName;
     }
 
-    private void LoadCore(RankedSolution solution)
+    private void LoadCore(
+        RankedSolution solution,
+        IReadOnlyList<SavedManualCrossLinkRow>? manualCrossLinks = null,
+        bool suppressSavedCrossValidation = false)
     {
+        _suppressSavedCrossValidation = suppressSavedCrossValidation;
+        _hasUserEditedAfterLoad = false;
+        _lastCrossCleanupExecuted = false;
+        _lastCrossCleanupSkipReason = "";
+        _lastSavedCrossLinkCount = 0;
+        _lastRestoredCrossLinkCount = 0;
+        _lastIgnoredCrossLinkCount = 0;
+        _ignoredSavedCrossLinkReasons.Clear();
         BaseSolution = solution;
         _working = solution.Assignment.ToList();
         _workingCrossGroups = SessionCrossGroups
@@ -267,6 +307,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         _undoStack.Clear();
         _redoStack.Clear();
         NotifyUndoRedoCanExecuteChanged();
+        if (manualCrossLinks != null)
+            RestoreSavedManualCrossLinks(manualCrossLinks);
         Rerender();
         ClearSelectionCore();
         StatusMessage = "수업 블록을 클릭한 뒤, 초록색 칸을 클릭해 이동하세요.";
@@ -279,6 +321,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .ToList();
 
         _isRestoringSavedTimetable = true;
+        _suppressSavedCrossValidation = true;
+        _hasUserEditedAfterLoad = false;
+        _lastCrossCleanupExecuted = false;
+        _lastCrossCleanupSkipReason = "";
         try
         {
             BaseSolution = new RankedSolution(assignments, new SolutionScore(0, 0, 0, 0));
@@ -638,7 +684,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private bool ValidateBeforeSave()
     {
-        RefreshConflicts();
+        RefreshConflicts(strictManualCrossValidation: true);
         var errorCount = Conflicts.Count(c => c.Severity == ConflictSeverity.Error);
         if (errorCount == 0) return true;
 
@@ -667,6 +713,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var snapshot = CaptureSnapshot();
         var movedCourseId = SelectedAssignment.CourseId;
         _working = candidate;
+        MarkUserEditedAfterLoad();
         Rerender();
 
         PushUndoSnapshot(snapshot);
@@ -722,6 +769,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
 
         _working = candidate;
+        MarkUserEditedAfterLoad();
         Rerender();
         PushUndoSnapshot(snapshot);
         var removedLinks = RemoveInvalidCrossesAfterMove();
@@ -898,6 +946,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
 
         _working = candidate;
+        MarkUserEditedAfterLoad();
         Rerender();
 
         PushUndoSnapshot(snapshot);
@@ -1354,6 +1403,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             }
         }
 
+        MarkUserEditedAfterLoad();
+        RefreshConflicts();
         PushUndoSnapshot(snapshot);
         StatusMessage = successMessage
             + (newOnes.Count > 0 ? $" — 신규 위반 {newOnes.Count}건 수용" : "");
@@ -1369,10 +1420,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         RefreshConflicts();
     }
 
-    private void RefreshConflicts()
+    private void RefreshConflicts(bool strictManualCrossValidation = false)
     {
         Conflicts.Clear();
-        foreach (var c in DetectConflicts(_working))
+        foreach (var c in DetectConflicts(_working, strictManualCrossValidation))
             Conflicts.Add(c);
     }
 
@@ -1405,13 +1456,15 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
     }
 
-    private IReadOnlyList<ConflictItem> DetectConflicts(IReadOnlyList<SolutionAssignment> assignment) =>
+    private IReadOnlyList<ConflictItem> DetectConflicts(
+        IReadOnlyList<SolutionAssignment> assignment,
+        bool strictManualCrossValidation = false) =>
         ConflictDetector.Detect(
             assignment,
             SessionCourses,
             SessionProfessors,
             _workingCrossGroups,
-            IsManualGradeOverlapAllowed);
+            strictManualCrossValidation ? IsManualGradeOverlapAllowedStrict : IsManualGradeOverlapAllowed);
 
     private void ClearSelectionCore()
     {
@@ -1512,7 +1565,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             selected.CourseId,
             target.CourseId,
             day,
-            selectedPeriod,
+            targetPeriod,
             selected.RowSpan,
             targetPeriod,
             target.RowSpan);
@@ -1538,6 +1591,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
 
         _working = candidate;
+        MarkUserEditedAfterLoad();
         Rerender();
         PushUndoSnapshot(snapshot);
         SelectedDay = day;
@@ -1600,7 +1654,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             selected.CourseId,
             target.CourseId,
             day,
-            selectedPeriod,
+            targetPeriod,
             selected.RowSpan,
             targetPeriod,
             target.RowSpan);
@@ -1627,6 +1681,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
 
         _working = candidate;
+        MarkUserEditedAfterLoad();
         Rerender();
         PushUndoSnapshot(snapshot);
         SelectedDay = day;
@@ -1667,13 +1722,32 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     }
 
     private bool IsManualGradeOverlapAllowed(string left, string right, int day, int period) =>
+        ShouldSuppressSavedCrossValidation
+            ? _workingCrossLinks.Any(l => l.MatchesPair(left, right))
+            : IsManualGradeOverlapAllowedStrict(left, right, day, period);
+
+    private bool IsManualGradeOverlapAllowedStrict(string left, string right, int day, int period) =>
         _workingCrossLinks.Any(l => l.Covers(left, right, day, period));
+
+    private bool ShouldSuppressSavedCrossValidation =>
+        _suppressSavedCrossValidation && !_hasUserEditedAfterLoad;
 
     private int RemoveInvalidCrossesAfterMove()
     {
+        _lastCrossCleanupExecuted = false;
+        _lastCrossCleanupSkipReason = "";
         if (_isRestoringSavedTimetable)
+        {
+            _lastCrossCleanupSkipReason = "initial restore is running";
             return 0;
+        }
+        if (ShouldSuppressSavedCrossValidation)
+        {
+            _lastCrossCleanupSkipReason = "saved Cross validation is suppressed until first user edit";
+            return 0;
+        }
 
+        _lastCrossCleanupExecuted = true;
         var before = _workingCrossLinks.Count;
         _workingCrossLinks.RemoveAll(link => !IsCrossLinkStillValid(link));
         if (before != _workingCrossLinks.Count)
@@ -1682,6 +1756,12 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             NotifySelectionDetailChanged();
         }
         return before - _workingCrossLinks.Count;
+    }
+
+    private void MarkUserEditedAfterLoad()
+    {
+        _hasUserEditedAfterLoad = true;
+        _suppressSavedCrossValidation = false;
     }
 
     private IReadOnlyList<string> ValidateCrossMoveWithProvisionalLink(
@@ -1701,7 +1781,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             selected.CourseId,
             target.CourseId,
             day,
-            selectedPeriod,
+            targetPeriod,
             selected.RowSpan,
             targetPeriod,
             target.RowSpan);
@@ -1851,64 +1931,56 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private int RestoreSavedManualCrossLinks(IReadOnlyList<SavedManualCrossLinkRow> rows)
     {
         _workingCrossLinks.Clear();
+        _ignoredSavedCrossLinkReasons.Clear();
+        _lastSavedCrossLinkCount = rows.Count;
+        _lastRestoredCrossLinkCount = 0;
+        _lastIgnoredCrossLinkCount = 0;
         var ignored = 0;
-        var seenPairs = new HashSet<string>();
-        var usedCourses = new HashSet<string>();
 
         foreach (var row in rows)
         {
-            if (row.PolicyType != ManualCrossPolicyType)
-            {
-                ignored++;
-                continue;
-            }
-
             if (row.SourceCourseId == row.TargetCourseId)
             {
+                _ignoredSavedCrossLinkReasons.Add($"{row.SourceCourseId} ↔ {row.TargetCourseId}: 같은 수업끼리는 Cross pair를 만들 수 없습니다.");
                 ignored++;
                 continue;
             }
 
-            var pairKey = NormalizePair(row.SourceCourseId, row.TargetCourseId);
-            if (!seenPairs.Add(pairKey)
-                || usedCourses.Contains(row.SourceCourseId)
-                || usedCourses.Contains(row.TargetCourseId))
+            var sourceAssignment = ResolveRestoredCrossAssignment(row.SourceCourseId);
+            var targetAssignment = ResolveRestoredCrossAssignment(row.TargetCourseId);
+            if (sourceAssignment == null || targetAssignment == null)
             {
+                _ignoredSavedCrossLinkReasons.Add($"{row.SourceCourseId} ↔ {row.TargetCourseId}: 현재 시간표에 참조 수업 assignment가 없습니다.");
                 ignored++;
                 continue;
             }
 
-            var sourceCourse = _workspace.ExpandedCourses.FirstOrDefault(c => c.Id == row.SourceCourseId);
-            var targetCourse = _workspace.ExpandedCourses.FirstOrDefault(c => c.Id == row.TargetCourseId);
-            if (sourceCourse == null || targetCourse == null || sourceCourse.Grade != targetCourse.Grade)
-            {
-                ignored++;
-                continue;
-            }
-
-            var sourceSpan = GetWorkingRowSpan(row.SourceCourseId, row.SourceDay, row.SourcePeriod);
-            var targetSpan = GetWorkingRowSpan(row.TargetCourseId, row.TargetDay, row.TargetPeriod);
-            if (sourceSpan <= 0 || targetSpan <= 0)
-            {
-                ignored++;
-                continue;
-            }
+            var sourceSpan = GetWorkingRowSpan(row.SourceCourseId, sourceAssignment.Value.Day, sourceAssignment.Value.Period);
+            var targetSpan = GetWorkingRowSpan(row.TargetCourseId, targetAssignment.Value.Day, targetAssignment.Value.Period);
 
             _workingCrossLinks.Add(new ManualCrossLink(
                 row.SourceCourseId,
                 row.TargetCourseId,
-                row.SourceDay,
-                row.SourcePeriod,
-                sourceSpan,
-                row.TargetPeriod,
-                targetSpan));
-            usedCourses.Add(row.SourceCourseId);
-            usedCourses.Add(row.TargetCourseId);
+                sourceAssignment.Value.Day,
+                sourceAssignment.Value.Period,
+                Math.Max(1, sourceSpan),
+                targetAssignment.Value.Period,
+                Math.Max(1, targetSpan)));
+            _lastRestoredCrossLinkCount++;
         }
 
+        _lastIgnoredCrossLinkCount = ignored;
         NotifySelectionDetailChanged();
         return ignored;
     }
+
+    private SolutionAssignment? ResolveRestoredCrossAssignment(string courseId) =>
+        _working
+            .Where(a => a.CourseId == courseId)
+            .OrderBy(a => a.Day)
+            .ThenBy(a => a.Period)
+            .Select(a => (SolutionAssignment?)a)
+            .FirstOrDefault();
 
     private int GetWorkingRowSpan(string courseId, int day, int startPeriod)
     {
@@ -1979,7 +2051,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             selected.CourseId,
             target.CourseId,
             targetDay,
-            selectedPeriod,
+            targetPeriod,
             selected.RowSpan,
             targetPeriod,
             target.RowSpan);
