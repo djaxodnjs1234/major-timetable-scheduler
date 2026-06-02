@@ -13,11 +13,11 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Step header -->
+        <!-- Page header -->
         <Border Grid.Row="0" Style="{StaticResource StepHeaderBar}">
             <StackPanel Orientation="Horizontal">
                 <Border Style="{StaticResource StepBadge}">
-                    <TextBlock Text="1단계" Style="{StaticResource StepBadgeText}" />
+                    <TextBlock Text="1" Style="{StaticResource StepBadgeText}" />
                 </Border>
                 <TextBlock Text="시간표 선택" Style="{StaticResource StepTitle}" />
                 <TextBlock Text="저장된 시간표를 확인하거나 새 시간표를 만듭니다."
