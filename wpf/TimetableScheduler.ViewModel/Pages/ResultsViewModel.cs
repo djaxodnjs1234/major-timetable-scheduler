@@ -44,11 +44,15 @@ public sealed partial class ResultsViewModel : PageViewModelBase
     private RankedSolution? selectedSolution;
 
     public event EventHandler? EditSelectedRequested;
+    public event EventHandler? BackRequested;
 
     public ResultsViewModel(WorkspaceService workspace)
     {
         _workspace = workspace;
     }
+
+    [RelayCommand]
+    private void Back() => BackRequested?.Invoke(this, EventArgs.Empty);
 
     [RelayCommand(CanExecute = nameof(CanEditSelected))]
     private void EditSelected() => EditSelectedRequested?.Invoke(this, EventArgs.Empty);

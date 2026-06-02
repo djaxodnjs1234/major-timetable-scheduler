@@ -8,6 +8,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly DataInputViewModel _input;
     private readonly ResultsViewModel _results;
     private readonly ManualEditViewModel _manual;
+    private PageViewModelBase? _manualBackTarget;
 
     [ObservableProperty]
     private PageViewModelBase currentPage;
@@ -36,6 +37,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 ranked, _input.IsExistingMode ? _input.CurrentSnapshot() : null);
         };
         _input.GoToSelectionRequested += (_, _) => NavigateTo(_results);
+        _input.BackRequested += (_, _) => NavigateTo(_selection);
         _input.GoToManualRequested += (_, _) =>
         {
             var handoff = _input.BuildEditHandoff();
@@ -47,6 +49,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
                     _input.EditBaseName,
                     handoff.ManualCrossLinks);
             }
+            _manualBackTarget = _input;
             NavigateTo(_manual);
         };
 
@@ -71,10 +74,13 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 else
                     _manual.LoadFromSolution(_results.SelectedSolution);
             }
+            _manualBackTarget = _results;
             NavigateTo(_manual);
         };
+        _results.BackRequested += (_, _) => NavigateTo(_input);
 
         _manual.SavedRequested += (_, _) => NavigateTo(_selection);
+        _manual.BackRequested += (_, _) => NavigateTo(_manualBackTarget ?? _results);
 
         currentPage = _selection;
     }

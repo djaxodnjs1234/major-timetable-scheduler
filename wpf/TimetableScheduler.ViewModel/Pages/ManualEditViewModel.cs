@@ -84,6 +84,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     public override string Title => "수동 편집";
 
+    public event EventHandler? BackRequested;
+
+    [RelayCommand]
+    private void Back() => BackRequested?.Invoke(this, EventArgs.Empty);
+
     public UnifiedTimetableViewModel Grid { get; } = new();
     public ObservableCollection<NamedGridViewModel> GradeViews { get; } = new();
     public ObservableCollection<NamedGridViewModel> RoomViews { get; } = new();

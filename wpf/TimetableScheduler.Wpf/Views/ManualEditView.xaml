@@ -60,16 +60,21 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <!-- Step header -->
+        <!-- Page header -->
         <Border Grid.Row="0" Style="{StaticResource StepHeaderBar}">
-            <StackPanel Orientation="Horizontal">
-                <Border Style="{StaticResource StepBadge}">
-                    <TextBlock Text="4단계" Style="{StaticResource StepBadgeText}" />
-                </Border>
-                <TextBlock Text="수동 편집" Style="{StaticResource StepTitle}" />
-                <TextBlock Text="시간표를 직접 조정한 뒤 저장하면 시간표 선택 화면으로 돌아갑니다."
-                           Style="{StaticResource StepCaption}" />
-            </StackPanel>
+            <DockPanel LastChildFill="True">
+                <Button DockPanel.Dock="Right" Content="뒤로가기"
+                        Command="{Binding BackCommand}"
+                        Style="{StaticResource HeaderBackButton}" />
+                <StackPanel Orientation="Horizontal">
+                    <Border Style="{StaticResource StepBadge}">
+                        <TextBlock Text="4" Style="{StaticResource StepBadgeText}" />
+                    </Border>
+                    <TextBlock Text="수동 편집" Style="{StaticResource StepTitle}" />
+                    <TextBlock Text="시간표를 직접 조정한 뒤 저장하면 시간표 선택 화면으로 돌아갑니다."
+                               Style="{StaticResource StepCaption}" />
+                </StackPanel>
+            </DockPanel>
         </Border>
 
         <Grid Grid.Row="1">
