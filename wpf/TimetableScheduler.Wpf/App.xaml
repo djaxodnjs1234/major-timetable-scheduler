@@ -69,6 +69,88 @@
                 <Setter Property="Cursor" Value="Hand" />
             </Style>
 
+            <Style x:Key="HeaderBackButton" TargetType="Button">
+                <Setter Property="Background" Value="#F7FAFF" />
+                <Setter Property="BorderBrush" Value="#B8C7DC" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Foreground" Value="{StaticResource AppPrimary}" />
+                <Setter Property="FontSize" Value="12" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Padding" Value="12,6" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="14"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="Center"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#E5F0FF" />
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="{StaticResource AppPrimary}" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#D7E8FF" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Cursor" Value="Arrow" />
+                                    <Setter Property="Foreground" Value="#6B7280" />
+                                    <Setter TargetName="Bd" Property="Background" Value="#F3F4F6" />
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="#D1D5DB" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
+            <Style x:Key="SidebarManualEditButton" TargetType="Button">
+                <Setter Property="Background" Value="#2E7D32" />
+                <Setter Property="BorderBrush" Value="#2E7D32" />
+                <Setter Property="BorderThickness" Value="1" />
+                <Setter Property="Foreground" Value="White" />
+                <Setter Property="FontWeight" Value="SemiBold" />
+                <Setter Property="Padding" Value="10,9" />
+                <Setter Property="HorizontalContentAlignment" Value="Left" />
+                <Setter Property="Cursor" Value="Hand" />
+                <Setter Property="Template">
+                    <Setter.Value>
+                        <ControlTemplate TargetType="Button">
+                            <Border x:Name="Bd"
+                                    Background="{TemplateBinding Background}"
+                                    BorderBrush="{TemplateBinding BorderBrush}"
+                                    BorderThickness="{TemplateBinding BorderThickness}"
+                                    CornerRadius="6"
+                                    Padding="{TemplateBinding Padding}">
+                                <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                                  VerticalAlignment="Center" />
+                            </Border>
+                            <ControlTemplate.Triggers>
+                                <Trigger Property="IsMouseOver" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#256F2A" />
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="#256F2A" />
+                                </Trigger>
+                                <Trigger Property="IsPressed" Value="True">
+                                    <Setter TargetName="Bd" Property="Background" Value="#1F5E24" />
+                                </Trigger>
+                                <Trigger Property="IsEnabled" Value="False">
+                                    <Setter Property="Cursor" Value="Arrow" />
+                                    <Setter Property="Foreground" Value="#2F5D43" />
+                                    <Setter TargetName="Bd" Property="Background" Value="#E7F3EA" />
+                                    <Setter TargetName="Bd" Property="BorderBrush" Value="#9CC7AA" />
+                                </Trigger>
+                            </ControlTemplate.Triggers>
+                        </ControlTemplate>
+                    </Setter.Value>
+                </Setter>
+            </Style>
+
             <DataTemplate DataType="{x:Type vm:TimetableSelectionViewModel}">
                 <views:TimetableSelectionView />
             </DataTemplate>
