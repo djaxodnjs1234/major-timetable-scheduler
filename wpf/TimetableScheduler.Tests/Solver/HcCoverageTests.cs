@@ -60,6 +60,28 @@ public class HcCoverageTests
     }
 
     [Fact]
+    public void HC14_UnavailableRooms_BlocksThoseRooms()
+    {
+        var (courses, profs, rooms) = MakeBaseSetup();
+        courses[0].UnavailableRooms = new List<string> { "R1" };
+
+        var build = ModelBuilder.Build(courses, profs, rooms);
+        var solver = new CpSolver();
+        Assert.True(solver.Solve(build.Model) is CpSolverStatus.Feasible or CpSolverStatus.Optimal);
+
+        var r1Count = 0;
+        var r2Count = 0;
+        for (int d = 0; d < Constants.Days; d++)
+            foreach (var p in Constants.ValidPeriods)
+            {
+                r1Count += (int)solver.Value(build.X[("X-01", d, p, "R1")]);
+                r2Count += (int)solver.Value(build.X[("X-01", d, p, "R2")]);
+            }
+        Assert.Equal(0, r1Count);
+        Assert.Equal(1, r2Count);
+    }
+
+    [Fact]
     public void HC14_MultiRoom_K2_OccupiesBothSimultaneously()
     {
         var courses = new List<Course>

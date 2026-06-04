@@ -131,6 +131,20 @@ public class ConflictDetectorTests
     }
 
     [Fact]
+    public void CourseUnavailableRoom_DetectsConflict()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "X", Name = "X", UnavailableRooms = new List<string> { "R2" } },
+        };
+        var assignment = new List<SolutionAssignment> { new("X", 0, 1, "R2") };
+
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+
+        Assert.Contains(conflicts, c => c.Type == ConflictType.CourseUnavailableRoomViolation);
+    }
+
+    [Fact]
     public void ProfRoomInconsistent_DetectsWarning()
     {
         var courses = new List<Course>

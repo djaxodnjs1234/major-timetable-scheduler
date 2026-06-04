@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS Courses (
     Section           INTEGER NOT NULL DEFAULT 1,
     Department        TEXT NOT NULL,
     FixedRoomsJson    TEXT NOT NULL,
+    UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]',
     BlockStructureJson TEXT NOT NULL,
     IsFixed           INTEGER NOT NULL,
     FixedSlotsJson    TEXT NOT NULL,

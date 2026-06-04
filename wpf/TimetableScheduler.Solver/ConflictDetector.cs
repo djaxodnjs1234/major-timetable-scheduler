@@ -13,6 +13,7 @@ public enum ConflictType
     ProfUnavailable,
     FixedTimeViolation,
     FixedRoomViolation,
+    CourseUnavailableRoomViolation,
     BlockStartViolation,
     ProfAllowedRoomViolation,
     ProfRoomInconsistent,
@@ -138,6 +139,21 @@ public static class ConflictDetector
                         a.Day, a.Period));
                     break;
                 }
+            }
+        }
+
+        foreach (var c in courses)
+        {
+            if (c.UnavailableRooms.Count == 0) continue;
+            var blocked = c.UnavailableRooms.ToHashSet();
+            foreach (var a in assignment.Where(a => a.CourseId == c.Id))
+            {
+                if (!blocked.Contains(a.RoomId)) continue;
+                list.Add(new ConflictItem(
+                    ConflictType.CourseUnavailableRoomViolation, ConflictSeverity.Error,
+                    $"{c.Name}({c.Id})은 불가 강의실 [{string.Join(",", c.UnavailableRooms)}]을 사용할 수 없습니다 — {a.RoomId} 사용",
+                    a.Day, a.Period));
+                break;
             }
         }
 

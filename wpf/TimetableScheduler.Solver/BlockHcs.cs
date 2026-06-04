@@ -105,6 +105,20 @@ public static class BlockHcs
         }
     }
 
+    public static void AddHc14_UnavailableRooms(
+        CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms)
+    {
+        var roomIds = rooms.Select(r => r.Id).ToHashSet();
+        foreach (var c in courses)
+        {
+            if (c.UnavailableRooms.Count == 0) continue;
+            foreach (var rid in c.UnavailableRooms.Where(roomIds.Contains))
+                for (int d = 0; d < Constants.Days; d++)
+                    foreach (var p in Constants.ValidPeriods)
+                        model.Add(x[(c.Id, d, p, rid)] == 0);
+        }
+    }
+
     public static void AddHc21_ProfRoomConsistent(
         CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms,
         Dictionary<string, Professor> profMap)

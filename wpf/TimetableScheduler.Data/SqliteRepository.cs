@@ -40,8 +40,17 @@ public sealed class SqliteRepository
     {
         using var conn = Open();
         conn.Execute(SqliteSchema.CreateAll);
+        MigrateCourseUnavailableRooms(conn);
         MigrateCoursePkIfNeeded(conn);
         MigrateSavedTimetableSnapshot(conn);
+    }
+
+    private static void MigrateCourseUnavailableRooms(SqliteConnection conn)
+    {
+        var columns = conn.Query("PRAGMA table_info(Courses)")
+            .Select(row => (string)row.name);
+        if (columns.Contains("UnavailableRoomsJson")) return;
+        conn.Execute("ALTER TABLE Courses ADD COLUMN UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]'");
     }
 
     private static void MigrateSavedTimetableSnapshot(SqliteConnection conn)
@@ -64,10 +73,16 @@ public sealed class SqliteRepository
             "HoursPerWeek INTEGER NOT NULL, CourseType TEXT NOT NULL," +
             "ProfessorId TEXT NOT NULL, Section INTEGER NOT NULL DEFAULT 1," +
             "Department TEXT NOT NULL, FixedRoomsJson TEXT NOT NULL," +
+            "UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]'," +
             "BlockStructureJson TEXT NOT NULL, IsFixed INTEGER NOT NULL," +
             "FixedSlotsJson TEXT NOT NULL, CoteachProfsJson TEXT NOT NULL," +
             "PRIMARY KEY (Id, Section))");
-        conn.Execute("INSERT OR IGNORE INTO Courses_v2 SELECT * FROM Courses");
+        conn.Execute(@"INSERT OR IGNORE INTO Courses_v2
+            (Id,Name,Grade,HoursPerWeek,CourseType,ProfessorId,Section,Department,
+             FixedRoomsJson,UnavailableRoomsJson,BlockStructureJson,IsFixed,FixedSlotsJson,CoteachProfsJson)
+            SELECT Id,Name,Grade,HoursPerWeek,CourseType,ProfessorId,Section,Department,
+                   FixedRoomsJson,UnavailableRoomsJson,BlockStructureJson,IsFixed,FixedSlotsJson,CoteachProfsJson
+            FROM Courses");
         conn.Execute("DROP TABLE Courses");
         conn.Execute("ALTER TABLE Courses_v2 RENAME TO Courses");
     }
@@ -97,9 +112,9 @@ public sealed class SqliteRepository
         foreach (var c in data.Courses)
             conn.Execute(@"INSERT INTO Courses
                 (Id,Name,Grade,HoursPerWeek,CourseType,ProfessorId,Section,Department,
-                 FixedRoomsJson,BlockStructureJson,IsFixed,FixedSlotsJson,CoteachProfsJson)
+                 FixedRoomsJson,UnavailableRoomsJson,BlockStructureJson,IsFixed,FixedSlotsJson,CoteachProfsJson)
                 VALUES (@Id,@Name,@Grade,@HoursPerWeek,@CourseType,@ProfessorId,@Section,@Department,
-                 @FixedRoomsJson,@BlockStructureJson,@IsFixed,@FixedSlotsJson,@CoteachProfsJson)",
+                 @FixedRoomsJson,@UnavailableRoomsJson,@BlockStructureJson,@IsFixed,@FixedSlotsJson,@CoteachProfsJson)",
                 FromCourse(c), tx);
 
         foreach (var p in data.Professors)
@@ -266,6 +281,7 @@ public sealed class SqliteRepository
         public int Section { get; set; }
         public string Department { get; set; } = "";
         public string FixedRoomsJson { get; set; } = "[]";
+        public string UnavailableRoomsJson { get; set; } = "[]";
         public string BlockStructureJson { get; set; } = "[]";
         public long IsFixed { get; set; }
         public string FixedSlotsJson { get; set; } = "[]";
@@ -297,6 +313,7 @@ public sealed class SqliteRepository
         Section = r.Section,
         Department = r.Department,
         FixedRooms = JsonSerializer.Deserialize<List<string>>(r.FixedRoomsJson) ?? new(),
+        UnavailableRooms = JsonSerializer.Deserialize<List<string>>(r.UnavailableRoomsJson) ?? new(),
         BlockStructure = JsonSerializer.Deserialize<List<int>>(r.BlockStructureJson) ?? new(),
         IsFixed = r.IsFixed != 0,
         FixedSlots = JsonSerializer.Deserialize<List<TimeSlot>>(r.FixedSlotsJson) ?? new(),
@@ -308,6 +325,7 @@ public sealed class SqliteRepository
         c.Id, c.Name, c.Grade, c.HoursPerWeek, c.CourseType, c.ProfessorId,
         c.Section, c.Department,
         FixedRoomsJson = JsonSerializer.Serialize(c.FixedRooms),
+        UnavailableRoomsJson = JsonSerializer.Serialize(c.UnavailableRooms),
         BlockStructureJson = JsonSerializer.Serialize(c.BlockStructure),
         IsFixed = c.IsFixed ? 1 : 0,
         FixedSlotsJson = JsonSerializer.Serialize(c.FixedSlots),

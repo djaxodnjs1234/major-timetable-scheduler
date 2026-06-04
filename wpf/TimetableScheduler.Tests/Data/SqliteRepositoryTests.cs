@@ -51,6 +51,7 @@ public class SqliteRepositoryTests : IDisposable
                     Section = 1,
                     Department = "전자",
                     FixedRooms = new List<string> { "R1", "R2" },
+                    UnavailableRooms = new List<string> { "R9" },
                     BlockStructure = new List<int> { 2, 1 },
                     IsFixed = true,
                     FixedSlots = new List<TimeSlot> { new(0, 1), new(2, 3) },
@@ -83,6 +84,7 @@ public class SqliteRepositoryTests : IDisposable
         var c = loaded.Courses[0];
         Assert.Equal("X-01", c.Id);
         Assert.Equal(new[] { "R1", "R2" }, c.FixedRooms);
+        Assert.Equal(new[] { "R9" }, c.UnavailableRooms);
         Assert.Equal(new[] { 2, 1 }, c.BlockStructure);
         Assert.True(c.IsFixed);
         Assert.Equal(2, c.FixedSlots.Count);
