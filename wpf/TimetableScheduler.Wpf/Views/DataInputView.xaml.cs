@@ -80,19 +80,33 @@ public partial class DataInputView : UserControl
         if (sender is not Expander expander || expander.DataContext is not CourseGroupItem item || Vm == null) return;
         var course = item.Sections[0];
 
-        if (expander.FindName("GroupFixedRoomsPicker") is CheckListPickerControl roomsPicker)
+        if (expander.FindName("GroupUnavailableRoomsPicker") is CheckListPickerControl roomsPicker)
         {
             roomsPicker.DataContext = CheckListBinder.Bind(
                 Vm.Workspace.Rooms.ToList(),
-                r => r.Id, r => $"{r.Id} ({r.Name})",
-                course.FixedRooms);
+                r => r.Id, r => r.Name,
+                course.UnavailableRooms);
         }
         if (expander.FindName("GroupCoteachProfsPicker") is CheckListPickerControl coteachPicker)
         {
             coteachPicker.DataContext = CheckListBinder.Bind(
                 Vm.Workspace.Professors.ToList(),
-                p => p.Id, p => $"{p.Id} ({p.Name})",
+                p => p.Id, p => p.Name,
                 course.CoteachProfs);
+        }
+        if (expander.FindName("GroupCrossPicker") is CheckListPickerControl crossPicker)
+        {
+            var candidates = Vm.GetCrossCandidates(item).ToList();
+            var selected = candidates
+                .Where(candidate => Vm.IsCrossPairEnabled(item.BaseId, candidate.BaseId))
+                .Select(candidate => candidate.BaseId)
+                .ToList();
+            crossPicker.DataContext = CheckListBinder.Bind(
+                candidates,
+                candidate => candidate.BaseId,
+                candidate => candidate.HeaderName,
+                selected,
+                (targetBaseId, enabled) => Vm.SetCrossPair(item.BaseId, targetBaseId, enabled));
         }
         if (expander.FindName("FixedSlotEditor") is FixedSlotEditorControl editor)
         {
@@ -158,7 +172,7 @@ public partial class DataInputView : UserControl
         if (rep.BlockStructure.Count > 0 && rep.BlockStructure.Sum() != rep.HoursPerWeek)
         {
             MessageBox.Show(
-                $"블록구조 합({rep.BlockStructure.Sum()})이 시수/주({rep.HoursPerWeek})와 일치하지 않습니다.\n" +
+                $"블록구조 합({rep.BlockStructure.Sum()})이 주당 수업시간({rep.HoursPerWeek})과 일치하지 않습니다.\n" +
                 "해를 찾을 수 없으니 값을 맞춰주세요.",
                 "저장 불가",
                 MessageBoxButton.OK,

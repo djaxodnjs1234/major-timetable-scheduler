@@ -45,7 +45,23 @@ public class CourseGroupsTests : IDisposable
         Assert.Single(vm.CourseGroups);
         Assert.Equal(2, vm.CourseGroups[0].Sections.Count);
         Assert.Equal("GA1004", vm.CourseGroups[0].BaseId);
+        Assert.Equal("2개", vm.CourseGroups[0].HeaderSectionInfo);
         Assert.False(vm.CourseGroups[0].IsFixedIndividual);
+    }
+
+    [Fact]
+    public void AddNew_Course_GeneratesNextNumericId()
+    {
+        _workspace.AddCourse(MakeCourse("1-01", 1));
+        var vm = MakeVm();
+        vm.SelectedCategory = InputCategory.Course;
+        vm.NewName = "자동생성과목";
+
+        vm.AddNewCommand.Execute(null);
+
+        var added = _workspace.Courses.Single(c => c.Name == "자동생성과목");
+        Assert.Equal("2", added.Id);
+        Assert.Equal(1, added.Section);
     }
 
     [Fact]
@@ -192,5 +208,65 @@ public class CourseGroupsTests : IDisposable
         var courses = _workspace.Courses.OrderBy(c => c.Id).ToList();
         Assert.True(courses[0].IsFixed);
         Assert.True(courses[1].IsFixed);
+    }
+
+    [Fact]
+    public void SaveGroup_PropagatesUnavailableRooms_ToAllSectionsAndStopsEditing()
+    {
+        _workspace.AddCourse(MakeCourse("GA1004-01", 1));
+        _workspace.AddCourse(MakeCourse("GA1004-02", 2));
+        var vm = MakeVm();
+        var item = vm.CourseGroups[0];
+        item.IsEditing = true;
+        item.Sections[0].FixedRooms = new List<string> { "R1" };
+        item.Sections[0].UnavailableRooms = new List<string> { "R2" };
+
+        vm.SaveGroupCommand.Execute(item);
+
+        var courses = _workspace.Courses.OrderBy(c => c.Id).ToList();
+        Assert.Equal(new[] { "R1" }, courses[0].FixedRooms);
+        Assert.Equal(new[] { "R1" }, courses[1].FixedRooms);
+        Assert.Equal(new[] { "R2" }, courses[0].UnavailableRooms);
+        Assert.Equal(new[] { "R2" }, courses[1].UnavailableRooms);
+        Assert.False(item.IsEditing);
+    }
+
+    [Fact]
+    public void CrossPairHelpers_OnlyOfferSameGradeSameBlockAndPersistPair()
+    {
+        _workspace.AddCourse(MakeCourse("A-01", 1));
+        _workspace.AddCourse(MakeCourse("B-01", 1));
+        var differentGrade = MakeCourse("C-01", 1);
+        differentGrade.Grade = 3;
+        _workspace.AddCourse(differentGrade);
+        var vm = MakeVm();
+        var source = vm.CourseGroups.Single(g => g.BaseId == "A");
+
+        var candidates = vm.GetCrossCandidates(source);
+
+        var target = Assert.Single(candidates);
+        Assert.Equal("B", target.BaseId);
+
+        vm.SetCrossPair("A", "B", enabled: true);
+        Assert.True(vm.IsCrossPairEnabled("A", "B"));
+        Assert.Single(_workspace.CrossGroups);
+
+        vm.SetCrossPair("A", "B", enabled: false);
+        Assert.Empty(_workspace.CrossGroups);
+    }
+
+    [Fact]
+    public void SetCrossPair_Disable_RemovesExistingGroupWithDifferentId()
+    {
+        _workspace.AddCourse(MakeCourse("A-01", 1));
+        _workspace.AddCourse(MakeCourse("B-01", 1));
+        _workspace.AddCrossGroup(new CrossGroup { Id = "legacy", BaseIds = new List<string> { "A", "B" } });
+        var vm = MakeVm();
+
+        Assert.True(vm.IsCrossPairEnabled("A", "B"));
+
+        vm.SetCrossPair("A", "B", enabled: false);
+
+        Assert.Empty(_workspace.CrossGroups);
     }
 }

@@ -7,22 +7,6 @@
              mc:Ignorable="d"
              d:DataContext="{d:DesignInstance Type=vm:FixedSlotEditorViewModel}">
     <StackPanel>
-        <!-- Not-fixed state -->
-        <TextBlock Text="(고정 해제 상태 — 솔버가 자동 배정)"
-                   Foreground="#888" FontStyle="Italic" Margin="0,4">
-            <TextBlock.Style>
-                <Style TargetType="TextBlock">
-                    <Setter Property="Visibility" Value="Collapsed" />
-                    <Style.Triggers>
-                        <DataTrigger Binding="{Binding IsFixed}" Value="False">
-                            <Setter Property="Visibility" Value="Visible" />
-                        </DataTrigger>
-                    </Style.Triggers>
-                </Style>
-            </TextBlock.Style>
-        </TextBlock>
-
-        <!-- Fixed state -->
         <StackPanel>
             <StackPanel.Style>
                 <Style TargetType="StackPanel">
@@ -47,20 +31,22 @@
                                 <ItemsControl.ItemTemplate>
                                     <DataTemplate DataType="{x:Type vm:BlockSlotEntry}">
                                         <StackPanel Orientation="Horizontal" Margin="0,3">
-                                            <TextBlock Text="{Binding BlockLabel}"
-                                                       Width="110" VerticalAlignment="Center"
-                                                       FontSize="11" />
-                                            <TextBlock Text="요일" VerticalAlignment="Center"
-                                                       FontSize="11" Margin="0,0,4,0" />
-                                            <ComboBox ItemsSource="{Binding DayOptions}"
-                                                      SelectedIndex="{Binding SelectedDayIndex, Mode=TwoWay}"
-                                                      Width="54" Padding="4,3" />
-                                            <TextBlock Text="시작교시" VerticalAlignment="Center"
-                                                       FontSize="11" Margin="12,0,4,0" />
-                                            <ComboBox ItemsSource="{Binding PeriodOptions}"
-                                                      SelectedItem="{Binding SelectedPeriod, Mode=TwoWay}"
-                                                      Width="54" Padding="4,3" />
-                                        </StackPanel>
+                                             <TextBlock Text="{Binding BlockLabel}"
+                                                        Width="110" VerticalAlignment="Center"
+                                                        FontSize="11" />
+                                             <TextBlock Text="요일" VerticalAlignment="Center"
+                                                        FontSize="11" Margin="0,0,4,0" />
+                                             <ComboBox ItemsSource="{Binding DayOptions}"
+                                                       SelectedIndex="{Binding SelectedDayIndex, Mode=TwoWay}"
+                                                       Width="54" Padding="4,3" />
+                                             <TextBlock Text="시간" VerticalAlignment="Center"
+                                                        FontSize="11" Margin="12,0,4,0" />
+                                             <ComboBox ItemsSource="{Binding PeriodOptions}"
+                                                       DisplayMemberPath="Label"
+                                                       SelectedValuePath="Period"
+                                                       SelectedValue="{Binding SelectedPeriod, Mode=TwoWay}"
+                                                       Width="150" Padding="4,3" />
+                                         </StackPanel>
                                     </DataTemplate>
                                 </ItemsControl.ItemTemplate>
                             </ItemsControl>

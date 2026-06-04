@@ -18,7 +18,7 @@ public sealed record ManualEditHandoff(
 /// One item in the course list: either a group of non-fixed sections (shown as a
 /// single row) or a single fixed section (shown individually).
 /// </summary>
-public sealed class CourseGroupItem
+public sealed partial class CourseGroupItem : ObservableObject
 {
     public string BaseId { get; init; } = "";
     public string DisplayLabel { get; init; } = "";
@@ -27,9 +27,19 @@ public sealed class CourseGroupItem
     public string HeaderGrade { get; init; } = "";
     public string HeaderHours { get; init; } = "";
     public string HeaderSectionInfo { get; init; } = "";
+    public string HeaderProfessor { get; init; } = "";
+    public string HeaderBlockStructure { get; init; } = "";
+    public string HeaderUnavailableRooms { get; init; } = "";
+    public string HeaderCoteachProfessors { get; init; } = "";
+    public string HeaderFixedTimes { get; init; } = "";
+    public string HeaderCrossGroups { get; init; } = "";
+    public bool IsImportedFromExcel { get; init; }
     /// <summary>All sections in this group (N>1 for grouped, 1 for individual fixed).</summary>
     public List<Course> Sections { get; init; } = new();
     public bool IsFixedIndividual => Sections.Count == 1 && Sections[0].IsFixed;
+
+    [ObservableProperty]
+    private bool isEditing;
 }
 
 public sealed partial class DataInputViewModel : PageViewModelBase
@@ -44,12 +54,19 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     public WorkspaceService Workspace => _workspace;
 
+    public bool IsSessionMode => _workspace.IsSession;
+
     /// <summary>True when editing an existing timetable's snapshot (session workspace).</summary>
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(GoToManualCommand))]
     private bool isExistingMode;
 
     public ObservableCollection<CourseGroupItem> CourseGroups { get; } = new();
+
+    public int[] GradeOptions { get; } = { 1, 2, 3, 4 };
+    public int[] HourOptions { get; } = { 1, 2, 3, 4 };
+    public string[] CourseTypeOptions { get; } = { "전필", "전선", "교양" };
+    public string[] BlockStructureOptions { get; } = { "1", "2", "2,1", "1,1", "3", "2,2", "2,1,1" };
 
     [ObservableProperty]
     private InputCategory selectedCategory = InputCategory.Course;
@@ -92,30 +109,42 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     [RelayCommand]
     private void AddNew()
     {
-        if (string.IsNullOrWhiteSpace(NewId)) return;
         switch (SelectedCategory)
         {
             case InputCategory.Professor:
+                if (string.IsNullOrWhiteSpace(NewId)) return;
                 if (_workspace.Professors.Any(p => p.Id == NewId)) return;
                 _workspace.AddProfessor(new Professor { Id = NewId, Name = NewName });
                 break;
             case InputCategory.Course:
-                if (_workspace.Courses.Any(c => c.Id == NewId)) return;
+                if (string.IsNullOrWhiteSpace(NewName)) return;
                 _workspace.AddCourse(new Course
                 {
-                    Id = NewId, Name = NewName,
+                    Id = NextCourseBaseId(), Name = NewName.Trim(),
                     Grade = 1, HoursPerWeek = 3,
                     BlockStructure = new List<int> { 2, 1 },
                     CourseType = "전선",
+                    UnavailableRooms = new List<string>(),
                 });
                 break;
             case InputCategory.Room:
+                if (string.IsNullOrWhiteSpace(NewId)) return;
                 if (_workspace.Rooms.Any(r => r.Id == NewId)) return;
                 _workspace.AddRoom(new Room { Id = NewId, Name = NewName });
                 break;
         }
         NewId = "";
         NewName = "";
+    }
+
+    private string NextCourseBaseId()
+    {
+        var max = _workspace.Courses
+            .Select(c => DomainHelpers.BaseId(c.Id))
+            .Select(id => int.TryParse(id, out var n) ? n : 0)
+            .DefaultIfEmpty(0)
+            .Max();
+        return (max + 1).ToString();
     }
 
     [RelayCommand]
@@ -170,12 +199,14 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 sec.Department = rep.Department;
                 sec.IsFixed = rep.IsFixed;
                 sec.FixedRooms = new List<string>(rep.FixedRooms);
+                sec.UnavailableRooms = new List<string>(rep.UnavailableRooms);
                 sec.BlockStructure = new List<int>(rep.BlockStructure);
                 sec.CoteachProfs = new List<string>(rep.CoteachProfs);
                 // FixedSlots intentionally not copied — each section has its own slots
             }
             _workspace.UpdateCourse(sec);
         }
+        item.IsEditing = false;
     }
 
     /// <summary>Delete all sections in the group.</summary>
@@ -193,6 +224,14 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     {
         if (item is null || item.Sections.Count != 1) return;
         _workspace.UpdateCourse(item.Sections[0]);
+        item.IsEditing = false;
+    }
+
+    [RelayCommand]
+    private void EditCourse(CourseGroupItem item)
+    {
+        if (item is null) return;
+        item.IsEditing = true;
     }
 
     /// <summary>Delete a single fixed section (IsFixedIndividual=true).</summary>
@@ -223,6 +262,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             Department = rep.Department,
             Section = next,
             BlockStructure = new List<int>(rep.BlockStructure),
+            FixedRooms = new List<string>(rep.FixedRooms),
+            UnavailableRooms = new List<string>(rep.UnavailableRooms),
+            CoteachProfs = new List<string>(rep.CoteachProfs),
         });
     }
 
@@ -323,6 +365,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         _workspace = target;
         _workspace.Changed += _workspaceChangedHandler;
         OnPropertyChanged(nameof(Workspace));
+        OnPropertyChanged(nameof(IsSessionMode));
         RebuildCourseGroups();
         SolveCommand.NotifyCanExecuteChanged();
         SelectedItem = null;
@@ -330,10 +373,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         StatusMessage = "";
     }
 
-    /// <summary>Enter "new timetable" mode — edits the global workspace.</summary>
     public void LoadForNewTimetable()
     {
-        SwitchWorkspace(_globalWorkspace);
+        SwitchWorkspace(WorkspaceService.CreateSession(AppData.Empty()));
         IsExistingMode = false;
         _editBaseAssignments = null;
         _editBaseManualCrossLinks = Array.Empty<SavedManualCrossLinkRow>();
@@ -368,6 +410,45 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     /// <summary>Name of the timetable being re-edited (for the manual-edit save field).</summary>
     public string EditBaseName => _editBaseName;
 
+    public IReadOnlyList<CourseGroupItem> GetCrossCandidates(CourseGroupItem item)
+    {
+        if (item.Sections.Count == 0) return Array.Empty<CourseGroupItem>();
+        var rep = item.Sections[0];
+        var blocks = EffectiveBlocks(rep);
+        return CourseGroups
+            .Where(candidate => candidate.BaseId != item.BaseId)
+            .Where(candidate => candidate.Sections.Count > 0)
+            .Where(candidate => candidate.Sections[0].Grade == rep.Grade)
+            .Where(candidate => EffectiveBlocks(candidate.Sections[0]).SequenceEqual(blocks))
+            .OrderBy(candidate => candidate.HeaderName)
+            .ThenBy(candidate => candidate.BaseId)
+            .ToList();
+    }
+
+    public bool IsCrossPairEnabled(string baseId, string targetBaseId) =>
+        _workspace.CrossGroups.Any(g => g.BaseIds.Contains(baseId) && g.BaseIds.Contains(targetBaseId));
+
+    public void SetCrossPair(string baseId, string targetBaseId, bool enabled)
+    {
+        if (baseId == targetBaseId) return;
+        var id = CrossPairId(baseId, targetBaseId);
+        var existing = _workspace.CrossGroups.FirstOrDefault(g => g.BaseIds.Contains(baseId) && g.BaseIds.Contains(targetBaseId));
+        if (enabled)
+        {
+            if (existing != null) return;
+            _workspace.AddCrossGroup(new CrossGroup
+            {
+                Id = id,
+                BaseIds = OrderedPair(baseId, targetBaseId).ToList(),
+            });
+        }
+        else if (existing != null)
+        {
+            _workspace.DeleteCrossGroup(existing.Id);
+        }
+        RebuildCourseGroups();
+    }
+
     private static readonly string[] SectionLetters = { "A","B","C","D","E","F" };
 
     private static string SectionLetter(int section) =>
@@ -377,6 +458,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void RebuildCourseGroups()
     {
         CourseGroups.Clear();
+        var profNames = _workspace.Professors.ToDictionary(p => p.Id, p => p.Name);
+        var roomNames = _workspace.Rooms.ToDictionary(r => r.Id, r => r.Name);
 
         var byBase = _workspace.Courses
             .GroupBy(c => DomainHelpers.BaseId(c.Id))
@@ -401,8 +484,15 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                         HeaderCode = sec.Id,
                         HeaderName = sec.Name,
                         HeaderGrade = $"{sec.Grade}학년",
-                        HeaderHours = $"{sec.HoursPerWeek}h",
-                        HeaderSectionInfo = "★",
+                        HeaderHours = $"{sec.HoursPerWeek}시간",
+                        HeaderSectionInfo = "1개",
+                        HeaderProfessor = DisplayName(sec.ProfessorId, profNames),
+                        HeaderBlockStructure = FormatBlocks(sec),
+                        HeaderUnavailableRooms = FormatNames(sec.UnavailableRooms, roomNames),
+                        HeaderCoteachProfessors = FormatNames(sec.CoteachProfs, profNames),
+                        HeaderFixedTimes = FormatFixedTimes(new[] { sec }),
+                        HeaderCrossGroups = FormatCrossGroups(g.Key),
+                        IsImportedFromExcel = !string.IsNullOrWhiteSpace(sec.Department),
                         Sections = new List<Course> { sec },
                     });
                 }
@@ -422,15 +512,92 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                     HeaderCode = g.Key,
                     HeaderName = rep.Name,
                     HeaderGrade = $"{rep.Grade}학년",
-                    HeaderHours = $"{rep.HoursPerWeek}h",
-                    HeaderSectionInfo = sections.Count > 1
-                        ? $"({string.Join("·", sections.Select(s => SectionLetter(s.Section)))}분반)"
-                        : "",
+                    HeaderHours = $"{rep.HoursPerWeek}시간",
+                    HeaderSectionInfo = $"{sections.Count}개",
+                    HeaderProfessor = DisplayName(rep.ProfessorId, profNames),
+                    HeaderBlockStructure = FormatBlocks(rep),
+                    HeaderUnavailableRooms = FormatNames(rep.UnavailableRooms, roomNames),
+                    HeaderCoteachProfessors = FormatNames(rep.CoteachProfs, profNames),
+                    HeaderFixedTimes = "-",
+                    HeaderCrossGroups = FormatCrossGroups(g.Key),
+                    IsImportedFromExcel = sections.Any(s => !string.IsNullOrWhiteSpace(s.Department)),
                     Sections = sections,
                 });
             }
         }
     }
+
+    private static string DisplayName(string id, IReadOnlyDictionary<string, string> names) =>
+        string.IsNullOrWhiteSpace(id) ? "-" : names.TryGetValue(id, out var name) ? name : id;
+
+    private static string FormatNames(IReadOnlyList<string> ids, IReadOnlyDictionary<string, string> names) =>
+        ids.Count == 0 ? "-" : string.Join(", ", ids.Select(id => DisplayName(id, names)));
+
+    private static List<int> EffectiveBlocks(Course course) =>
+        course.BlockStructure.Count > 0 ? course.BlockStructure.ToList() : new List<int> { course.HoursPerWeek };
+
+    private static string FormatBlocks(Course course) => string.Join("+", EffectiveBlocks(course));
+
+    private string FormatCrossGroups(string baseId)
+    {
+        var partners = _workspace.CrossGroups
+            .Where(g => g.BaseIds.Contains(baseId))
+            .SelectMany(g => g.BaseIds)
+            .Where(id => id != baseId)
+            .Distinct()
+            .OrderBy(id => id)
+            .ToList();
+        return partners.Count == 0 ? "-" : string.Join(", ", partners);
+    }
+
+    private static string FormatFixedTimes(IEnumerable<Course> sections)
+    {
+        var labels = sections
+            .Where(s => s.FixedSlots.Count > 0)
+            .Select(s => $"{SectionLetter(s.Section)}분반 {FormatSlotRuns(s.FixedSlots)}")
+            .ToList();
+        return labels.Count == 0 ? "-" : string.Join(" / ", labels);
+    }
+
+    private static string FormatSlotRuns(IReadOnlyList<TimeSlot> slots)
+    {
+        var ordered = slots.OrderBy(s => s.Day).ThenBy(s => s.Period).ToList();
+        var parts = new List<string>();
+        int i = 0;
+        while (i < ordered.Count)
+        {
+            var day = ordered[i].Day;
+            var start = ordered[i].Period;
+            var end = start;
+            i++;
+            while (i < ordered.Count && ordered[i].Day == day && ordered[i].Period == end + 1)
+            {
+                end = ordered[i].Period;
+                i++;
+            }
+            parts.Add($"{DayName(day)} {8 + start:00}:00~{9 + end:00}:00");
+        }
+        return string.Join(", ", parts);
+    }
+
+    private static string DayName(int day) => day switch
+    {
+        0 => "월",
+        1 => "화",
+        2 => "수",
+        3 => "목",
+        4 => "금",
+        _ => "?",
+    };
+
+    private static string CrossPairId(string left, string right) =>
+        $"CROSS:{string.Join(":", OrderedPair(left, right).Select(SanitizeCrossIdPart))}";
+
+    private static IEnumerable<string> OrderedPair(string left, string right) =>
+        new[] { left, right }.OrderBy(id => id, StringComparer.Ordinal);
+
+    private static string SanitizeCrossIdPart(string value) =>
+        value.Replace(":", "_").Replace("/", "_").Replace("\\", "_");
 
     [RelayCommand(CanExecute = nameof(CanSolve))]
     private async Task SolveAsync()
