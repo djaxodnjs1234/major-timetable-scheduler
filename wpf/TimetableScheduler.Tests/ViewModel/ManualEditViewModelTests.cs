@@ -857,6 +857,35 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
+    public void SaveTimetable_FromSnapshot_PreservesSessionDbData()
+    {
+        var sessionSnapshot = new AppData(
+            new List<Course>
+            {
+                new() { Id = "SESSION-01", Name = "세션과목", Grade = 2, HoursPerWeek = 1, ProfessorId = "PS" },
+            },
+            new List<Professor> { new() { Id = "PS", Name = "세션교수" } },
+            new List<Room> { new() { Id = "RS", Name = "세션강의실" } },
+            new List<CrossGroup>(),
+            new List<RetakeScenario>());
+
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSnapshot(
+            sessionSnapshot,
+            MakeSolution(new SolutionAssignment("SESSION-01", 0, 1, "RS")),
+            "세션저장");
+
+        vm.SaveTimetableCommand.Execute(null);
+
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "세션저장"));
+        var savedSnapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(saved.SnapshotJson!)!;
+        Assert.Equal("SESSION-01", savedSnapshot.Courses.Single().Id);
+        Assert.Equal("PS", savedSnapshot.Professors.Single().Id);
+        Assert.Equal("RS", savedSnapshot.Rooms.Single().Id);
+        Assert.DoesNotContain(savedSnapshot.Courses, c => c.Id == "X-01");
+    }
+
+    [Fact]
     public void SaveTimetable_WarningOnly_AllowsSave()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
