@@ -16,12 +16,12 @@ public class CompareWithPythonTests
     }
 
     [Fact]
-    public void FirstCourse_MatchesPythonBaseline()
+    public void FirstCourse_MatchesPythonBaselineExceptAutoId()
     {
         var path = Path.Combine(TestPaths.FindRepoRoot(), "개설강좌 편람.xlsx");
         var data = XlsxLoader.Load(path);
         var c0 = data.Courses[0];
-        Assert.Equal("GA1004", c0.Id);
+        Assert.Equal("1", c0.Id);
         Assert.Equal(2, c0.Grade);
         Assert.Equal(4, c0.HoursPerWeek);
         Assert.Equal("전필", c0.CourseType);

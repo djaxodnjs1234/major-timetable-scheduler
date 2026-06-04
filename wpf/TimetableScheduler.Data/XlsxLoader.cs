@@ -68,14 +68,14 @@ public static class XlsxLoader
             else if (xlsxBlocks.Count > 0 && xlsxBlocks.Sum() == hours) blockStructure = xlsxBlocks;
             else blockStructure = new List<int> { hours };
 
-            var baseId = DomainHelpers.BaseId(code);
-            counts[baseId] = counts.GetValueOrDefault(baseId, 0) + 1;
+            var sourceBaseId = DomainHelpers.BaseId(code);
+            counts[sourceBaseId] = counts.GetValueOrDefault(sourceBaseId, 0) + 1;
 
-            if (!seen.ContainsKey(baseId))
+            if (!seen.ContainsKey(sourceBaseId))
             {
-                seen[baseId] = new Course
+                seen[sourceBaseId] = new Course
                 {
-                    Id = baseId,
+                    Id = (seen.Count + 1).ToString(),
                     Name = name,
                     Grade = grade,
                     HoursPerWeek = hours,
@@ -84,6 +84,7 @@ public static class XlsxLoader
                     Section = 1,   // updated below
                     Department = dept,
                     FixedRooms = fixedRoom != null ? new List<string> { fixedRoom } : new List<string>(),
+                    UnavailableRooms = new List<string>(),
                     BlockStructure = blockStructure,
                 };
             }
@@ -94,8 +95,8 @@ public static class XlsxLoader
 
         // Set Section = number of sections found per base
         var courses = seen.Values.ToList();
-        foreach (var c in courses)
-            c.Section = counts[c.Id];
+        foreach (var (sourceBaseId, course) in seen)
+            course.Section = counts[sourceBaseId];
 
         var professors = profNames.OrderBy(n => n)
             .Select(n => new Professor { Id = n, Name = n }).ToList();
