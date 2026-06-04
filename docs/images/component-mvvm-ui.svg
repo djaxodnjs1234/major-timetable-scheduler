@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img" aria-labelledby="title desc">
+  <title id="title">MVVM 화면 구성요소</title>
+  <desc id="desc">WPF Views, Page ViewModels, MainWindow navigation, grid viewmodels의 연결</desc>
+  <defs><style>.bg{fill:#f8fafc}.box{fill:#fff;stroke:#cbd5e1;stroke-width:2;rx:16}.ui{fill:#f5f3ff;stroke:#a78bfa}.vm{fill:#eff6ff;stroke:#60a5fa}.title{font:700 24px 'Segoe UI','Apple SD Gothic Neo',sans-serif;fill:#0f172a}.label{font:700 17px 'Segoe UI','Apple SD Gothic Neo',sans-serif;fill:#1e293b}.small{font:500 13px 'Segoe UI','Apple SD Gothic Neo',sans-serif;fill:#475569}.arrow{stroke:#64748b;stroke-width:2;marker-end:url(#a);fill:none}</style><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker></defs>
+  <rect class="bg" width="900" height="520"/>
+  <text class="title" x="450" y="42" text-anchor="middle">구성요소 5: WPF / MVVM 화면 구조</text>
+  <rect class="box ui" x="60" y="118" width="190" height="86"/><text class="label" x="155" y="152" text-anchor="middle">Views</text><text class="small" x="155" y="178" text-anchor="middle">XAML 화면</text>
+  <rect class="box vm" x="330" y="118" width="230" height="86"/><text class="label" x="445" y="152" text-anchor="middle">Page ViewModels</text><text class="small" x="445" y="178" text-anchor="middle">선택/입력/결과/수동편집</text>
+  <rect class="box vm" x="640" y="118" width="210" height="86"/><text class="label" x="745" y="152" text-anchor="middle">MainWindow VM</text><text class="small" x="745" y="178" text-anchor="middle">화면 전환 라우팅</text>
+  <rect class="box vm" x="180" y="310" width="230" height="86"/><text class="label" x="295" y="344" text-anchor="middle">Grid ViewModels</text><text class="small" x="295" y="370" text-anchor="middle">시간표 셀 / 통합 격자</text>
+  <rect class="box" x="520" y="310" width="230" height="86"/><text class="label" x="635" y="344" text-anchor="middle">Services</text><text class="small" x="635" y="370" text-anchor="middle">Workspace / Solver</text>
+  <path class="arrow" d="M250 161 L330 161"/><path class="arrow" d="M560 161 L640 161"/><path class="arrow" d="M445 204 L320 310"/><path class="arrow" d="M500 204 L610 310"/>
+  <text class="small" x="450" y="476" text-anchor="middle">화면은 XAML이 담당하고, 계산 가능한 상태와 명령은 ViewModel에 모여 있어 UI와 로직이 분리됩니다.</text>
+</svg>

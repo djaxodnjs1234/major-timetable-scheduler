@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img" aria-labelledby="title desc">
+  <title id="title">자동생성 솔버 엔진 구성요소</title>
+  <desc id="desc">SolverService, DiverseSolver, ModelBuilder, HC, SC, CP-SAT의 관계</desc>
+  <defs><style>.bg{fill:#f8fafc}.box{fill:#fff;stroke:#cbd5e1;stroke-width:2;rx:16}.solver{fill:#fffbeb;stroke:#f59e0b}.core{fill:#fee2e2;stroke:#ef4444}.title{font:700 24px 'Segoe UI','Apple SD Gothic Neo',sans-serif;fill:#0f172a}.label{font:700 17px 'Segoe UI','Apple SD Gothic Neo',sans-serif;fill:#1e293b}.small{font:500 13px 'Segoe UI','Apple SD Gothic Neo',sans-serif;fill:#475569}.arrow{stroke:#64748b;stroke-width:2;marker-end:url(#a);fill:none}</style><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker></defs>
+  <rect class="bg" width="900" height="520"/>
+  <text class="title" x="450" y="42" text-anchor="middle">구성요소 3: 시간표 자동생성 엔진</text>
+  <rect class="box" x="64" y="140" width="160" height="90"/><text class="label" x="144" y="176" text-anchor="middle">SolverService</text><text class="small" x="144" y="204" text-anchor="middle">비동기 실행</text>
+  <rect class="box solver" x="292" y="140" width="160" height="90"/><text class="label" x="372" y="176" text-anchor="middle">DiverseSolver</text><text class="small" x="372" y="204" text-anchor="middle">4단계 lex + seed</text>
+  <rect class="box solver" x="520" y="140" width="160" height="90"/><text class="label" x="600" y="176" text-anchor="middle">ModelBuilder</text><text class="small" x="600" y="204" text-anchor="middle">변수와 HC 생성</text>
+  <rect class="box core" x="292" y="326" width="160" height="90"/><text class="label" x="372" y="362" text-anchor="middle">CP-SAT</text><text class="small" x="372" y="390" text-anchor="middle">제약 충족 탐색</text>
+  <rect class="box solver" x="520" y="326" width="230" height="90"/><text class="label" x="635" y="362" text-anchor="middle">HC / SC 모듈</text><text class="small" x="635" y="390" text-anchor="middle">Basic, Block, Grouping, Soft</text>
+  <path class="arrow" d="M224 185 L292 185"/><path class="arrow" d="M452 185 L520 185"/><path class="arrow" d="M600 230 L635 326"/><path class="arrow" d="M520 370 L452 370"/><path class="arrow" d="M372 230 L372 326"/>
+  <text class="small" x="450" y="476" text-anchor="middle">엔진의 출력은 과목-요일-교시-강의실 배치 목록이며, 이후 점수화와 화면 렌더링에 사용됩니다.</text>
+</svg>

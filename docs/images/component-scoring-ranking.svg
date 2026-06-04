@@ -1,0 +1,15 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img" aria-labelledby="title desc">
+  <title id="title">점수화와 랭킹 구성요소</title>
+  <desc id="desc">생성된 여러 해를 SC01, SC02, SC03 점수로 계산하고 Top-M으로 정렬하는 흐름</desc>
+  <defs><style>.bg{fill:#f8fafc}.box{fill:#fff;stroke:#cbd5e1;stroke-width:2;rx:16}.score{fill:#ecfdf5;stroke:#34d399}.title{font:700 24px 'Segoe UI','Apple SD Gothic Neo',sans-serif;fill:#0f172a}.label{font:700 17px 'Segoe UI','Apple SD Gothic Neo',sans-serif;fill:#1e293b}.small{font:500 13px 'Segoe UI','Apple SD Gothic Neo',sans-serif;fill:#475569}.arrow{stroke:#64748b;stroke-width:2;marker-end:url(#a);fill:none}</style><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker></defs>
+  <rect class="bg" width="900" height="520"/>
+  <text class="title" x="450" y="42" text-anchor="middle">구성요소 4: 점수화와 랭킹</text>
+  <rect class="box" x="72" y="150" width="165" height="90"/><text class="label" x="154" y="186" text-anchor="middle">Solutions</text><text class="small" x="154" y="214" text-anchor="middle">여러 배치 후보</text>
+  <rect class="box score" x="310" y="90" width="180" height="76"/><text class="label" x="400" y="122" text-anchor="middle">SC-01</text><text class="small" x="400" y="146" text-anchor="middle">월오전/금오후 회피</text>
+  <rect class="box score" x="310" y="206" width="180" height="76"/><text class="label" x="400" y="238" text-anchor="middle">SC-02</text><text class="small" x="400" y="262" text-anchor="middle">교수 요일 집중</text>
+  <rect class="box score" x="310" y="322" width="180" height="76"/><text class="label" x="400" y="354" text-anchor="middle">SC-03</text><text class="small" x="400" y="378" text-anchor="middle">블록 간격 확보</text>
+  <rect class="box score" x="590" y="150" width="180" height="90"/><text class="label" x="680" y="186" text-anchor="middle">Total Score</text><text class="small" x="680" y="214" text-anchor="middle">가중치 합산</text>
+  <rect class="box" x="590" y="322" width="180" height="90"/><text class="label" x="680" y="358" text-anchor="middle">Top-M Rank</text><text class="small" x="680" y="386" text-anchor="middle">높은 점수 우선</text>
+  <path class="arrow" d="M237 195 L310 128"/><path class="arrow" d="M237 195 L310 244"/><path class="arrow" d="M237 195 L310 360"/><path class="arrow" d="M490 128 C540 128,540 170,590 195"/><path class="arrow" d="M490 244 C540 244,540 220,590 195"/><path class="arrow" d="M490 360 C540 360,540 260,590 195"/><path class="arrow" d="M680 240 L680 322"/>
+  <text class="small" x="450" y="476" text-anchor="middle">솔버 패널티는 작을수록 좋고, 표시 점수는 1에 가까울수록 좋게 변환됩니다.</text>
+</svg>
