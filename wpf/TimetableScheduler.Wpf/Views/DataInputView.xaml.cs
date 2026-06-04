@@ -94,20 +94,6 @@ public partial class DataInputView : UserControl
                 p => p.Id, p => p.Name,
                 course.CoteachProfs);
         }
-        if (expander.FindName("GroupCrossPicker") is CheckListPickerControl crossPicker)
-        {
-            var candidates = Vm.GetCrossCandidates(item).ToList();
-            var selected = candidates
-                .Where(candidate => Vm.IsCrossPairEnabled(item.BaseId, candidate.BaseId))
-                .Select(candidate => candidate.BaseId)
-                .ToList();
-            crossPicker.DataContext = CheckListBinder.Bind(
-                candidates,
-                candidate => candidate.BaseId,
-                candidate => candidate.HeaderName,
-                selected,
-                (targetBaseId, enabled) => Vm.SetCrossPair(item.BaseId, targetBaseId, enabled));
-        }
         if (expander.FindName("FixedSlotEditor") is FixedSlotEditorControl editor)
         {
             editor.DataContext = FixedSlotEditorViewModel.Build(item, course.IsFixed);

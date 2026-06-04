@@ -5,6 +5,7 @@ using TimetableScheduler.Data;
 using TimetableScheduler.Domain;
 using TimetableScheduler.Scoring;
 using TimetableScheduler.Solver;
+using TimetableScheduler.ViewModel.Editors;
 
 namespace TimetableScheduler.ViewModel.Pages;
 
@@ -13,6 +14,8 @@ public enum InputCategory { Professor, Course, Room, Solve }
 public sealed record ManualEditHandoff(
     RankedSolution Solution,
     IReadOnlyList<SavedManualCrossLinkRow> ManualCrossLinks);
+
+public sealed record CrossGroupListItem(string Id, string Display);
 
 /// <summary>
 /// One item in the course list: either a group of non-fixed sections (shown as a
@@ -63,6 +66,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     public ObservableCollection<CourseGroupItem> CourseGroups { get; } = new();
 
+    public ObservableCollection<CrossGroupListItem> CrossGroupItems { get; } = new();
+    public ObservableCollection<CheckListItem> CrossCandidateItems { get; } = new();
+
     public int[] GradeOptions { get; } = { 1, 2, 3, 4 };
     public int[] HourOptions { get; } = { 1, 2, 3, 4 };
     public string[] CourseTypeOptions { get; } = { "전필", "전선", "교양" };
@@ -79,6 +85,12 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     [ObservableProperty]
     private string newName = "";
+
+    [ObservableProperty]
+    private CrossGroupListItem? selectedCrossGroup;
+
+    [ObservableProperty]
+    private string crossStatusMessage = "";
 
     public bool IsProfessorSelected => SelectedCategory == InputCategory.Professor;
     public bool IsCourseSelected => SelectedCategory == InputCategory.Course;
@@ -135,6 +147,76 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         }
         NewId = "";
         NewName = "";
+    }
+
+    [RelayCommand]
+    private void AddCross()
+    {
+        var chosen = CrossCandidateItems
+            .Where(item => item.IsChecked)
+            .Select(item => item.Id)
+            .ToList();
+        if (chosen.Count < 2)
+        {
+            CrossStatusMessage = "2개 이상의 과목을 선택하세요.";
+            return;
+        }
+
+        var groups = CourseBaseGroups();
+        var sectionCounts = chosen.Select(id => groups[id].Count).Distinct().ToList();
+        if (sectionCounts.Count > 1)
+        {
+            CrossStatusMessage = "Cross로 묶으려면 각 과목의 분반 수가 같아야 합니다.";
+            return;
+        }
+
+        var hours = chosen.Select(id => groups[id][0].HoursPerWeek).Distinct().ToList();
+        if (hours.Count > 1)
+        {
+            CrossStatusMessage = "Cross로 묶으려면 총 시수가 동일해야 합니다.";
+            return;
+        }
+
+        var alreadyUsed = _workspace.CrossGroups
+            .SelectMany(g => g.BaseIds)
+            .Where(chosen.Contains)
+            .Distinct()
+            .ToList();
+        if (alreadyUsed.Count > 0)
+        {
+            CrossStatusMessage = $"이미 다른 Cross에 속한 과목이 있습니다: {string.Join(", ", alreadyUsed)}";
+            return;
+        }
+
+        _workspace.AddCrossGroup(new CrossGroup
+        {
+            Id = NextCrossId(),
+            BaseIds = chosen,
+        });
+        CrossStatusMessage = "Cross를 추가했습니다.";
+        RebuildCrossManager(clearCandidateSelection: true);
+        RebuildCourseGroups();
+    }
+
+    [RelayCommand]
+    private void DeleteCross(CrossGroupListItem? item)
+    {
+        if (item is null) return;
+        _workspace.DeleteCrossGroup(item.Id);
+        CrossStatusMessage = "선택한 Cross를 삭제했습니다.";
+        SelectedCrossGroup = null;
+        RebuildCrossManager();
+        RebuildCourseGroups();
+    }
+
+    private string NextCrossId()
+    {
+        var ids = _workspace.CrossGroups.Select(g => g.Id).ToHashSet();
+        for (var n = 1; ; n++)
+        {
+            var id = $"X{n:000}";
+            if (!ids.Contains(id)) return id;
+        }
     }
 
     private string NextCourseBaseId()
@@ -352,10 +434,12 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         {
             SolveCommand.NotifyCanExecuteChanged();
             RebuildCourseGroups();
+            RebuildCrossManager();
         };
         _workspace = workspace;
         _workspace.Changed += _workspaceChangedHandler;
         RebuildCourseGroups();
+        RebuildCrossManager();
     }
 
     private void SwitchWorkspace(WorkspaceService target)
@@ -367,6 +451,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         OnPropertyChanged(nameof(Workspace));
         OnPropertyChanged(nameof(IsSessionMode));
         RebuildCourseGroups();
+        RebuildCrossManager();
         SolveCommand.NotifyCanExecuteChanged();
         SelectedItem = null;
         IsSolveComplete = false;
@@ -409,45 +494,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     /// <summary>Name of the timetable being re-edited (for the manual-edit save field).</summary>
     public string EditBaseName => _editBaseName;
-
-    public IReadOnlyList<CourseGroupItem> GetCrossCandidates(CourseGroupItem item)
-    {
-        if (item.Sections.Count == 0) return Array.Empty<CourseGroupItem>();
-        var rep = item.Sections[0];
-        var blocks = EffectiveBlocks(rep);
-        return CourseGroups
-            .Where(candidate => candidate.BaseId != item.BaseId)
-            .Where(candidate => candidate.Sections.Count > 0)
-            .Where(candidate => candidate.Sections[0].Grade == rep.Grade)
-            .Where(candidate => EffectiveBlocks(candidate.Sections[0]).SequenceEqual(blocks))
-            .OrderBy(candidate => candidate.HeaderName)
-            .ThenBy(candidate => candidate.BaseId)
-            .ToList();
-    }
-
-    public bool IsCrossPairEnabled(string baseId, string targetBaseId) =>
-        _workspace.CrossGroups.Any(g => g.BaseIds.Contains(baseId) && g.BaseIds.Contains(targetBaseId));
-
-    public void SetCrossPair(string baseId, string targetBaseId, bool enabled)
-    {
-        if (baseId == targetBaseId) return;
-        var id = CrossPairId(baseId, targetBaseId);
-        var existing = _workspace.CrossGroups.FirstOrDefault(g => g.BaseIds.Contains(baseId) && g.BaseIds.Contains(targetBaseId));
-        if (enabled)
-        {
-            if (existing != null) return;
-            _workspace.AddCrossGroup(new CrossGroup
-            {
-                Id = id,
-                BaseIds = OrderedPair(baseId, targetBaseId).ToList(),
-            });
-        }
-        else if (existing != null)
-        {
-            _workspace.DeleteCrossGroup(existing.Id);
-        }
-        RebuildCourseGroups();
-    }
 
     private static readonly string[] SectionLetters = { "A","B","C","D","E","F" };
 
@@ -527,6 +573,39 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         }
     }
 
+    private void RebuildCrossManager(bool clearCandidateSelection = false)
+    {
+        var selected = clearCandidateSelection
+            ? new HashSet<string>()
+            : CrossCandidateItems.Where(item => item.IsChecked).Select(item => item.Id).ToHashSet();
+        var groups = CourseBaseGroups();
+
+        CrossGroupItems.Clear();
+        foreach (var cross in _workspace.CrossGroups.OrderBy(g => g.Id))
+        {
+            var names = cross.BaseIds.Select(id =>
+            {
+                var name = groups.TryGetValue(id, out var courses) && courses.Count > 0 ? courses[0].Name : "?";
+                return $"{id}({name})";
+            });
+            CrossGroupItems.Add(new CrossGroupListItem(cross.Id, $"{cross.Id}: {string.Join(" ↔ ", names)}"));
+        }
+
+        CrossCandidateItems.Clear();
+        foreach (var (baseId, courses) in groups.OrderBy(g => g.Value[0].Grade).ThenBy(g => g.Key))
+        {
+            var rep = courses[0];
+            CrossCandidateItems.Add(new CheckListItem(
+                baseId,
+                $"[{rep.Grade}] {rep.CourseType} {baseId} {rep.Name} (분반 {courses.Count}개, {rep.HoursPerWeek}h)",
+                selected.Contains(baseId)));
+        }
+    }
+
+    private Dictionary<string, List<Course>> CourseBaseGroups() => _workspace.Courses
+        .GroupBy(c => DomainHelpers.BaseId(c.Id))
+        .ToDictionary(g => g.Key, g => g.OrderBy(c => c.Section).ToList());
+
     private static string DisplayName(string id, IReadOnlyDictionary<string, string> names) =>
         string.IsNullOrWhiteSpace(id) ? "-" : names.TryGetValue(id, out var name) ? name : id;
 
@@ -589,15 +668,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         4 => "금",
         _ => "?",
     };
-
-    private static string CrossPairId(string left, string right) =>
-        $"CROSS:{string.Join(":", OrderedPair(left, right).Select(SanitizeCrossIdPart))}";
-
-    private static IEnumerable<string> OrderedPair(string left, string right) =>
-        new[] { left, right }.OrderBy(id => id, StringComparer.Ordinal);
-
-    private static string SanitizeCrossIdPart(string value) =>
-        value.Replace(":", "_").Replace("/", "_").Replace("\\", "_");
 
     [RelayCommand(CanExecute = nameof(CanSolve))]
     private async Task SolveAsync()

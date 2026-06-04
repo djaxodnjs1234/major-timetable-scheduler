@@ -232,41 +232,78 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
-    public void CrossPairHelpers_OnlyOfferSameGradeSameBlockAndPersistPair()
+    public void CrossManager_AddsSelectedCoursesAndRebuildsLists()
     {
         _workspace.AddCourse(MakeCourse("A-01", 1));
         _workspace.AddCourse(MakeCourse("B-01", 1));
-        var differentGrade = MakeCourse("C-01", 1);
-        differentGrade.Grade = 3;
-        _workspace.AddCourse(differentGrade);
         var vm = MakeVm();
-        var source = vm.CourseGroups.Single(g => g.BaseId == "A");
 
-        var candidates = vm.GetCrossCandidates(source);
+        Assert.Equal(new[] { "A", "B" }, vm.CrossCandidateItems.Select(i => i.Id));
+        vm.CrossCandidateItems.Single(i => i.Id == "A").IsChecked = true;
+        vm.CrossCandidateItems.Single(i => i.Id == "B").IsChecked = true;
 
-        var target = Assert.Single(candidates);
-        Assert.Equal("B", target.BaseId);
+        vm.AddCrossCommand.Execute(null);
 
-        vm.SetCrossPair("A", "B", enabled: true);
-        Assert.True(vm.IsCrossPairEnabled("A", "B"));
-        Assert.Single(_workspace.CrossGroups);
-
-        vm.SetCrossPair("A", "B", enabled: false);
-        Assert.Empty(_workspace.CrossGroups);
+        var cross = Assert.Single(_workspace.CrossGroups);
+        Assert.Equal("X001", cross.Id);
+        Assert.Equal(new[] { "A", "B" }, cross.BaseIds);
+        Assert.Single(vm.CrossGroupItems);
+        Assert.Contains("A(Test)", vm.CrossGroupItems[0].Display);
+        Assert.All(vm.CrossCandidateItems, item => Assert.False(item.IsChecked));
+        Assert.Equal("Cross를 추가했습니다.", vm.CrossStatusMessage);
+        Assert.Equal("B", vm.CourseGroups.Single(g => g.BaseId == "A").HeaderCrossGroups);
     }
 
     [Fact]
-    public void SetCrossPair_Disable_RemovesExistingGroupWithDifferentId()
+    public void CrossManager_DeleteSelectedCross_RemovesWorkspaceGroup()
     {
         _workspace.AddCourse(MakeCourse("A-01", 1));
         _workspace.AddCourse(MakeCourse("B-01", 1));
         _workspace.AddCrossGroup(new CrossGroup { Id = "legacy", BaseIds = new List<string> { "A", "B" } });
         var vm = MakeVm();
 
-        Assert.True(vm.IsCrossPairEnabled("A", "B"));
-
-        vm.SetCrossPair("A", "B", enabled: false);
+        var item = Assert.Single(vm.CrossGroupItems);
+        vm.DeleteCrossCommand.Execute(item);
 
         Assert.Empty(_workspace.CrossGroups);
+        Assert.Empty(vm.CrossGroupItems);
+        Assert.Equal("선택한 Cross를 삭제했습니다.", vm.CrossStatusMessage);
+    }
+
+    [Fact]
+    public void CrossManager_RejectsInvalidSelection()
+    {
+        _workspace.AddCourse(MakeCourse("A-01", 1));
+        var differentHours = MakeCourse("B-01", 1);
+        differentHours.HoursPerWeek = 4;
+        _workspace.AddCourse(differentHours);
+        var vm = MakeVm();
+
+        vm.CrossCandidateItems.Single(i => i.Id == "A").IsChecked = true;
+        vm.AddCrossCommand.Execute(null);
+        Assert.Equal("2개 이상의 과목을 선택하세요.", vm.CrossStatusMessage);
+
+        vm.CrossCandidateItems.Single(i => i.Id == "B").IsChecked = true;
+        vm.AddCrossCommand.Execute(null);
+
+        Assert.Empty(_workspace.CrossGroups);
+        Assert.Equal("Cross로 묶으려면 총 시수가 동일해야 합니다.", vm.CrossStatusMessage);
+    }
+
+    [Fact]
+    public void CrossManager_RejectsDuplicateMembership()
+    {
+        _workspace.AddCourse(MakeCourse("A-01", 1));
+        _workspace.AddCourse(MakeCourse("B-01", 1));
+        _workspace.AddCourse(MakeCourse("C-01", 1));
+        _workspace.AddCrossGroup(new CrossGroup { Id = "X001", BaseIds = new List<string> { "A", "B" } });
+        var vm = MakeVm();
+
+        vm.CrossCandidateItems.Single(i => i.Id == "A").IsChecked = true;
+        vm.CrossCandidateItems.Single(i => i.Id == "C").IsChecked = true;
+        vm.AddCrossCommand.Execute(null);
+
+        Assert.Single(_workspace.CrossGroups);
+        Assert.Equal("이미 다른 Cross에 속한 과목이 있습니다: A", vm.CrossStatusMessage);
     }
 }
