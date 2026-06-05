@@ -11,7 +11,7 @@ public partial class TimeSlotPickerControl : UserControl
     private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
     private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
     private static readonly Brush EmptyBg = Brushes.White;
-    private static readonly Brush SelectedBg = new SolidColorBrush(Color.FromRgb(0x00, 0x5F, 0xB8));
+    private static readonly Brush SelectedBg = new SolidColorBrush(Color.FromRgb(0x9C, 0xA3, 0xAF));
     private static readonly Brush Border = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC));
 
     static TimeSlotPickerControl()
@@ -55,7 +55,10 @@ public partial class TimeSlotPickerControl : UserControl
             {
                 b.Background = cell.IsSelected ? SelectedBg : EmptyBg;
                 if (b.Child is TextBlock tb)
+                {
+                    tb.Text = cell.IsSelected ? "X" : "";
                     tb.Foreground = cell.IsSelected ? Brushes.White : Brushes.Black;
+                }
                 break;
             }
         }
@@ -72,7 +75,7 @@ public partial class TimeSlotPickerControl : UserControl
             RootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         // 1 period-label col + 5 day cols = 6 cols
-        RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(38) });
+        RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
         for (int i = 0; i < 5; i++)
             RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
@@ -111,7 +114,7 @@ public partial class TimeSlotPickerControl : UserControl
                     BorderThickness = new Thickness(0.5),
                     Child = new TextBlock
                     {
-                        Text = cell.Period.ToString(),
+                        Text = $"{cell.Period}교시\n({8 + cell.Period:00}:00~)",
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Center,
                         FontSize = 11,
@@ -132,7 +135,7 @@ public partial class TimeSlotPickerControl : UserControl
                 Cursor = cell.IsLunch ? Cursors.Arrow : Cursors.Hand,
                 Child = new TextBlock
                 {
-                    Text = cell.IsLunch ? "점심" : "",
+                    Text = cell.IsLunch ? "점심" : (cell.IsSelected ? "X" : ""),
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                     FontSize = 9,

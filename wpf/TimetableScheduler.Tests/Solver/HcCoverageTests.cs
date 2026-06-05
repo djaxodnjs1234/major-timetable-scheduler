@@ -82,6 +82,18 @@ public class HcCoverageTests
     }
 
     [Fact]
+    public void HC21_ProfessorUnavailableAllRooms_IsInfeasible()
+    {
+        var (courses, profs, rooms) = MakeBaseSetup();
+        profs[0].UnavailableRooms = rooms.Select(r => r.Id).ToList();
+
+        var build = ModelBuilder.Build(courses, profs, rooms);
+        var solver = new CpSolver();
+
+        Assert.Equal(CpSolverStatus.Infeasible, solver.Solve(build.Model));
+    }
+
+    [Fact]
     public void HC14_MultiRoom_K2_OccupiesBothSimultaneously()
     {
         var courses = new List<Course>

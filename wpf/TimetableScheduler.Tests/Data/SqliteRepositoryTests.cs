@@ -65,9 +65,10 @@ public class SqliteRepositoryTests : IDisposable
                     Id = "P1", Name = "교수1",
                     UnavailableSlots = new List<TimeSlot> { new(4, 7) },
                     AllowedRooms = new List<string> { "R1" },
+                    UnavailableRooms = new List<string> { "R2" },
                 },
             },
-            Rooms: new List<Room> { new() { Id = "R1", Name = "강의실1" } },
+            Rooms: new List<Room> { new() { Id = "R1", Name = "강의실1", IsLab = true, Capacity = 40 } },
             CrossGroups: new List<CrossGroup>
             {
                 new() { Id = "G1", BaseIds = new List<string> { "B1", "B2" } },
@@ -96,9 +97,12 @@ public class SqliteRepositoryTests : IDisposable
         Assert.Equal("P1", p.Id);
         Assert.Equal(new TimeSlot(4, 7), p.UnavailableSlots[0]);
         Assert.Equal(new[] { "R1" }, p.AllowedRooms);
+        Assert.Equal(new[] { "R2" }, p.UnavailableRooms);
 
         Assert.Single(loaded.Rooms);
         Assert.Equal("R1", loaded.Rooms[0].Id);
+        Assert.True(loaded.Rooms[0].IsLab);
+        Assert.Equal(40, loaded.Rooms[0].Capacity);
 
         Assert.Single(loaded.CrossGroups);
         Assert.Equal(new[] { "B1", "B2" }, loaded.CrossGroups[0].BaseIds);

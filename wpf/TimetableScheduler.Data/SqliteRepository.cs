@@ -41,6 +41,8 @@ public sealed class SqliteRepository
         using var conn = Open();
         conn.Execute(SqliteSchema.CreateAll);
         MigrateCourseUnavailableRooms(conn);
+        MigrateProfessorUnavailableRooms(conn);
+        MigrateRoomMetadata(conn);
         MigrateCoursePkIfNeeded(conn);
         MigrateSavedTimetableSnapshot(conn);
     }
@@ -59,6 +61,25 @@ public sealed class SqliteRepository
             .Select(row => (string)row.name);
         if (columns.Contains("SnapshotJson")) return;
         conn.Execute("ALTER TABLE SavedTimetables ADD COLUMN SnapshotJson TEXT");
+    }
+
+    private static void MigrateProfessorUnavailableRooms(SqliteConnection conn)
+    {
+        var columns = conn.Query("PRAGMA table_info(Professors)")
+            .Select(row => (string)row.name);
+        if (columns.Contains("UnavailableRoomsJson")) return;
+        conn.Execute("ALTER TABLE Professors ADD COLUMN UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]'");
+    }
+
+    private static void MigrateRoomMetadata(SqliteConnection conn)
+    {
+        var columns = conn.Query("PRAGMA table_info(Rooms)")
+            .Select(row => (string)row.name)
+            .ToHashSet();
+        if (!columns.Contains("IsLab"))
+            conn.Execute("ALTER TABLE Rooms ADD COLUMN IsLab INTEGER NOT NULL DEFAULT 0");
+        if (!columns.Contains("Capacity"))
+            conn.Execute("ALTER TABLE Rooms ADD COLUMN Capacity INTEGER NOT NULL DEFAULT 0");
     }
 
     private static void MigrateCoursePkIfNeeded(SqliteConnection conn)
@@ -93,7 +114,7 @@ public sealed class SqliteRepository
 
         var courses = conn.Query<CourseRow>("SELECT * FROM Courses").Select(ToCourse).ToList();
         var profs = conn.Query<ProfessorRow>("SELECT * FROM Professors").Select(ToProf).ToList();
-        var rooms = conn.Query<Room>("SELECT Id, Name FROM Rooms").ToList();
+        var rooms = conn.Query<Room>("SELECT Id, Name, IsLab, Capacity FROM Rooms").ToList();
         var crosses = conn.Query<CrossRow>("SELECT * FROM CrossGroups").Select(ToCross).ToList();
         var retakes = conn.Query<RetakeScenario>(
             "SELECT CurrentGrade, RetakeBaseId FROM RetakeScenarios").ToList();
@@ -119,12 +140,12 @@ public sealed class SqliteRepository
 
         foreach (var p in data.Professors)
             conn.Execute(@"INSERT INTO Professors
-                (Id,Name,UnavailableSlotsJson,AllowedRoomsJson)
-                VALUES (@Id,@Name,@UnavailableSlotsJson,@AllowedRoomsJson)",
+                (Id,Name,UnavailableSlotsJson,AllowedRoomsJson,UnavailableRoomsJson)
+                VALUES (@Id,@Name,@UnavailableSlotsJson,@AllowedRoomsJson,@UnavailableRoomsJson)",
                 FromProf(p), tx);
 
         foreach (var r in data.Rooms)
-            conn.Execute("INSERT INTO Rooms (Id,Name) VALUES (@Id,@Name)", r, tx);
+            conn.Execute("INSERT INTO Rooms (Id,Name,IsLab,Capacity) VALUES (@Id,@Name,@IsLab,@Capacity)", r, tx);
 
         foreach (var g in data.CrossGroups)
             conn.Execute("INSERT INTO CrossGroups (Id,BaseIdsJson) VALUES (@Id,@BaseIdsJson)",
@@ -294,6 +315,7 @@ public sealed class SqliteRepository
         public string Name { get; set; } = "";
         public string UnavailableSlotsJson { get; set; } = "[]";
         public string AllowedRoomsJson { get; set; } = "[]";
+        public string UnavailableRoomsJson { get; set; } = "[]";
     }
 
     private sealed class CrossRow
@@ -338,6 +360,7 @@ public sealed class SqliteRepository
         Name = r.Name,
         UnavailableSlots = JsonSerializer.Deserialize<List<TimeSlot>>(r.UnavailableSlotsJson) ?? new(),
         AllowedRooms = JsonSerializer.Deserialize<List<string>>(r.AllowedRoomsJson) ?? new(),
+        UnavailableRooms = JsonSerializer.Deserialize<List<string>>(r.UnavailableRoomsJson) ?? new(),
     };
 
     private static object FromProf(Professor p) => new
@@ -345,6 +368,7 @@ public sealed class SqliteRepository
         p.Id, p.Name,
         UnavailableSlotsJson = JsonSerializer.Serialize(p.UnavailableSlots),
         AllowedRoomsJson = JsonSerializer.Serialize(p.AllowedRooms),
+        UnavailableRoomsJson = JsonSerializer.Serialize(p.UnavailableRooms),
     };
 
     private static CrossGroup ToCross(CrossRow r) => new()

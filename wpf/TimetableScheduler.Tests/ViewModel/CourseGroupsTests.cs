@@ -35,6 +35,15 @@ public class CourseGroupsTests : IDisposable
         new(_workspace, null!);
 
     [Fact]
+    public void SolverAdvancedPerAttemptTime_DefaultsDisabledAndFiveSeconds()
+    {
+        var vm = MakeVm();
+
+        Assert.False(vm.UseAdvancedPerSolveTimeSec);
+        Assert.Equal(5, vm.PerSolveTimeSec);
+    }
+
+    [Fact]
     public void NonFixed_TwoSections_ProducesOneGroupRow()
     {
         _workspace.AddCourse(MakeCourse("GA1004-01", 1));
@@ -62,6 +71,39 @@ public class CourseGroupsTests : IDisposable
         var added = _workspace.Courses.Single(c => c.Name == "자동생성과목");
         Assert.Equal("2", added.Id);
         Assert.Equal(1, added.Section);
+    }
+
+    [Fact]
+    public void ProfessorUnavailableRooms_HidesEmptyRoomMetadata()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "D330" });
+        _workspace.AddRoom(new Room { Id = "R2", Name = "LAB1", IsLab = true });
+        _workspace.AddRoom(new Room { Id = "R3", Name = "D331", Capacity = 40 });
+        _workspace.AddProfessor(new Professor
+        {
+            Id = "P1",
+            Name = "교수1",
+            UnavailableRooms = new List<string> { "R1", "R2", "R3" },
+        });
+
+        var vm = MakeVm();
+
+        Assert.Equal("D330, LAB1 (실습실), D331 (40명)", vm.ProfessorItems.Single().HeaderUnavailableRooms);
+    }
+
+    [Fact]
+    public void RoomRows_MarkFixedRoomsAsImportedEvenWhenDepartmentIsBlank()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "D330" });
+        _workspace.AddRoom(new Room { Id = "R2", Name = "수동강의실" });
+        var course = MakeCourse("1-01", 1);
+        course.FixedRooms = new List<string> { "R1" };
+        _workspace.AddCourse(course);
+
+        var vm = MakeVm();
+
+        Assert.True(vm.RoomItems.Single(r => r.Room.Id == "R1").IsImportedFromExcel);
+        Assert.False(vm.RoomItems.Single(r => r.Room.Id == "R2").IsImportedFromExcel);
     }
 
     [Fact]
@@ -281,7 +323,7 @@ public class CourseGroupsTests : IDisposable
 
         vm.CrossCandidateItems.Single(i => i.Id == "A").IsChecked = true;
         vm.AddCrossCommand.Execute(null);
-        Assert.Equal("2개 이상의 과목을 선택하세요.", vm.CrossStatusMessage);
+        Assert.Equal("Cross는 과목 2개만 선택할 수 있습니다.", vm.CrossStatusMessage);
 
         vm.CrossCandidateItems.Single(i => i.Id == "B").IsChecked = true;
         vm.AddCrossCommand.Execute(null);
@@ -305,5 +347,45 @@ public class CourseGroupsTests : IDisposable
 
         Assert.Single(_workspace.CrossGroups);
         Assert.Equal("이미 다른 Cross에 속한 과목이 있습니다: A", vm.CrossStatusMessage);
+    }
+
+    [Fact]
+    public async Task Solve_Infeasible_DoesNotEnablePreviewOrFireCompleted()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "강의실1" });
+        _workspace.AddProfessor(new Professor
+        {
+            Id = "P1",
+            Name = "교수1",
+            UnavailableRooms = new List<string> { "R1" },
+        });
+        _workspace.AddCourse(new Course
+        {
+            Id = "1-01",
+            Name = "불가능과목",
+            Grade = 1,
+            HoursPerWeek = 1,
+            ProfessorId = "P1",
+            Section = 1,
+            BlockStructure = new List<int> { 1 },
+        });
+        var vm = new DataInputViewModel(_workspace, new SolverService())
+        {
+            TotalSolutions = 1,
+            TimeLimitSec = 1,
+            UseSc01 = false,
+            UseSc02 = false,
+            UseSc03 = false,
+        };
+        var completedCount = 0;
+        vm.SolveCompleted += (_, _) => completedCount++;
+
+        await vm.SolveCommand.ExecuteAsync(null);
+
+        Assert.False(vm.IsSolveComplete);
+        Assert.Empty(vm.RankedResults);
+        Assert.Equal(0, completedCount);
+        Assert.Contains("원인", vm.StatusMessage);
+        Assert.DoesNotContain("top", vm.StatusMessage);
     }
 }

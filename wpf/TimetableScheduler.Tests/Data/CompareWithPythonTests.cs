@@ -26,6 +26,7 @@ public class CompareWithPythonTests
         Assert.Equal(4, c0.HoursPerWeek);
         Assert.Equal("전필", c0.CourseType);
         Assert.Equal(new[] { 2, 2 }, c0.BlockStructure);
-        Assert.Equal(new[] { "D327" }, c0.FixedRooms);
+        var fixedRoomId = Assert.Single(c0.FixedRooms);
+        Assert.Contains(data.Rooms, r => r.Id == fixedRoomId && r.Name == "D327");
     }
 }

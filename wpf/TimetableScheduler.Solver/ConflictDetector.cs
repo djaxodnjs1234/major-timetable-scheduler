@@ -232,12 +232,14 @@ public static class ConflictDetector
             if (!courseMap.TryGetValue(a.CourseId, out var c)) continue;
             if (c.FixedRooms.Count > 0) continue;
             if (!profMap.TryGetValue(c.ProfessorId, out var prof)) continue;
-            if (prof.AllowedRooms.Count == 0) continue;
-            if (prof.AllowedRooms.Contains(a.RoomId)) continue;
-            list.Add(new ConflictItem(
-                ConflictType.ProfAllowedRoomViolation, ConflictSeverity.Error,
-                $"{c.Name}({c.Id})은 교수 {c.ProfessorId}의 허용 강의실 [{string.Join(",", prof.AllowedRooms)}] 안에서만 배정할 수 있습니다.",
-                a.Day, a.Period));
+            if (prof.UnavailableRooms.Contains(a.RoomId))
+            {
+                list.Add(new ConflictItem(
+                    ConflictType.ProfAllowedRoomViolation, ConflictSeverity.Error,
+                    $"{c.Name}({c.Id})은 교수 {c.ProfessorId}의 불가 강의실 [{string.Join(",", prof.UnavailableRooms)}]에 배정할 수 없습니다.",
+                    a.Day, a.Period));
+                continue;
+            }
         }
 
         // HC-08: same baseId different sections at same slot

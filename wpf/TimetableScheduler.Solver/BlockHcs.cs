@@ -138,9 +138,15 @@ public static class BlockHcs
         foreach (var pid in autoCoursesByPid.Keys)
         {
             profMap.TryGetValue(pid, out var prof);
-            var allowed = prof?.AllowedRooms ?? new List<string>();
-            var candidates = allowed.Count > 0 ? allowed : rooms.Select(r => r.Id).ToList();
-            if (candidates.Count == 0) continue;
+            var unavailable = (prof?.UnavailableRooms ?? new List<string>()).ToHashSet();
+            var candidates = rooms.Select(r => r.Id).Where(rid => !unavailable.Contains(rid)).ToList();
+            if (candidates.Count == 0)
+            {
+                var infeasible = model.NewBoolVar($"__prof_room_infeasible_{pid}");
+                model.Add(infeasible == 1);
+                model.Add(infeasible == 0);
+                continue;
+            }
             var rdict = new Dictionary<string, BoolVar>();
             foreach (var rid in candidates)
                 rdict[rid] = model.NewBoolVar($"prof_room_{pid}_{rid}");

@@ -95,13 +95,31 @@ public static class XlsxLoader
 
         // Set Section = number of sections found per base
         var courses = seen.Values.ToList();
-        foreach (var (sourceBaseId, course) in seen)
-            course.Section = counts[sourceBaseId];
+        var professorIds = profNames.OrderBy(n => n)
+            .Select((name, index) => (name, id: (index + 1).ToString()))
+            .ToDictionary(x => x.name, x => x.id);
+        var roomIdsByName = roomIds.OrderBy(r => r)
+            .Select((name, index) => (name, id: (index + 1).ToString()))
+            .ToDictionary(x => x.name, x => x.id);
 
-        var professors = profNames.OrderBy(n => n)
-            .Select(n => new Professor { Id = n, Name = n }).ToList();
-        var rooms = roomIds.OrderBy(r => r)
-            .Select(r => new Room { Id = r, Name = r }).ToList();
+        foreach (var (sourceBaseId, course) in seen)
+        {
+            course.Section = counts[sourceBaseId];
+            if (professorIds.TryGetValue(course.ProfessorId, out var professorId))
+                course.ProfessorId = professorId;
+            course.FixedRooms = course.FixedRooms
+                .Select(room => roomIdsByName.TryGetValue(room, out var roomId) ? roomId : room)
+                .ToList();
+        }
+
+        var professors = professorIds
+            .OrderBy(pair => int.Parse(pair.Value))
+            .Select(pair => new Professor { Id = pair.Value, Name = pair.Key })
+            .ToList();
+        var rooms = roomIdsByName
+            .OrderBy(pair => int.Parse(pair.Value))
+            .Select(pair => new Room { Id = pair.Value, Name = pair.Key })
+            .ToList();
 
         return new XlsxLoadResult(courses, professors, rooms);
     }

@@ -8,4 +8,6 @@ public class Professor
     public List<TimeSlot> UnavailableSlots { get; set; } = new();
 
     public List<string> AllowedRooms { get; set; } = new();
+
+    public List<string> UnavailableRooms { get; set; } = new();
 }

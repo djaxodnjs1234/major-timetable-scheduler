@@ -48,57 +48,89 @@
             </Setter>
         </Style>
 
-        <DataTemplate x:Key="ProfessorRowTemplate" DataType="{x:Type dom:Professor}">
+        <DataTemplate x:Key="ProfessorRowTemplate" DataType="{x:Type vm:ProfessorItem}">
             <Expander Margin="0,0,0,4" Expanded="OnProfessorExpanded">
                 <Expander.Header>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding Id}" FontWeight="Bold" Width="120" />
-                        <TextBlock Text="{Binding Name}" />
-                    </StackPanel>
+                    <Border Padding="6,4">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="White" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsImportedFromExcel}" Value="True">
+                                        <Setter Property="Background" Value="#F3F4F6" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="72" SharedSizeGroup="ProfessorId" />
+                                <ColumnDefinition Width="180" SharedSizeGroup="ProfessorName" />
+                                <ColumnDefinition Width="220" SharedSizeGroup="ProfessorUnavailableSlots" />
+                                <ColumnDefinition Width="260" SharedSizeGroup="ProfessorUnavailableRooms" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{Binding HeaderId}" FontWeight="Bold" Margin="6,0" />
+                            <TextBlock Grid.Column="1" Text="{Binding HeaderName}" TextTrimming="CharacterEllipsis" Margin="6,0" />
+                            <TextBlock Grid.Column="2" Text="{Binding HeaderUnavailableSlots}" TextTrimming="CharacterEllipsis" Margin="6,0" />
+                            <TextBlock Grid.Column="3" Text="{Binding HeaderUnavailableRooms}" TextTrimming="CharacterEllipsis" Margin="6,0" />
+                        </Grid>
+                    </Border>
                 </Expander.Header>
                 <Border Background="White" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1">
                     <StackPanel>
-                        <Grid>
+                        <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                            <Button Content="수정"
+                                    Command="{Binding DataContext.EditProfessorCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding}"
+                                    Padding="12,6" Margin="0,0,8,0"
+                                    Background="{StaticResource SurfaceContainer}" />
+                            <TextBlock Text="세부정보는 수정 버튼을 누른 뒤 편집할 수 있습니다."
+                                       VerticalAlignment="Center" FontSize="11"
+                                       Foreground="{StaticResource OnSurfaceVariant}" />
+                        </StackPanel>
+                        <Grid IsEnabled="{Binding IsEditing}">
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="120" />
                                 <ColumnDefinition Width="*" />
                             </Grid.ColumnDefinitions>
                             <Grid.RowDefinitions>
                                 <RowDefinition Height="Auto" />
-                                <RowDefinition Height="Auto" />
                             </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="ID" Margin="0,4" />
-                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Id, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,4" Padding="6,4" />
-
-                            <TextBlock Grid.Row="1" Grid.Column="0" Text="이름" Margin="0,4" />
-                            <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                            <TextBlock Grid.Row="0" Grid.Column="0" Text="이름" Margin="0,4" />
+                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Professor.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                      Margin="0,4" Padding="6,4" />
                         </Grid>
 
-                        <TextBlock Text="허용 강의실 (비우면 모든 강의실 가능)"
-                                   FontSize="11" FontWeight="Bold" Margin="0,12,0,4"
-                                   Foreground="{StaticResource OnSurfaceVariant}" />
-                        <ctrl:CheckListPickerControl x:Name="AllowedRoomsPicker" />
+                        <StackPanel IsEnabled="{Binding IsEditing}">
+                            <StackPanel Orientation="Horizontal" Margin="0,12,0,4">
+                                <TextBlock Text="불가 강의실"
+                                           FontSize="11" FontWeight="Bold"
+                                           Foreground="{StaticResource OnSurfaceVariant}" />
+                                <Button Content="전체 선택" Click="OnProfessorAllRoomsClick"
+                                        Padding="8,2" Margin="12,0,0,0"
+                                        Background="{StaticResource SurfaceContainer}" />
+                            </StackPanel>
+                            <ctrl:CheckListPickerControl x:Name="UnavailableRoomsPicker" />
+                        </StackPanel>
 
                         <TextBlock Text="불가 시간 (외래/겸임 출강)"
                                    FontSize="11" FontWeight="Bold" Margin="0,12,0,4"
                                    Foreground="{StaticResource OnSurfaceVariant}" />
                         <ctrl:TimeSlotPickerControl x:Name="UnavailableSlotsPicker"
-                                                    Width="380" HorizontalAlignment="Left" />
+                                                     IsEnabled="{Binding IsEditing}"
+                                                     Width="400" HorizontalAlignment="Left" />
 
                         <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
                             <Button Content="저장"
-                                    Command="{Binding DataContext.SaveSelectedCommand,
-                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
                                     Click="OnProfessorSaveClick"
+                                    CommandParameter="{Binding}"
                                     Padding="12,6" Margin="0,0,8,0"
                                     Background="{StaticResource PrimaryBrush}" Foreground="White" />
                             <Button Content="삭제"
-                                    Command="{Binding DataContext.DeleteSelectedCommand,
+                                    Command="{Binding DataContext.DeleteProfessorItemCommand,
                                               RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                    Click="OnProfessorDeleteClick"
+                                    CommandParameter="{Binding}"
                                     Padding="12,6"
                                     Background="#BA1A1A" Foreground="White" />
                         </StackPanel>
@@ -134,7 +166,6 @@
                             <ColumnDefinition Width="112" SharedSizeGroup="CourseUnavailableRooms" />
                             <ColumnDefinition Width="112" SharedSizeGroup="CourseCoteach" />
                             <ColumnDefinition Width="104" SharedSizeGroup="CourseFixedTimes" />
-                            <ColumnDefinition Width="100" SharedSizeGroup="CourseCross" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{Binding HeaderCode}" FontWeight="Bold" TextTrimming="CharacterEllipsis" Margin="6,0" />
                         <TextBlock Grid.Column="1" Text="{Binding HeaderName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="6,0" />
@@ -146,7 +177,6 @@
                         <TextBlock Grid.Column="7" Text="{Binding HeaderUnavailableRooms}" TextTrimming="CharacterEllipsis" Margin="6,0" />
                         <TextBlock Grid.Column="8" Text="{Binding HeaderCoteachProfessors}" TextTrimming="CharacterEllipsis" Margin="6,0" />
                         <TextBlock Grid.Column="9" Text="{Binding HeaderFixedTimes}" TextTrimming="CharacterEllipsis" Margin="6,0" />
-                        <TextBlock Grid.Column="10" Text="{Binding HeaderCrossGroups}" Foreground="{StaticResource OnSurfaceVariant}" TextTrimming="CharacterEllipsis" Margin="6,0" />
                     </Grid>
                     </Border>
                 </Expander.Header>
@@ -301,16 +331,47 @@
             </Expander>
         </DataTemplate>
 
-        <DataTemplate x:Key="RoomRowTemplate" DataType="{x:Type dom:Room}">
+        <DataTemplate x:Key="RoomRowTemplate" DataType="{x:Type vm:RoomItem}">
             <Expander Margin="0,0,0,4">
                 <Expander.Header>
-                    <StackPanel Orientation="Horizontal">
-                        <TextBlock Text="{Binding Id}" FontWeight="Bold" Width="120" />
-                        <TextBlock Text="{Binding Name}" />
-                    </StackPanel>
+                    <Border Padding="6,4">
+                        <Border.Style>
+                            <Style TargetType="Border">
+                                <Setter Property="Background" Value="White" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsImportedFromExcel}" Value="True">
+                                        <Setter Property="Background" Value="#F3F4F6" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <Grid>
+                            <Grid.ColumnDefinitions>
+                                <ColumnDefinition Width="58" SharedSizeGroup="RoomId" />
+                                <ColumnDefinition Width="170" SharedSizeGroup="RoomName" />
+                                <ColumnDefinition Width="70" SharedSizeGroup="RoomLab" />
+                                <ColumnDefinition Width="82" SharedSizeGroup="RoomCapacity" />
+                            </Grid.ColumnDefinitions>
+                            <TextBlock Grid.Column="0" Text="{Binding HeaderId}" FontWeight="Bold" Margin="6,0" />
+                            <TextBlock Grid.Column="1" Text="{Binding HeaderName}" TextTrimming="CharacterEllipsis" Margin="6,0" />
+                            <TextBlock Grid.Column="2" Text="{Binding HeaderLab}" Margin="6,0" />
+                            <TextBlock Grid.Column="3" Text="{Binding HeaderCapacity}" Margin="6,0" />
+                        </Grid>
+                    </Border>
                 </Expander.Header>
                 <Border Background="White" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1">
-                    <Grid>
+                    <StackPanel>
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                        <Button Content="수정"
+                                Command="{Binding DataContext.EditRoomCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="{Binding}"
+                                Padding="12,6" Margin="0,0,8,0"
+                                Background="{StaticResource SurfaceContainer}" />
+                        <TextBlock Text="세부정보는 수정 버튼을 누른 뒤 편집할 수 있습니다."
+                                   VerticalAlignment="Center" FontSize="11"
+                                   Foreground="{StaticResource OnSurfaceVariant}" />
+                    </StackPanel>
+                    <Grid IsEnabled="{Binding IsEditing}">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="120" />
                             <ColumnDefinition Width="*" />
@@ -319,27 +380,33 @@
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
                             <RowDefinition Height="Auto" />
+                            <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="ID" Margin="0,4" />
-                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Id, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                        <TextBlock Grid.Row="0" Grid.Column="0" Text="이름" Margin="0,4" />
+                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Room.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                  Margin="0,4" Padding="6,4" />
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="이름" Margin="0,4" />
-                        <TextBox Grid.Row="1" Grid.Column="1" Text="{Binding Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 Margin="0,4" Padding="6,4" />
+                        <TextBlock Grid.Row="1" Grid.Column="0" Text="실습실 여부" Margin="0,4" />
+                        <CheckBox Grid.Row="1" Grid.Column="1" IsChecked="{Binding Room.IsLab, Mode=TwoWay}" Margin="0,4" />
+                        <TextBlock Grid.Row="2" Grid.Column="0" Text="허용 인원 수" Margin="0,4" />
+                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Room.Capacity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                 Width="120" HorizontalAlignment="Left" Margin="0,4" Padding="6,4" />
 
-                        <StackPanel Grid.Row="2" Grid.Column="1" Orientation="Horizontal" Margin="0,12,0,0">
-                            <Button Content="저장"
-                                    Command="{Binding DataContext.SaveSelectedCommand,
-                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                    Padding="12,6" Margin="0,0,8,0"
-                                    Background="{StaticResource PrimaryBrush}" Foreground="White" />
-                            <Button Content="삭제"
-                                    Command="{Binding DataContext.DeleteSelectedCommand,
-                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                    Padding="12,6"
-                                    Background="#BA1A1A" Foreground="White" />
-                        </StackPanel>
                     </Grid>
+                    <StackPanel Orientation="Horizontal" Margin="120,12,0,0">
+                        <Button Content="저장"
+                                Command="{Binding DataContext.SaveRoomCommand,
+                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="{Binding}"
+                                Padding="12,6" Margin="0,0,8,0"
+                                Background="{StaticResource PrimaryBrush}" Foreground="White" />
+                        <Button Content="삭제"
+                                Command="{Binding DataContext.DeleteRoomItemCommand,
+                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="{Binding}"
+                                Padding="12,6"
+                                Background="#BA1A1A" Foreground="White" />
+                    </StackPanel>
+                    </StackPanel>
                 </Border>
             </Expander>
         </DataTemplate>
@@ -477,32 +544,6 @@
                     </Style>
                 </Border.Style>
                 <StackPanel Orientation="Horizontal">
-                    <TextBlock Text="ID:" VerticalAlignment="Center" Margin="0,0,4,0" FontSize="11">
-                        <TextBlock.Style>
-                            <Style TargetType="TextBlock">
-                                <Setter Property="Visibility" Value="Visible" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsCourseSelected}" Value="True">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-                    <TextBox Width="140" Padding="6,4"
-                             Text="{Binding NewId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                             Margin="0,0,12,0">
-                        <TextBox.Style>
-                            <Style TargetType="TextBox">
-                                <Setter Property="Visibility" Value="Visible" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsCourseSelected}" Value="True">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBox.Style>
-                    </TextBox>
                     <TextBlock Text="이름:" VerticalAlignment="Center" Margin="0,0,4,0" FontSize="11" />
                     <TextBox Width="200" Padding="6,4"
                              Text="{Binding NewName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
@@ -517,24 +558,29 @@
                     BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <Grid>
-                        <StackPanel Visibility="{Binding IsProfessorSelected, Converter={StaticResource BoolToVisibility}}" Margin="8">
+                        <StackPanel Visibility="{Binding IsProfessorSelected, Converter={StaticResource BoolToVisibility}}" Margin="8"
+                                    Grid.IsSharedSizeScope="True">
                             <Grid Background="#EEF0F4" Height="30" Margin="0,0,0,4">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="120" />
-                                    <ColumnDefinition Width="220" />
-                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="22" />
+                                    <ColumnDefinition Width="72" SharedSizeGroup="ProfessorId" />
+                                    <ColumnDefinition Width="180" SharedSizeGroup="ProfessorName" />
+                                    <ColumnDefinition Width="220" SharedSizeGroup="ProfessorUnavailableSlots" />
+                                    <ColumnDefinition Width="260" SharedSizeGroup="ProfessorUnavailableRooms" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="교수" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="1" Text="이름" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="2" Text="설정" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="1" Text="교수 ID" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="2" Text="이름" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="3" Text="불가 시간" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="4" Text="불가 강의실" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
                             </Grid>
-                            <ItemsControl ItemsSource="{Binding Workspace.Professors}"
+                            <ItemsControl ItemsSource="{Binding ProfessorItems}"
                                           ItemTemplate="{StaticResource ProfessorRowTemplate}" />
                         </StackPanel>
                         <StackPanel Visibility="{Binding IsCourseSelected, Converter={StaticResource BoolToVisibility}}" Margin="8"
                                     Grid.IsSharedSizeScope="True">
                             <Grid Background="#EEF0F4" Height="30" Margin="0,0,0,4">
                                 <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="22" />
                                     <ColumnDefinition Width="72" SharedSizeGroup="CourseCode" />
                                     <ColumnDefinition Width="170" SharedSizeGroup="CourseName" />
                                     <ColumnDefinition Width="58" SharedSizeGroup="CourseSections" />
@@ -545,76 +591,119 @@
                                     <ColumnDefinition Width="112" SharedSizeGroup="CourseUnavailableRooms" />
                                     <ColumnDefinition Width="112" SharedSizeGroup="CourseCoteach" />
                                     <ColumnDefinition Width="104" SharedSizeGroup="CourseFixedTimes" />
-                                    <ColumnDefinition Width="100" SharedSizeGroup="CourseCross" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="교과목" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="1" Text="이름" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="2" Text="분반" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="3" Text="교수" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="4" Text="학년" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="5" Text="시수" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="6" Text="블록" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="7" Text="불가 강의실" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="8" Text="팀티칭 교수" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="9" Text="시간 고정" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="10" Text="Cross" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="1" Text="교과목" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="2" Text="이름" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="3" Text="분반" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="4" Text="교수" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="5" Text="학년" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="6" Text="시수" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="7" Text="블록" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="8" Text="불가 강의실" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="9" Text="팀티칭 교수" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="10" Text="시간 고정" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
                             </Grid>
                             <ItemsControl ItemsSource="{Binding CourseGroups}"
                                           ItemTemplate="{StaticResource CourseGroupRowTemplate}" />
                         </StackPanel>
-                        <StackPanel Visibility="{Binding IsRoomSelected, Converter={StaticResource BoolToVisibility}}" Margin="8">
+                        <StackPanel Visibility="{Binding IsRoomSelected, Converter={StaticResource BoolToVisibility}}" Margin="8"
+                                    Grid.IsSharedSizeScope="True">
                             <Grid Background="#EEF0F4" Height="30" Margin="0,0,0,4">
                                 <Grid.ColumnDefinitions>
-                                    <ColumnDefinition Width="120" />
-                                    <ColumnDefinition Width="220" />
-                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="22" />
+                                    <ColumnDefinition Width="58" SharedSizeGroup="RoomId" />
+                                    <ColumnDefinition Width="170" SharedSizeGroup="RoomName" />
+                                    <ColumnDefinition Width="70" SharedSizeGroup="RoomLab" />
+                                    <ColumnDefinition Width="82" SharedSizeGroup="RoomCapacity" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="0" Text="강의실" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="1" Text="이름" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="2" Text="설정" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="1" Text="강의실 ID" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="2" Text="이름" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="3" Text="구분" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="4" Text="허용 인원" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
                             </Grid>
-                            <ItemsControl ItemsSource="{Binding Workspace.Rooms}"
-                                          ItemTemplate="{StaticResource RoomRowTemplate}" />
+                            <ItemsControl ItemsSource="{Binding RoomItems}"
+                                           ItemTemplate="{StaticResource RoomRowTemplate}" />
                         </StackPanel>
 
                         <!-- Solve panel -->
                         <StackPanel Margin="32,24"
                                     Visibility="{Binding IsSolveSelected, Converter={StaticResource BoolToVisibility}}">
 
-                            <TextBlock Text="제약 조건 (Soft Constraints)"
-                                       FontSize="14" FontWeight="Bold" Margin="0,0,0,12" />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <TextBlock Text="선호 조건" FontSize="14" FontWeight="Bold" />
+                                <TextBlock Text=" (?)" FontSize="12" Foreground="{StaticResource PrimaryBrush}"
+                                           ToolTip="시간표가 반드시 지켜야 하는 규칙은 아니지만, 가능하면 더 좋은 시간표가 되도록 솔버가 줄이려는 조건입니다." />
+                            </StackPanel>
                             <Border Background="#FAFAFA" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1" Margin="0,0,0,16">
                                 <StackPanel>
-                                    <CheckBox Content="SC-01  월요일 오전 / 금요일 오후 회피"
-                                              IsChecked="{Binding UseSc01}" Margin="0,4" />
-                                    <CheckBox Content="SC-02  교수당 강의 요일 ≤ 3"
-                                              IsChecked="{Binding UseSc02}" Margin="0,4" />
-                                    <CheckBox Content="SC-03  같은 과목 블록 사이 요일 간격 ≥ 2"
-                                              IsChecked="{Binding UseSc03}" Margin="0,4" />
+                                    <CheckBox IsChecked="{Binding UseSc01}" Margin="0,4">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="월요일 오전 / 금요일 오후 피하기" />
+                                            <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
+                                                       ToolTip="월요일 이른 시간과 금요일 늦은 시간 수업을 줄여 학생·교수 부담을 낮춥니다." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding UseSc02}" Margin="0,4">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="교수별 강의 요일 3일 이내 선호" />
+                                            <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
+                                                       ToolTip="한 교수의 수업이 너무 많은 요일에 흩어지지 않도록 합니다." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding UseSc03}" Margin="0,4">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="같은 과목 수업 간격 확보" />
+                                            <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
+                                                       ToolTip="같은 과목의 여러 수업 블록이 너무 붙지 않게 배치합니다." />
+                                        </StackPanel>
+                                    </CheckBox>
                                 </StackPanel>
                             </Border>
 
-                            <TextBlock Text="솔버 파라미터" FontSize="14" FontWeight="Bold" Margin="0,0,0,12" />
+                            <TextBlock Text="생성 설정" FontSize="14" FontWeight="Bold" Margin="0,0,0,12" />
                             <Border Background="#FAFAFA" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1" Margin="0,0,0,16">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="160" />
+                                        <ColumnDefinition Width="210" />
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions>
                                         <RowDefinition Height="Auto" />
                                         <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
-                                    <TextBlock Grid.Row="0" Grid.Column="0" Text="해 후보 수 (top M)" Margin="0,4" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,4" VerticalAlignment="Center">
+                                        <TextBlock Text="해 후보 수(개수)" />
+                                        <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
+                                                   ToolTip="자동 생성 후 비교해 볼 시간표 후보 개수입니다. 숫자가 클수록 더 많이 찾지만 시간이 더 걸릴 수 있습니다." />
+                                    </StackPanel>
                                     <TextBox Grid.Row="0" Grid.Column="1" Padding="6,4" Margin="0,4" Width="120" HorizontalAlignment="Left"
                                              Text="{Binding TotalSolutions, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                    <TextBlock Grid.Row="1" Grid.Column="0" Text="제한 시간 (초)" Margin="0,4" VerticalAlignment="Center" />
+                                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="0,4" VerticalAlignment="Center">
+                                        <TextBlock Text="제한 시간 (초)" />
+                                        <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
+                                                   ToolTip="시간표를 찾기 위해 솔버가 사용할 최대 시간입니다. 시간이 길수록 해를 찾을 가능성이 높아질 수 있습니다." />
+                                    </StackPanel>
                                     <TextBox Grid.Row="1" Grid.Column="1" Padding="6,4" Margin="0,4" Width="120" HorizontalAlignment="Left"
                                              Text="{Binding TimeLimitSec, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="0,8,0,4" VerticalAlignment="Center">
+                                        <CheckBox IsChecked="{Binding UseAdvancedPerSolveTimeSec, Mode=TwoWay}"
+                                                  VerticalAlignment="Center" Margin="0,0,6,0" />
+                                        <TextBlock Text="고급: 한 번 탐색 제한 시간" />
+                                        <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
+                                                   ToolTip="UNKNOWN은 솔버가 제한 시간 안에 해가 있는지, 또는 불가능한지 확정하지 못한 상태입니다. 이 메시지가 뜨면 이 값을 켜고 늘려 한 번의 탐색에 더 많은 시간을 주세요. 기본값은 5초이며, 이 설정을 켜기 전에는 기존 기본값을 사용합니다." />
+                                    </StackPanel>
+                                    <TextBox Grid.Row="2" Grid.Column="1" Padding="6,4" Margin="0,8,0,4" Width="120" HorizontalAlignment="Left"
+                                             IsEnabled="{Binding UseAdvancedPerSolveTimeSec}"
+                                             Text="{Binding PerSolveTimeSec, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                 </Grid>
                             </Border>
 
-                            <TextBlock Text="Cross 수동 설정" FontSize="14" FontWeight="Bold" Margin="0,0,0,12" />
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <TextBlock Text="Cross 수동 설정" FontSize="14" FontWeight="Bold" />
+                                <TextBlock Text=" (?)" FontSize="12" Foreground="{StaticResource PrimaryBrush}"
+                                           ToolTip="Cross는 두 과목의 분반 시간을 서로 엇갈리게 묶어 시간표 공간을 아끼는 설정입니다. 공간이 줄어들면 다른 수업을 배치할 여지가 커져 해를 더 잘 찾을 수 있습니다. 단, 분반 수와 시수가 같은 과목 2개만 묶고, 너무 많이 설정하면 오히려 선택지가 줄어들 수 있습니다." />
+                            </StackPanel>
                             <Border Background="#FAFAFA" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1" Margin="0,0,0,16">
                                 <Grid>
                                     <Grid.ColumnDefinitions>
@@ -645,10 +734,20 @@
                                                    FontSize="11" FontWeight="Bold"
                                                    Foreground="{StaticResource OnSurfaceVariant}"
                                                    Margin="0,0,0,4" />
-                                        <TextBlock Text="묶을 과목을 2개 이상 선택하세요. 분반 수와 총 시수가 같아야 합니다."
-                                                   FontSize="11" Foreground="{StaticResource OnSurfaceVariant}"
-                                                   TextWrapping="Wrap" Margin="0,0,0,8" />
-                                        <ctrl:CheckListPickerControl DataContext="{Binding CrossCandidateItems}" />
+                                        <TextBlock Text="묶을 과목을 정확히 2개 선택하세요. 분반 수와 총 시수가 같아야 합니다."
+                                                    FontSize="11" Foreground="{StaticResource OnSurfaceVariant}"
+                                                    TextWrapping="Wrap" Margin="0,0,0,8" />
+                                        <ItemsControl ItemsSource="{Binding CrossCandidateGradeGroups}">
+                                            <ItemsControl.ItemTemplate>
+                                                <DataTemplate DataType="{x:Type vm:CrossCandidateGradeGroup}">
+                                                    <StackPanel Margin="0,0,0,8">
+                                                        <TextBlock Text="{Binding Header}" FontSize="11" FontWeight="Bold"
+                                                                   Foreground="{StaticResource OnSurfaceVariant}" Margin="0,0,0,4" />
+                                                        <ctrl:CheckListPickerControl DataContext="{Binding Items}" />
+                                                    </StackPanel>
+                                                </DataTemplate>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
                                         <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
                                             <Button Content="+ 선택 과목으로 Cross 추가"
                                                     Command="{Binding AddCrossCommand}"
