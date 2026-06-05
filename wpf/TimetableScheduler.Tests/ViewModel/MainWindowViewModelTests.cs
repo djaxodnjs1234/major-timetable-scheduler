@@ -60,6 +60,57 @@ public class MainWindowViewModelTests : IDisposable
     }
 
     [Fact]
+    public void CreateNew_StartsWithEmptySessionWorkspace()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var global = _sp.GetRequiredService<WorkspaceService>();
+        global.AddCourse(new TimetableScheduler.Domain.Course
+        {
+            Id = "GLOBAL-01",
+            Name = "전역과목",
+            Grade = 1,
+            HoursPerWeek = 1,
+        });
+        global.AddProfessor(new TimetableScheduler.Domain.Professor { Id = "P1", Name = "전역교수" });
+        global.AddRoom(new TimetableScheduler.Domain.Room { Id = "R1", Name = "전역강의실" });
+
+        main.Selection.CreateNewCommand.Execute(null);
+
+        Assert.True(main.Input.IsSessionMode);
+        Assert.False(main.Input.IsExistingMode);
+        Assert.Empty(main.Input.Workspace.Courses);
+        Assert.Empty(main.Input.Workspace.Professors);
+        Assert.Empty(main.Input.Workspace.Rooms);
+        Assert.Single(global.Courses);
+    }
+
+    [Fact]
+    public void CreateNew_EditsDoNotTouchGlobalDbUntilTimetableSave()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var global = _sp.GetRequiredService<WorkspaceService>();
+        global.AddCourse(new TimetableScheduler.Domain.Course
+        {
+            Id = "GLOBAL-01",
+            Name = "전역과목",
+            Grade = 1,
+            HoursPerWeek = 1,
+        });
+
+        main.Selection.CreateNewCommand.Execute(null);
+        main.Input.Workspace.AddCourse(new TimetableScheduler.Domain.Course
+        {
+            Id = "SESSION-01",
+            Name = "세션과목",
+            Grade = 2,
+            HoursPerWeek = 1,
+        });
+
+        Assert.Equal("SESSION-01", main.Input.Workspace.Courses.Single().Id);
+        Assert.Equal("GLOBAL-01", global.Courses.Single().Id);
+    }
+
+    [Fact]
     public void Edit_NavigatesToInputPageInExistingMode()
     {
         var main = _sp.GetRequiredService<MainWindowViewModel>();

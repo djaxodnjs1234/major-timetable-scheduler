@@ -669,7 +669,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         if (!ValidateBeforeSave()) return;
 
-        _workspace.SaveTimetable(SaveName.Trim(), _working, ToSavedManualCrossLinks());
+        _workspace.SaveTimetable(SaveName.Trim(), _working, ToSavedManualCrossLinks(), _sessionData);
         StatusMessage = $"'{SaveName.Trim()}' 저장 완료";
         SaveName = "";
         SavedRequested?.Invoke(this, EventArgs.Empty);
@@ -2131,6 +2131,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         ConflictType.LunchConflict => $"HC-12 점심시간 보장 위반: {c.Description}",
         ConflictType.FixedTimeViolation => $"HC-13 고정 시간표 보존 위반: {c.Description}",
         ConflictType.FixedRoomViolation => $"HC-14 고정 강의실 위반: {c.Description}",
+        ConflictType.CourseUnavailableRoomViolation => $"HC-14 불가 강의실 위반: {c.Description}",
         ConflictType.BlockStartViolation => $"HC-19 블록 시작 교시 위반: {c.Description}",
         ConflictType.SameCourseSameDayConflict => $"HC-20 동일 교과목·분반·교수 동일 요일 중복 배치 위반: {c.Description}",
         ConflictType.ProfAllowedRoomViolation => $"HC-21 허용 강의실 위반: {c.Description}",

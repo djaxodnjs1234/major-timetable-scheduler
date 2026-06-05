@@ -31,6 +31,17 @@ public class ModelDefaultsTests
         Assert.Equal("", p.Name);
         Assert.Empty(p.UnavailableSlots);
         Assert.Empty(p.AllowedRooms);
+        Assert.Empty(p.UnavailableRooms);
+    }
+
+    [Fact]
+    public void Room_DefaultsMatchPython()
+    {
+        var r = new Room();
+        Assert.Equal("", r.Id);
+        Assert.Equal("", r.Name);
+        Assert.False(r.IsLab);
+        Assert.Equal(0, r.Capacity);
     }
 
     [Fact]

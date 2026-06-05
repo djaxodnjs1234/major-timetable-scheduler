@@ -19,6 +19,9 @@ public class XlsxLoaderTests
     {
         var path = Path.Combine(TestPaths.FindRepoRoot(), "개설강좌 편람.xlsx");
         var data = XlsxLoader.Load(path);
+        Assert.Equal(
+            Enumerable.Range(1, data.Courses.Count).Select(n => n.ToString()),
+            data.Courses.Select(c => c.Id));
         foreach (var c in data.Courses)
         {
             Assert.False(string.IsNullOrEmpty(c.Id));

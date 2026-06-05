@@ -40,8 +40,19 @@ public sealed class SqliteRepository
     {
         using var conn = Open();
         conn.Execute(SqliteSchema.CreateAll);
+        MigrateCourseUnavailableRooms(conn);
+        MigrateProfessorUnavailableRooms(conn);
+        MigrateRoomMetadata(conn);
         MigrateCoursePkIfNeeded(conn);
         MigrateSavedTimetableSnapshot(conn);
+    }
+
+    private static void MigrateCourseUnavailableRooms(SqliteConnection conn)
+    {
+        var columns = conn.Query("PRAGMA table_info(Courses)")
+            .Select(row => (string)row.name);
+        if (columns.Contains("UnavailableRoomsJson")) return;
+        conn.Execute("ALTER TABLE Courses ADD COLUMN UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]'");
     }
 
     private static void MigrateSavedTimetableSnapshot(SqliteConnection conn)
@@ -50,6 +61,25 @@ public sealed class SqliteRepository
             .Select(row => (string)row.name);
         if (columns.Contains("SnapshotJson")) return;
         conn.Execute("ALTER TABLE SavedTimetables ADD COLUMN SnapshotJson TEXT");
+    }
+
+    private static void MigrateProfessorUnavailableRooms(SqliteConnection conn)
+    {
+        var columns = conn.Query("PRAGMA table_info(Professors)")
+            .Select(row => (string)row.name);
+        if (columns.Contains("UnavailableRoomsJson")) return;
+        conn.Execute("ALTER TABLE Professors ADD COLUMN UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]'");
+    }
+
+    private static void MigrateRoomMetadata(SqliteConnection conn)
+    {
+        var columns = conn.Query("PRAGMA table_info(Rooms)")
+            .Select(row => (string)row.name)
+            .ToHashSet();
+        if (!columns.Contains("IsLab"))
+            conn.Execute("ALTER TABLE Rooms ADD COLUMN IsLab INTEGER NOT NULL DEFAULT 0");
+        if (!columns.Contains("Capacity"))
+            conn.Execute("ALTER TABLE Rooms ADD COLUMN Capacity INTEGER NOT NULL DEFAULT 0");
     }
 
     private static void MigrateCoursePkIfNeeded(SqliteConnection conn)
@@ -64,10 +94,16 @@ public sealed class SqliteRepository
             "HoursPerWeek INTEGER NOT NULL, CourseType TEXT NOT NULL," +
             "ProfessorId TEXT NOT NULL, Section INTEGER NOT NULL DEFAULT 1," +
             "Department TEXT NOT NULL, FixedRoomsJson TEXT NOT NULL," +
+            "UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]'," +
             "BlockStructureJson TEXT NOT NULL, IsFixed INTEGER NOT NULL," +
             "FixedSlotsJson TEXT NOT NULL, CoteachProfsJson TEXT NOT NULL," +
             "PRIMARY KEY (Id, Section))");
-        conn.Execute("INSERT OR IGNORE INTO Courses_v2 SELECT * FROM Courses");
+        conn.Execute(@"INSERT OR IGNORE INTO Courses_v2
+            (Id,Name,Grade,HoursPerWeek,CourseType,ProfessorId,Section,Department,
+             FixedRoomsJson,UnavailableRoomsJson,BlockStructureJson,IsFixed,FixedSlotsJson,CoteachProfsJson)
+            SELECT Id,Name,Grade,HoursPerWeek,CourseType,ProfessorId,Section,Department,
+                   FixedRoomsJson,UnavailableRoomsJson,BlockStructureJson,IsFixed,FixedSlotsJson,CoteachProfsJson
+            FROM Courses");
         conn.Execute("DROP TABLE Courses");
         conn.Execute("ALTER TABLE Courses_v2 RENAME TO Courses");
     }
@@ -78,7 +114,7 @@ public sealed class SqliteRepository
 
         var courses = conn.Query<CourseRow>("SELECT * FROM Courses").Select(ToCourse).ToList();
         var profs = conn.Query<ProfessorRow>("SELECT * FROM Professors").Select(ToProf).ToList();
-        var rooms = conn.Query<Room>("SELECT Id, Name FROM Rooms").ToList();
+        var rooms = conn.Query<Room>("SELECT Id, Name, IsLab, Capacity FROM Rooms").ToList();
         var crosses = conn.Query<CrossRow>("SELECT * FROM CrossGroups").Select(ToCross).ToList();
         var retakes = conn.Query<RetakeScenario>(
             "SELECT CurrentGrade, RetakeBaseId FROM RetakeScenarios").ToList();
@@ -97,19 +133,19 @@ public sealed class SqliteRepository
         foreach (var c in data.Courses)
             conn.Execute(@"INSERT INTO Courses
                 (Id,Name,Grade,HoursPerWeek,CourseType,ProfessorId,Section,Department,
-                 FixedRoomsJson,BlockStructureJson,IsFixed,FixedSlotsJson,CoteachProfsJson)
+                 FixedRoomsJson,UnavailableRoomsJson,BlockStructureJson,IsFixed,FixedSlotsJson,CoteachProfsJson)
                 VALUES (@Id,@Name,@Grade,@HoursPerWeek,@CourseType,@ProfessorId,@Section,@Department,
-                 @FixedRoomsJson,@BlockStructureJson,@IsFixed,@FixedSlotsJson,@CoteachProfsJson)",
+                 @FixedRoomsJson,@UnavailableRoomsJson,@BlockStructureJson,@IsFixed,@FixedSlotsJson,@CoteachProfsJson)",
                 FromCourse(c), tx);
 
         foreach (var p in data.Professors)
             conn.Execute(@"INSERT INTO Professors
-                (Id,Name,UnavailableSlotsJson,AllowedRoomsJson)
-                VALUES (@Id,@Name,@UnavailableSlotsJson,@AllowedRoomsJson)",
+                (Id,Name,UnavailableSlotsJson,AllowedRoomsJson,UnavailableRoomsJson)
+                VALUES (@Id,@Name,@UnavailableSlotsJson,@AllowedRoomsJson,@UnavailableRoomsJson)",
                 FromProf(p), tx);
 
         foreach (var r in data.Rooms)
-            conn.Execute("INSERT INTO Rooms (Id,Name) VALUES (@Id,@Name)", r, tx);
+            conn.Execute("INSERT INTO Rooms (Id,Name,IsLab,Capacity) VALUES (@Id,@Name,@IsLab,@Capacity)", r, tx);
 
         foreach (var g in data.CrossGroups)
             conn.Execute("INSERT INTO CrossGroups (Id,BaseIdsJson) VALUES (@Id,@BaseIdsJson)",
@@ -266,6 +302,7 @@ public sealed class SqliteRepository
         public int Section { get; set; }
         public string Department { get; set; } = "";
         public string FixedRoomsJson { get; set; } = "[]";
+        public string UnavailableRoomsJson { get; set; } = "[]";
         public string BlockStructureJson { get; set; } = "[]";
         public long IsFixed { get; set; }
         public string FixedSlotsJson { get; set; } = "[]";
@@ -278,6 +315,7 @@ public sealed class SqliteRepository
         public string Name { get; set; } = "";
         public string UnavailableSlotsJson { get; set; } = "[]";
         public string AllowedRoomsJson { get; set; } = "[]";
+        public string UnavailableRoomsJson { get; set; } = "[]";
     }
 
     private sealed class CrossRow
@@ -297,6 +335,7 @@ public sealed class SqliteRepository
         Section = r.Section,
         Department = r.Department,
         FixedRooms = JsonSerializer.Deserialize<List<string>>(r.FixedRoomsJson) ?? new(),
+        UnavailableRooms = JsonSerializer.Deserialize<List<string>>(r.UnavailableRoomsJson) ?? new(),
         BlockStructure = JsonSerializer.Deserialize<List<int>>(r.BlockStructureJson) ?? new(),
         IsFixed = r.IsFixed != 0,
         FixedSlots = JsonSerializer.Deserialize<List<TimeSlot>>(r.FixedSlotsJson) ?? new(),
@@ -308,6 +347,7 @@ public sealed class SqliteRepository
         c.Id, c.Name, c.Grade, c.HoursPerWeek, c.CourseType, c.ProfessorId,
         c.Section, c.Department,
         FixedRoomsJson = JsonSerializer.Serialize(c.FixedRooms),
+        UnavailableRoomsJson = JsonSerializer.Serialize(c.UnavailableRooms),
         BlockStructureJson = JsonSerializer.Serialize(c.BlockStructure),
         IsFixed = c.IsFixed ? 1 : 0,
         FixedSlotsJson = JsonSerializer.Serialize(c.FixedSlots),
@@ -320,6 +360,7 @@ public sealed class SqliteRepository
         Name = r.Name,
         UnavailableSlots = JsonSerializer.Deserialize<List<TimeSlot>>(r.UnavailableSlotsJson) ?? new(),
         AllowedRooms = JsonSerializer.Deserialize<List<string>>(r.AllowedRoomsJson) ?? new(),
+        UnavailableRooms = JsonSerializer.Deserialize<List<string>>(r.UnavailableRoomsJson) ?? new(),
     };
 
     private static object FromProf(Professor p) => new
@@ -327,6 +368,7 @@ public sealed class SqliteRepository
         p.Id, p.Name,
         UnavailableSlotsJson = JsonSerializer.Serialize(p.UnavailableSlots),
         AllowedRoomsJson = JsonSerializer.Serialize(p.AllowedRooms),
+        UnavailableRoomsJson = JsonSerializer.Serialize(p.UnavailableRooms),
     };
 
     private static CrossGroup ToCross(CrossRow r) => new()

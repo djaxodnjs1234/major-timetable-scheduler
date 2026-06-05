@@ -51,6 +51,7 @@ public static class DomainHelpers
         Section = newSection,
         Department = src.Department,
         FixedRooms = new List<string>(src.FixedRooms),
+        UnavailableRooms = new List<string>(src.UnavailableRooms),
         BlockStructure = new List<int>(src.BlockStructure),
         IsFixed = src.IsFixed,
         FixedSlots = new List<TimeSlot>(src.FixedSlots),

@@ -31,10 +31,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
 
         _input.SolveCompleted += (_, ranked) =>
         {
-            // In existing-edit mode the solver ran on the session workspace, so the
-            // results/manual screens must render against that session snapshot too.
             _results.SetSolutions(
-                ranked, _input.IsExistingMode ? _input.CurrentSnapshot() : null);
+                ranked, _input.IsSessionMode ? _input.CurrentSnapshot() : null);
         };
         _input.GoToSelectionRequested += (_, _) => NavigateTo(_results);
         _input.BackRequested += (_, _) => NavigateTo(_selection);

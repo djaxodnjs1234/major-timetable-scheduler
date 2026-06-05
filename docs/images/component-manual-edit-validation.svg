@@ -1,0 +1,13 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="900" height="520" viewBox="0 0 900 520" role="img" aria-labelledby="title desc">
+  <title id="title">수동 편집과 충돌 검증 구성요소</title>
+  <desc id="desc">선택된 자동생성 해가 수동 편집 화면으로 넘어가고 ConflictDetector로 위반을 감지하는 흐름</desc>
+  <defs><style>.bg{fill:#f8fafc}.box{fill:#fff;stroke:#cbd5e1;stroke-width:2;rx:16}.manual{fill:#f5f3ff;stroke:#a78bfa}.warn{fill:#fee2e2;stroke:#ef4444}.title{font:700 24px 'Segoe UI','Apple SD Gothic Neo',sans-serif;fill:#0f172a}.label{font:700 17px 'Segoe UI','Apple SD Gothic Neo',sans-serif;fill:#1e293b}.small{font:500 13px 'Segoe UI','Apple SD Gothic Neo',sans-serif;fill:#475569}.arrow{stroke:#64748b;stroke-width:2;marker-end:url(#a);fill:none}</style><marker id="a" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto"><path d="M0,0 L0,6 L9,3 z" fill="#64748b"/></marker></defs>
+  <rect class="bg" width="900" height="520"/>
+  <text class="title" x="450" y="42" text-anchor="middle">구성요소 6: 수동 편집과 충돌 검증</text>
+  <rect class="box" x="70" y="150" width="170" height="90"/><text class="label" x="155" y="186" text-anchor="middle">선택된 해</text><text class="small" x="155" y="214" text-anchor="middle">RankedSolution</text>
+  <rect class="box manual" x="310" y="150" width="180" height="90"/><text class="label" x="400" y="186" text-anchor="middle">ManualEdit VM</text><text class="small" x="400" y="214" text-anchor="middle">셀 선택 / 이동 / 저장</text>
+  <rect class="box warn" x="570" y="150" width="190" height="90"/><text class="label" x="665" y="186" text-anchor="middle">ConflictDetector</text><text class="small" x="665" y="214" text-anchor="middle">HC 위반 카드 표시</text>
+  <rect class="box manual" x="310" y="330" width="180" height="90"/><text class="label" x="400" y="366" text-anchor="middle">저장 결과</text><text class="small" x="400" y="394" text-anchor="middle">배치 + 수동 링크</text>
+  <path class="arrow" d="M240 195 L310 195"/><path class="arrow" d="M490 195 L570 195"/><path class="arrow" d="M665 240 C665 300,500 300,430 330"/><path class="arrow" d="M400 240 L400 330"/>
+  <text class="small" x="450" y="476" text-anchor="middle">수동 편집은 해를 사람이 조정하는 단계이며, 현재는 별도 재솔버 없이 충돌을 감지하고 저장합니다.</text>
+</svg>
