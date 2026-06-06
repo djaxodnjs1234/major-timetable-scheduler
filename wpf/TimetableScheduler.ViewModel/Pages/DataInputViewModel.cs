@@ -68,6 +68,11 @@ public sealed partial class CourseGroupItem : ObservableObject
     /// <summary>All sections in this group (N>1 for grouped, 1 for individual fixed).</summary>
     public List<Course> Sections { get; init; } = new();
     public bool IsFixedIndividual => Sections.Count == 1 && Sections[0].IsFixed;
+    public string ReadOnlyProfessor => HeaderProfessor;
+    public string ReadOnlyBlockStructure => HeaderBlockStructure;
+    public string ReadOnlyUnavailableRooms => string.IsNullOrWhiteSpace(HeaderUnavailableRooms) ? "없음" : HeaderUnavailableRooms;
+    public string ReadOnlyCoteachProfessors => string.IsNullOrWhiteSpace(HeaderCoteachProfessors) ? "없음" : HeaderCoteachProfessors;
+    public string ReadOnlyFixedTimes => string.IsNullOrWhiteSpace(HeaderFixedTimes) ? "없음" : HeaderFixedTimes;
 
     [ObservableProperty]
     private bool isEditing;
@@ -103,7 +108,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public int[] GradeOptions { get; } = { 1, 2, 3, 4 };
     public int[] HourOptions { get; } = { 1, 2, 3, 4 };
     public string[] CourseTypeOptions { get; } = { "전필", "전선", "교양" };
-    public string[] BlockStructureOptions { get; } = { "1", "2", "2,1", "1,1", "3", "2,2", "2,1,1" };
+    public string[] BlockStructureOptions { get; } = GenerateBlockStructureOptions(3).ToArray();
 
     [ObservableProperty]
     private InputCategory selectedCategory = InputCategory.Course;
@@ -164,7 +169,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 {
                     Id = NextCourseBaseId(), Name = NewName.Trim(),
                     Grade = 1, HoursPerWeek = 3,
-                    BlockStructure = new List<int> { 2, 1 },
+                    BlockStructure = DefaultBlockStructureForHours(3),
                     CourseType = "전선",
                     UnavailableRooms = new List<string>(),
                 });
@@ -628,10 +633,10 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                         HeaderGrade = $"{sec.Grade}학년",
                         HeaderHours = $"{sec.HoursPerWeek}시간",
                         HeaderSectionInfo = "1개",
-                        HeaderProfessor = DisplayName(sec.ProfessorId, profNames),
+                        HeaderProfessor = CourseDisplayName(sec.ProfessorId, profNames),
                         HeaderBlockStructure = FormatBlocks(sec),
-                        HeaderUnavailableRooms = FormatNames(sec.UnavailableRooms, roomNames),
-                        HeaderCoteachProfessors = FormatNames(sec.CoteachProfs, profNames),
+                        HeaderUnavailableRooms = FormatCourseNames(sec.UnavailableRooms, roomNames),
+                        HeaderCoteachProfessors = FormatCourseNames(sec.CoteachProfs, profNames),
                         HeaderFixedTimes = FormatFixedTimes(new[] { sec }),
                         HeaderCrossGroups = FormatCrossGroups(g.Key),
                         IsImportedFromExcel = !string.IsNullOrWhiteSpace(sec.Department),
@@ -656,11 +661,11 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                     HeaderGrade = $"{rep.Grade}학년",
                     HeaderHours = $"{rep.HoursPerWeek}시간",
                     HeaderSectionInfo = $"{sections.Count}개",
-                    HeaderProfessor = DisplayName(rep.ProfessorId, profNames),
+                    HeaderProfessor = CourseDisplayName(rep.ProfessorId, profNames),
                     HeaderBlockStructure = FormatBlocks(rep),
-                    HeaderUnavailableRooms = FormatNames(rep.UnavailableRooms, roomNames),
-                    HeaderCoteachProfessors = FormatNames(rep.CoteachProfs, profNames),
-                    HeaderFixedTimes = "-",
+                    HeaderUnavailableRooms = FormatCourseNames(rep.UnavailableRooms, roomNames),
+                    HeaderCoteachProfessors = FormatCourseNames(rep.CoteachProfs, profNames),
+                    HeaderFixedTimes = "",
                     HeaderCrossGroups = FormatCrossGroups(g.Key),
                     IsImportedFromExcel = sections.Any(s => !string.IsNullOrWhiteSpace(s.Department)),
                     Sections = sections,
@@ -756,8 +761,14 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private static string DisplayName(string id, IReadOnlyDictionary<string, string> names) =>
         string.IsNullOrWhiteSpace(id) ? "-" : names.TryGetValue(id, out var name) ? name : id;
 
+    private static string CourseDisplayName(string id, IReadOnlyDictionary<string, string> names) =>
+        string.IsNullOrWhiteSpace(id) ? "" : names.TryGetValue(id, out var name) ? name : id;
+
     private static string FormatNames(IReadOnlyList<string> ids, IReadOnlyDictionary<string, string> names) =>
         ids.Count == 0 ? "-" : string.Join(", ", ids.Select(id => DisplayName(id, names)));
+
+    private static string FormatCourseNames(IReadOnlyList<string> ids, IReadOnlyDictionary<string, string> names) =>
+        ids.Count == 0 ? "" : string.Join(", ", ids.Select(id => CourseDisplayName(id, names)));
 
     private static string RoomDisplayLabel(Room room)
     {
@@ -775,6 +786,70 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         course.BlockStructure.Count > 0 ? course.BlockStructure.ToList() : new List<int> { course.HoursPerWeek };
 
     private static string FormatBlocks(Course course) => string.Join("+", EffectiveBlocks(course));
+
+    public static IReadOnlyList<string> GenerateBlockStructureOptions(int weeklyHours) => weeklyHours switch
+    {
+        <= 1 => new[] { "1" },
+        2 => new[] { "1+1", "2" },
+        3 => new[] { "1+2", "2+1", "3" },
+        4 => new[] { "2+2", "3+1", "1+3", "4" },
+        _ => new[] { weeklyHours.ToString() },
+    };
+
+    public static string FormatBlockStructure(IEnumerable<int> blocks) => string.Join("+", blocks);
+
+    public static bool IsValidBlockStructure(IReadOnlyList<int> blocks, int weeklyHours)
+    {
+        if (blocks.Count == 0) return false;
+        return GenerateBlockStructureOptions(weeklyHours).Contains(FormatBlockStructure(blocks));
+    }
+
+    public static List<int> DefaultBlockStructureForHours(int weeklyHours) =>
+        ParseBlockStructure(GenerateBlockStructureOptions(weeklyHours).First());
+
+    public bool HandleCourseHoursChanged(CourseGroupItem item)
+    {
+        if (item.Sections.Count == 0) return false;
+        var rep = item.Sections[0];
+        if (IsValidBlockStructure(rep.BlockStructure, rep.HoursPerWeek)) return false;
+
+        var previous = EffectiveBlocks(rep);
+        var next = DefaultBlockStructureForHours(rep.HoursPerWeek);
+        rep.BlockStructure = next;
+
+        if (!previous.SequenceEqual(next))
+        {
+            ResetFixedTime(item);
+            return true;
+        }
+
+        return false;
+    }
+
+    public bool HandleCourseBlockStructureChanged(CourseGroupItem item)
+    {
+        if (item.Sections.Count == 0) return false;
+        var rep = item.Sections[0];
+        if (!IsValidBlockStructure(rep.BlockStructure, rep.HoursPerWeek))
+            rep.BlockStructure = DefaultBlockStructureForHours(rep.HoursPerWeek);
+
+        ResetFixedTime(item);
+        return true;
+    }
+
+    private static List<int> ParseBlockStructure(string text) =>
+        text.Split('+', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => int.Parse(part.Trim()))
+            .ToList();
+
+    private static void ResetFixedTime(CourseGroupItem item)
+    {
+        foreach (var sec in item.Sections)
+        {
+            sec.IsFixed = false;
+            sec.FixedSlots.Clear();
+        }
+    }
 
     private string FormatCrossGroups(string baseId)
     {
@@ -794,7 +869,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             .Where(s => s.FixedSlots.Count > 0)
             .Select(s => $"{SectionLetter(s.Section)}분반 {FormatSlotRuns(s.FixedSlots)}")
             .ToList();
-        return labels.Count == 0 ? "-" : string.Join(" / ", labels);
+        return labels.Count == 0 ? "" : string.Join(" / ", labels);
     }
 
     private static string FormatSlotRuns(IReadOnlyList<TimeSlot> slots)

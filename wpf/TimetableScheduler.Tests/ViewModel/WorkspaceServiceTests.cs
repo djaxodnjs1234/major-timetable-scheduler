@@ -94,35 +94,49 @@ public class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
-    public void ImportFromXlsx_ExpandedSections_RoundtripIsConsistent()
+    public void SectionCountMetadata_DoesNotFanOutExpandedCoursesOrSnapshots()
     {
-        // Regression test for: ImportFromXlsx stored unexpanded (Section=N) but
-        // Persist() saved expanded rows, so restart showed more rows than the session.
-        //
-        // New invariant: Courses always holds individually expanded sections,
-        // so count-after-import == count-after-restart.
         var ws = new WorkspaceService(_repo);
-
-        // Simulate what ImportFromXlsx now does: expand before adding to Courses.
-        var xlsxResult = new List<Course>
+        var course = new Course
         {
-            new() { Id = "GA1004", Name = "자료구조", Grade = 2,
-                    HoursPerWeek = 4, Section = 2, CourseType = "전필",
-                    BlockStructure = new List<int> { 2, 2 } },
+            Id = "GA1004",
+            Name = "자료구조",
+            Grade = 2,
+            HoursPerWeek = 3,
+            Section = 2,
+            CourseType = "전필",
+            BlockStructure = new List<int> { 3 },
         };
-        foreach (var c in DomainHelpers.ExpandSections(xlsxResult))
-            ws.AddCourse(c);
+        ws.AddCourse(course);
 
-        int countDuringSession = ws.Courses.Count;
+        var expanded = ws.ExpandedCourses;
+        var snapshot = ws.Snapshot();
+        var restarted = new WorkspaceService(_repo);
 
-        // Simulate app restart by creating a new WorkspaceService from the same DB.
-        var ws2 = new WorkspaceService(_repo);
-        int countAfterRestart = ws2.Courses.Count;
+        Assert.Single(ws.Courses);
+        Assert.Single(expanded);
+        Assert.Single(snapshot.Courses);
+        Assert.Single(restarted.Courses);
+        Assert.Equal("GA1004", expanded[0].Id);
+        Assert.Equal(2, expanded[0].Section);
+        Assert.Equal(new[] { 3 }, expanded[0].BlockStructure);
+    }
 
-        Assert.Equal(2, countDuringSession);
-        Assert.Equal(countDuringSession, countAfterRestart);
-        Assert.Equal("GA1004-01", ws2.Courses[0].Id);
-        Assert.Equal("GA1004-02", ws2.Courses[1].Id);
+    [Fact]
+    public void ExplicitSectionRows_RemainDistinctAcrossSnapshotAndRestart()
+    {
+        var ws = new WorkspaceService(_repo);
+        ws.AddCourse(new Course { Id = "GA1004-01", Name = "자료구조", Grade = 2, HoursPerWeek = 3, Section = 1, BlockStructure = new List<int> { 3 } });
+        ws.AddCourse(new Course { Id = "GA1004-02", Name = "자료구조", Grade = 2, HoursPerWeek = 3, Section = 2, BlockStructure = new List<int> { 3 } });
+
+        var expanded = ws.ExpandedCourses;
+        var snapshot = ws.Snapshot();
+        var restarted = new WorkspaceService(_repo);
+
+        Assert.Equal(2, expanded.Count);
+        Assert.Equal(2, snapshot.Courses.Count);
+        Assert.Equal(2, restarted.Courses.Count);
+        Assert.Equal(new[] { "GA1004-01", "GA1004-02" }, expanded.Select(c => c.Id));
     }
 
     [Fact]

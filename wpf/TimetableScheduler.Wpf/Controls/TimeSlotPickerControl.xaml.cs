@@ -11,7 +11,7 @@ public partial class TimeSlotPickerControl : UserControl
     private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
     private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
     private static readonly Brush EmptyBg = Brushes.White;
-    private static readonly Brush SelectedBg = new SolidColorBrush(Color.FromRgb(0x9C, 0xA3, 0xAF));
+    private static readonly Brush SelectedBg = CreateSelectedBrush();
     private static readonly Brush Border = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC));
 
     static TimeSlotPickerControl()
@@ -56,8 +56,8 @@ public partial class TimeSlotPickerControl : UserControl
                 b.Background = cell.IsSelected ? SelectedBg : EmptyBg;
                 if (b.Child is TextBlock tb)
                 {
-                    tb.Text = cell.IsSelected ? "X" : "";
-                    tb.Foreground = cell.IsSelected ? Brushes.White : Brushes.Black;
+                    tb.Text = "";
+                    tb.Foreground = Brushes.Black;
                 }
                 break;
             }
@@ -135,11 +135,11 @@ public partial class TimeSlotPickerControl : UserControl
                 Cursor = cell.IsLunch ? Cursors.Arrow : Cursors.Hand,
                 Child = new TextBlock
                 {
-                    Text = cell.IsLunch ? "점심" : (cell.IsSelected ? "X" : ""),
+                    Text = cell.IsLunch ? "점심" : "",
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                     FontSize = 9,
-                    Foreground = cell.IsSelected ? Brushes.White : Brushes.Black,
+                    Foreground = Brushes.Black,
                 },
             };
             if (!cell.IsLunch) btn.MouseLeftButtonDown += OnCellClicked;
@@ -158,5 +158,35 @@ public partial class TimeSlotPickerControl : UserControl
             vm.Toggle(key.Item1, key.Item2);
             e.Handled = true;
         }
+    }
+
+    private static Brush CreateSelectedBrush()
+    {
+        var group = new DrawingGroup();
+        group.Children.Add(new GeometryDrawing(
+            new SolidColorBrush(Color.FromRgb(0xE5, 0xF0, 0xFF)),
+            null,
+            new RectangleGeometry(new Rect(0, 0, 8, 8))));
+        group.Children.Add(new GeometryDrawing(
+            null,
+            new Pen(new SolidColorBrush(Color.FromRgb(0x7C, 0x8B, 0xA1)), 1),
+            new GeometryGroup
+            {
+                Children =
+                {
+                    new LineGeometry(new Point(-2, 8), new Point(8, -2)),
+                    new LineGeometry(new Point(0, 10), new Point(10, 0)),
+                },
+            }));
+
+        var brush = new DrawingBrush(group)
+        {
+            TileMode = TileMode.Tile,
+            Viewport = new Rect(0, 0, 8, 8),
+            ViewportUnits = BrushMappingMode.Absolute,
+            Stretch = Stretch.None,
+        };
+        brush.Freeze();
+        return brush;
     }
 }

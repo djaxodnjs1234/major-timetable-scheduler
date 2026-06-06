@@ -117,7 +117,7 @@ public sealed class WorkspaceService
     {
         var loaded = XlsxLoader.Load(path);
         Courses.Clear();
-        foreach (var c in DomainHelpers.ExpandSections(loaded.Courses)) Courses.Add(c);
+        foreach (var c in loaded.Courses) Courses.Add(c);
         Professors.Clear();
         foreach (var p in loaded.Professors) Professors.Add(p);
         Rooms.Clear();
@@ -193,10 +193,10 @@ public sealed class WorkspaceService
         Persist();
     }
 
-    public IReadOnlyList<Course> ExpandedCourses => DomainHelpers.ExpandSections(Courses);
+    public IReadOnlyList<Course> ExpandedCourses => Courses.ToList();
 
     public AppData Snapshot() => new(
-        DomainHelpers.ExpandSections(Courses),
+        Courses.ToList(),
         Professors.ToList(), Rooms.ToList(),
         CrossGroups.ToList(), RetakeScenarios.ToList());
 

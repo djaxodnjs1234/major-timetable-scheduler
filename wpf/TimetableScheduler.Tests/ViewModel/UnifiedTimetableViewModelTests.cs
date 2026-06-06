@@ -194,6 +194,50 @@ public class UnifiedTimetableViewModelTests
     }
 
     [Fact]
+    public void Render_StructuredMergeMode_ThreeHourBlock_MergedAsOneSession()
+    {
+        var vm = new UnifiedTimetableViewModel { MergeOnlyStructuredBlocks = true };
+        var courses = new List<Course>
+        {
+            new() { Id = "X-01", Name = "전공", Grade = 2, Section = 1, ProfessorId = "P1", HoursPerWeek = 3, BlockStructure = new List<int> { 3 } },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("X-01", 0, 1, "R1"),
+            new("X-01", 0, 2, "R1"),
+            new("X-01", 0, 3, "R1"),
+        };
+
+        vm.Render(assignment, courses);
+
+        var cell = Assert.Single(vm.Cells);
+        Assert.Equal(1, cell.Period);
+        Assert.Equal(3, cell.Assignment.RowSpan);
+    }
+
+    [Fact]
+    public void Render_StructuredMergeMode_SectionMetadataDoesNotSplitThreeHourBlock()
+    {
+        var vm = new UnifiedTimetableViewModel { MergeOnlyStructuredBlocks = true };
+        var courses = new List<Course>
+        {
+            new() { Id = "X-01", Name = "전공", Grade = 2, Section = 2, ProfessorId = "P1", HoursPerWeek = 3, BlockStructure = new List<int> { 3 } },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("X-01", 0, 1, "R1"),
+            new("X-01", 0, 2, "R1"),
+            new("X-01", 0, 3, "R1"),
+        };
+
+        vm.Render(assignment, courses);
+
+        var cell = Assert.Single(vm.Cells);
+        Assert.Equal(3, cell.Assignment.RowSpan);
+        Assert.Equal("B", cell.Assignment.SectionLabel);
+    }
+
+    [Fact]
     public void Render_StructuredMergeMode_SameCourseWithoutBlockEvidence_NotMerged()
     {
         var vm = new UnifiedTimetableViewModel { MergeOnlyStructuredBlocks = true };

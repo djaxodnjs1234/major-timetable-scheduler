@@ -179,6 +179,81 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void CourseGroup_FormatsBlockStructureWithPlus()
+    {
+        _workspace.AddCourse(MakeCourse("GA1005-01", 1));
+
+        var vm = MakeVm();
+
+        Assert.Equal("2+1", vm.CourseGroups[0].HeaderBlockStructure);
+        Assert.Equal("2+1", vm.CourseGroups[0].ReadOnlyBlockStructure);
+    }
+
+    [Fact]
+    public void GenerateBlockStructureOptions_UsesWeeklyHoursExamples()
+    {
+        Assert.Equal(new[] { "1+1", "2" }, DataInputViewModel.GenerateBlockStructureOptions(2));
+        Assert.Equal(new[] { "1+2", "2+1", "3" }, DataInputViewModel.GenerateBlockStructureOptions(3));
+        Assert.Equal(new[] { "2+2", "3+1", "1+3", "4" }, DataInputViewModel.GenerateBlockStructureOptions(4));
+    }
+
+    [Fact]
+    public void HandleCourseHoursChanged_CoercesInvalidBlocksAndClearsFixedTime()
+    {
+        var course = MakeCourse("GA1005-01", 1);
+        course.HoursPerWeek = 4;
+        course.BlockStructure = new List<int> { 2, 1 };
+        course.IsFixed = true;
+        course.FixedSlots = new List<TimeSlot> { new(0, 1), new(0, 2), new(1, 1) };
+        _workspace.AddCourse(course);
+
+        var vm = MakeVm();
+        var item = vm.CourseGroups[0];
+
+        var changed = vm.HandleCourseHoursChanged(item);
+
+        Assert.True(changed);
+        Assert.Equal(new[] { 2, 2 }, item.Sections[0].BlockStructure);
+        Assert.False(item.Sections[0].IsFixed);
+        Assert.Empty(item.Sections[0].FixedSlots);
+    }
+
+    [Fact]
+    public void HandleCourseBlockStructureChanged_ClearsFixedTime()
+    {
+        var course = MakeCourse("GA1005-01", 1);
+        course.IsFixed = true;
+        course.FixedSlots = new List<TimeSlot> { new(0, 1), new(0, 2), new(1, 1) };
+        _workspace.AddCourse(course);
+
+        var vm = MakeVm();
+        var item = vm.CourseGroups[0];
+        item.Sections[0].BlockStructure = new List<int> { 3 };
+
+        vm.HandleCourseBlockStructureChanged(item);
+
+        Assert.False(item.Sections[0].IsFixed);
+        Assert.Empty(item.Sections[0].FixedSlots);
+    }
+
+    [Fact]
+    public void CourseGroup_UsesBlankSummaryValuesWhenOptionalFieldsAreEmpty()
+    {
+        _workspace.AddCourse(MakeCourse("GA1005-01", 1));
+
+        var vm = MakeVm();
+        var group = vm.CourseGroups[0];
+
+        Assert.Equal(string.Empty, group.HeaderProfessor);
+        Assert.Equal(string.Empty, group.HeaderUnavailableRooms);
+        Assert.Equal(string.Empty, group.HeaderCoteachProfessors);
+        Assert.Equal(string.Empty, group.HeaderFixedTimes);
+        Assert.Equal("없음", group.ReadOnlyUnavailableRooms);
+        Assert.Equal("없음", group.ReadOnlyCoteachProfessors);
+        Assert.Equal("없음", group.ReadOnlyFixedTimes);
+    }
+
+    [Fact]
     public void AddSection_AddsNextSectionAndRebuildsGroups()
     {
         _workspace.AddCourse(MakeCourse("GA1004-01", 1));

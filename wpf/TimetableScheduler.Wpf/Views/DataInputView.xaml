@@ -88,7 +88,7 @@
                                        VerticalAlignment="Center" FontSize="11"
                                        Foreground="{StaticResource OnSurfaceVariant}" />
                         </StackPanel>
-                        <Grid IsEnabled="{Binding IsEditing}">
+                        <Grid>
                             <Grid.ColumnDefinitions>
                                 <ColumnDefinition Width="120" />
                                 <ColumnDefinition Width="*" />
@@ -98,8 +98,8 @@
                             </Grid.RowDefinitions>
 
                             <TextBlock Grid.Row="0" Grid.Column="0" Text="이름" Margin="0,4" />
-                            <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Professor.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                     Margin="0,4" Padding="6,4" />
+                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Professor.Name}"
+                                       Margin="0,4" Padding="6,4" />
                         </Grid>
 
                         <StackPanel IsEnabled="{Binding IsEditing}">
@@ -208,18 +208,14 @@
                                     CommandParameter="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Expander}}"
                                     Padding="12,6" Margin="0,0,8,0"
                                     Background="{StaticResource SurfaceContainer}" />
-                            <TextBlock Text="기본 정보와 운영 정보는 수정 버튼을 누른 뒤 편집할 수 있습니다."
-                                       VerticalAlignment="Center" FontSize="11"
-                                       Foreground="{StaticResource OnSurfaceVariant}" />
                         </StackPanel>
 
                         <Border Background="#FAFAFA"
-                                BorderBrush="{StaticResource OutlineVariant}"
-                                BorderThickness="1"
-                                CornerRadius="4"
-                                Padding="12,10"
-                                Margin="0,2,0,12"
-                                IsEnabled="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}}">
+                                 BorderBrush="{StaticResource OutlineVariant}"
+                                 BorderThickness="1"
+                                 CornerRadius="4"
+                                 Padding="12,10"
+                                 Margin="0,2,0,12">
                             <StackPanel>
                                 <TextBlock Text="기본 정보"
                                            FontSize="11" FontWeight="Bold"
@@ -242,21 +238,55 @@
                                     </StackPanel>
                                     <StackPanel Width="66" Margin="0,0,8,8">
                                         <TextBlock Text="학년" FontSize="11" Margin="0,0,0,3" />
+                                        <Border Height="28" Width="60"
+                                                Background="#F3F4F6"
+                                                BorderBrush="{StaticResource OutlineVariant}"
+                                                BorderThickness="1"
+                                                CornerRadius="3"
+                                                Padding="6,4"
+                                                Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
+                                            <TextBlock Text="{Binding Grade}"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
                                         <ComboBox Height="28" Width="60" Padding="6,3"
-                                                   ItemsSource="{Binding DataContext.GradeOptions, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                   SelectedItem="{Binding Grade, Mode=TwoWay}" />
+                                                    ItemsSource="{Binding DataContext.GradeOptions, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    SelectedItem="{Binding Grade, Mode=TwoWay}"
+                                                    Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
                                     </StackPanel>
                                     <StackPanel Width="82" Margin="0,0,8,8">
                                         <TextBlock Text="주당 수업시간" FontSize="11" Margin="0,0,0,3" />
+                                        <Border Height="28" Width="76"
+                                                Background="#F3F4F6"
+                                                BorderBrush="{StaticResource OutlineVariant}"
+                                                BorderThickness="1"
+                                                CornerRadius="3"
+                                                Padding="6,4"
+                                                Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
+                                            <TextBlock Text="{Binding HoursPerWeek}"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
                                         <ComboBox Height="28" Width="76" Padding="6,3"
-                                                   ItemsSource="{Binding DataContext.HourOptions, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                   SelectedItem="{Binding HoursPerWeek, Mode=TwoWay}" />
+                                                    ItemsSource="{Binding DataContext.HourOptions, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    SelectedItem="{Binding HoursPerWeek, Mode=TwoWay}"
+                                                    SelectionChanged="OnCourseHoursChanged"
+                                                    Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
                                     </StackPanel>
                                     <StackPanel Width="78" Margin="0,0,8,8">
                                         <TextBlock Text="유형" FontSize="11" Margin="0,0,0,3" />
+                                        <Border Height="28" Width="72"
+                                                Background="#F3F4F6"
+                                                BorderBrush="{StaticResource OutlineVariant}"
+                                                BorderThickness="1"
+                                                CornerRadius="3"
+                                                Padding="6,4"
+                                                Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
+                                            <TextBlock Text="{Binding CourseType}"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
                                         <ComboBox Height="28" Width="72" Padding="6,3"
-                                                   ItemsSource="{Binding DataContext.CourseTypeOptions, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                   SelectedItem="{Binding CourseType, Mode=TwoWay}" />
+                                                    ItemsSource="{Binding DataContext.CourseTypeOptions, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                    SelectedItem="{Binding CourseType, Mode=TwoWay}"
+                                                    Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
                                     </StackPanel>
                                     <StackPanel Width="110" Margin="0,0,8,8">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,3">
@@ -264,33 +294,63 @@
                                             <TextBlock Text=" (?)" FontSize="11" Foreground="{StaticResource PrimaryBrush}"
                                                        ToolTip="한 과목의 주당 시간이 나뉘는 방식입니다. 예: 주당 3시간 과목은 보통 2시간+1시간 블록입니다." />
                                         </StackPanel>
-                                        <ComboBox Height="28" Width="104" Padding="6,3"
+                                        <Border Height="28" Width="104"
+                                                Background="#F3F4F6"
+                                                BorderBrush="{StaticResource OutlineVariant}"
+                                                BorderThickness="1"
+                                                CornerRadius="3"
+                                                Padding="6,4"
+                                                Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
+                                            <TextBlock Text="{Binding DataContext.ReadOnlyBlockStructure, RelativeSource={RelativeSource AncestorType=Expander}}"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
+                                        <ComboBox x:Name="BlockStructureComboBox"
+                                                  Height="28" Width="104" Padding="6,3"
                                                   ItemsSource="{Binding DataContext.BlockStructureOptions, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                  SelectedItem="{Binding BlockStructure, Mode=TwoWay, Converter={StaticResource IntListToCsv}}" />
+                                                  SelectedItem="{Binding BlockStructure, Mode=TwoWay, Converter={StaticResource IntListToCsv}}"
+                                                  SelectionChanged="OnCourseBlockStructureChanged"
+                                                  Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
                                     </StackPanel>
                                 </WrapPanel>
                             </StackPanel>
                         </Border>
 
                         <Border Background="#FAFAFA"
-                                BorderBrush="{StaticResource OutlineVariant}"
-                                BorderThickness="1"
-                                CornerRadius="4"
-                                Padding="12,10"
-                                IsEnabled="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}}">
+                                 BorderBrush="{StaticResource OutlineVariant}"
+                                 BorderThickness="1"
+                                 CornerRadius="4"
+                                 Padding="12,10">
                             <StackPanel>
                                 <TextBlock Text="운영 정보"
                                            FontSize="11" FontWeight="Bold"
                                            Foreground="{StaticResource OnSurfaceVariant}"
                                            Margin="0,0,0,8" />
 
-                                <TextBlock Text="교수" FontSize="11" FontWeight="Bold" Margin="0,0,0,4"
-                                           Foreground="{StaticResource OnSurfaceVariant}" />
+                                <WrapPanel Margin="0,0,0,8"
+                                           Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
+                                    <TextBlock Text="교수: " FontSize="11" FontWeight="Bold"
+                                               Foreground="{StaticResource OnSurfaceVariant}" />
+                                    <TextBlock Text="{Binding DataContext.ReadOnlyProfessor, RelativeSource={RelativeSource AncestorType=Expander}}"
+                                               FontSize="11" Margin="0,0,16,0" />
+                                    <TextBlock Text="불가 강의실: " FontSize="11" FontWeight="Bold"
+                                               Foreground="{StaticResource OnSurfaceVariant}" />
+                                    <TextBlock Text="{Binding DataContext.ReadOnlyUnavailableRooms, RelativeSource={RelativeSource AncestorType=Expander}}"
+                                               FontSize="11" Margin="0,0,16,0" />
+                                    <TextBlock Text="팀티칭 교수: " FontSize="11" FontWeight="Bold"
+                                               Foreground="{StaticResource OnSurfaceVariant}" />
+                                    <TextBlock Text="{Binding DataContext.ReadOnlyCoteachProfessors, RelativeSource={RelativeSource AncestorType=Expander}}"
+                                               FontSize="11" Margin="0,0,16,0" />
+                                    <TextBlock Text="시간 고정: " FontSize="11" FontWeight="Bold"
+                                               Foreground="{StaticResource OnSurfaceVariant}" />
+                                    <TextBlock Text="{Binding DataContext.ReadOnlyFixedTimes, RelativeSource={RelativeSource AncestorType=Expander}}"
+                                               FontSize="11" />
+                                </WrapPanel>
                                 <ComboBox Height="30" MaxWidth="180" HorizontalAlignment="Left" Padding="6,3"
                                           ItemsSource="{Binding DataContext.Workspace.Professors, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                           DisplayMemberPath="Name"
                                           SelectedValuePath="Id"
-                                          SelectedValue="{Binding ProfessorId, Mode=TwoWay}" />
+                                          SelectedValue="{Binding ProfessorId, Mode=TwoWay}"
+                                          Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
 
                                 <StackPanel Orientation="Horizontal" Margin="0,12,0,4">
                                     <TextBlock Text="불가 강의실"
@@ -299,20 +359,24 @@
                                     <TextBlock Text=" (?)" FontSize="11" Foreground="{StaticResource PrimaryBrush}"
                                                ToolTip="교수의 강의실 선호보다 교과목의 불가 강의실 회피가 먼저 적용됩니다." />
                                 </StackPanel>
-                                <ctrl:CheckListPickerControl x:Name="GroupUnavailableRoomsPicker" />
+                                <ctrl:CheckListPickerControl x:Name="GroupUnavailableRoomsPicker"
+                                                             Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
 
                                 <TextBlock Text="팀티칭 교수"
                                            FontSize="11" FontWeight="Bold" Margin="0,12,0,4"
                                            Foreground="{StaticResource OnSurfaceVariant}" />
-                                <ctrl:CheckListPickerControl x:Name="GroupCoteachProfsPicker" />
+                                <ctrl:CheckListPickerControl x:Name="GroupCoteachProfsPicker"
+                                                             Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
 
                                 <CheckBox Content="시간 고정"
                                           IsChecked="{Binding IsFixed, Mode=TwoWay}"
                                           Margin="0,16,0,4" FontWeight="Bold"
                                           Checked="OnIsFixedCheckChanged"
-                                          Unchecked="OnIsFixedCheckChanged" />
+                                          Unchecked="OnIsFixedCheckChanged"
+                                          Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
 
-                                <ctrl:FixedSlotEditorControl x:Name="FixedSlotEditor" />
+                                <ctrl:FixedSlotEditorControl x:Name="FixedSlotEditor"
+                                                             Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
                             </StackPanel>
                         </Border>
 
@@ -361,17 +425,11 @@
                 </Expander.Header>
                 <Border Background="White" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1">
                     <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                        <Button Content="수정"
-                                Command="{Binding DataContext.EditRoomCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                CommandParameter="{Binding}"
-                                Padding="12,6" Margin="0,0,8,0"
-                                Background="{StaticResource SurfaceContainer}" />
-                        <TextBlock Text="세부정보는 수정 버튼을 누른 뒤 편집할 수 있습니다."
-                                   VerticalAlignment="Center" FontSize="11"
-                                   Foreground="{StaticResource OnSurfaceVariant}" />
-                    </StackPanel>
-                    <Grid IsEnabled="{Binding IsEditing}">
+                    <TextBlock Text="세부정보는 수정 버튼을 누른 뒤 편집할 수 있습니다."
+                               Margin="0,0,0,10"
+                               FontSize="11"
+                               Foreground="{StaticResource OnSurfaceVariant}" />
+                    <Grid>
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="120" />
                             <ColumnDefinition Width="*" />
@@ -383,22 +441,48 @@
                             <RowDefinition Height="Auto" />
                         </Grid.RowDefinitions>
                         <TextBlock Grid.Row="0" Grid.Column="0" Text="이름" Margin="0,4" />
-                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Room.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 Margin="0,4" Padding="6,4" />
+                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Room.Name}"
+                                   Margin="0,4" Padding="6,4" />
                         <TextBlock Grid.Row="1" Grid.Column="0" Text="실습실 여부" Margin="0,4" />
-                        <CheckBox Grid.Row="1" Grid.Column="1" IsChecked="{Binding Room.IsLab, Mode=TwoWay}" Margin="0,4" />
+                        <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,4" Padding="6,4"
+                                   Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
+                            <TextBlock.Style>
+                                <Style TargetType="TextBlock">
+                                    <Setter Property="Text" Value="일반" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding Room.IsLab}" Value="True">
+                                            <Setter Property="Text" Value="실습실" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </TextBlock.Style>
+                        </TextBlock>
+                        <CheckBox Grid.Row="1" Grid.Column="1" IsChecked="{Binding Room.IsLab, Mode=TwoWay}" Margin="0,4"
+                                  Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}" />
                         <TextBlock Grid.Row="2" Grid.Column="0" Text="허용 인원 수" Margin="0,4" />
+                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Room.Capacity}"
+                                   Margin="0,4" Padding="6,4"
+                                   Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}" />
                         <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Room.Capacity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 Width="120" HorizontalAlignment="Left" Margin="0,4" Padding="6,4" />
+                                 Width="120" HorizontalAlignment="Left" Margin="0,4" Padding="6,4"
+                                 Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}" />
 
                     </Grid>
-                    <StackPanel Orientation="Horizontal" Margin="120,12,0,0">
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                        <Button Content="수정"
+                                Command="{Binding DataContext.EditRoomCommand,
+                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                CommandParameter="{Binding}"
+                                Padding="12,6" Margin="0,0,8,0"
+                                Background="{StaticResource SurfaceContainer}"
+                                Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}" />
                         <Button Content="저장"
                                 Command="{Binding DataContext.SaveRoomCommand,
                                           RelativeSource={RelativeSource AncestorType=UserControl}}"
                                 CommandParameter="{Binding}"
                                 Padding="12,6" Margin="0,0,8,0"
-                                Background="{StaticResource PrimaryBrush}" Foreground="White" />
+                                Background="{StaticResource PrimaryBrush}" Foreground="White"
+                                Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}" />
                         <Button Content="삭제"
                                 Command="{Binding DataContext.DeleteRoomItemCommand,
                                           RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -577,8 +661,9 @@
                                           ItemTemplate="{StaticResource ProfessorRowTemplate}" />
                         </StackPanel>
                         <StackPanel Visibility="{Binding IsCourseSelected, Converter={StaticResource BoolToVisibility}}" Margin="8"
+                                    Background="#F3F4F6"
                                     Grid.IsSharedSizeScope="True">
-                            <Grid Background="#EEF0F4" Height="30" Margin="0,0,0,4">
+                            <Grid Background="{StaticResource PrimaryBrush}" Height="30" Margin="0,0,0,4">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="22" />
                                     <ColumnDefinition Width="72" SharedSizeGroup="CourseCode" />
@@ -592,16 +677,16 @@
                                     <ColumnDefinition Width="112" SharedSizeGroup="CourseCoteach" />
                                     <ColumnDefinition Width="104" SharedSizeGroup="CourseFixedTimes" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="1" Text="교과목" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="2" Text="이름" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="3" Text="분반" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="4" Text="교수" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="5" Text="학년" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="6" Text="시수" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="7" Text="블록" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="8" Text="불가 강의실" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="9" Text="팀티칭 교수" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="10" Text="시간 고정" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="1" Text="교과목" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="2" Text="이름" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="3" Text="분반" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="4" Text="교수" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="5" Text="학년" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="6" Text="시수" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="7" Text="블록" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="8" Text="불가 강의실" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="9" Text="팀티칭 교수" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="10" Text="시간 고정" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                             </Grid>
                             <ItemsControl ItemsSource="{Binding CourseGroups}"
                                           ItemTemplate="{StaticResource CourseGroupRowTemplate}" />

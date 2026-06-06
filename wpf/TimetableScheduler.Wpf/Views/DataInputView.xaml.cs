@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using Microsoft.Win32;
 using TimetableScheduler.Domain;
 using TimetableScheduler.ViewModel.Editors;
@@ -100,6 +101,35 @@ public partial class DataInputView : UserControl
         {
             editor.DataContext = FixedSlotEditorViewModel.Build(item, course.IsFixed);
         }
+        RefreshCourseBlockStructureCombo(expander, item);
+    }
+
+    private void OnCourseHoursChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not DependencyObject dep || Vm == null) return;
+        var item = FindCourseGroupItem(dep);
+        if (item == null) return;
+        var expander = FindAncestor<Expander>(dep);
+        if (expander == null) return;
+
+        Vm.HandleCourseHoursChanged(item);
+        RefreshCourseBlockStructureCombo(expander, item);
+        RebuildFixedSlotEditor(expander, item);
+    }
+
+    private void OnCourseBlockStructureChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not DependencyObject dep || Vm == null) return;
+        if (e.RemovedItems.Count == 0) return;
+
+        var item = FindCourseGroupItem(dep);
+        if (item == null) return;
+        var expander = FindAncestor<Expander>(dep);
+        if (expander == null) return;
+
+        Vm.HandleCourseBlockStructureChanged(item);
+        RefreshCourseBlockStructureCombo(expander, item);
+        RebuildFixedSlotEditor(expander, item);
     }
 
     private void OnIsFixedCheckChanged(object sender, RoutedEventArgs e)
@@ -111,6 +141,22 @@ public partial class DataInputView : UserControl
         if (expander == null) return;
         var editor = FindDescendant<FixedSlotEditorControl>(expander);
         if (editor != null)
+            editor.DataContext = FixedSlotEditorViewModel.Build(item, item.Sections[0].IsFixed);
+    }
+
+    private static void RefreshCourseBlockStructureCombo(Expander expander, CourseGroupItem item)
+    {
+        if (expander.FindName("BlockStructureComboBox") is not ComboBox combo) return;
+
+        combo.ItemsSource = DataInputViewModel.GenerateBlockStructureOptions(item.Sections[0].HoursPerWeek);
+        combo.SetCurrentValue(ComboBox.SelectedItemProperty,
+            DataInputViewModel.FormatBlockStructure(item.Sections[0].BlockStructure));
+        BindingOperations.GetBindingExpression(combo, ComboBox.SelectedItemProperty)?.UpdateTarget();
+    }
+
+    private static void RebuildFixedSlotEditor(Expander expander, CourseGroupItem item)
+    {
+        if (expander.FindName("FixedSlotEditor") is FixedSlotEditorControl editor)
             editor.DataContext = FixedSlotEditorViewModel.Build(item, item.Sections[0].IsFixed);
     }
 
