@@ -647,59 +647,31 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         {
             var sections = g.OrderBy(c => c.Section).ToList();
 
-            if (sections.Any(c => c.IsFixed))
+            var rep = sections[0];
+            var fixedAny = sections.Any(c => c.IsFixed);
+            var secPart = sections.Count > 1
+                ? $"  ({string.Join("·", sections.Select(s => SectionLetter(s.Section)))}분반)"
+                : "";
+            var fixedPart = fixedAny ? "  ★" : "";
+            var label = $"{g.Key}  {rep.Name}  {rep.Grade}학년  {rep.HoursPerWeek}h{secPart}{fixedPart}";
+            CourseGroups.Add(new CourseGroupItem
             {
-                // Fixed: one row per section
-                foreach (var sec in sections)
-                {
-                    var label = $"{sec.Id}  {sec.Name}  {sec.Grade}학년  ★";
-                    CourseGroups.Add(new CourseGroupItem
-                    {
-                        BaseId = g.Key,
-                        DisplayLabel = label,
-                        HeaderCode = sec.Id,
-                        HeaderName = sec.Name,
-                        HeaderGrade = $"{sec.Grade}학년",
-                        HeaderHours = $"{sec.HoursPerWeek}시간",
-                        HeaderSectionInfo = "1개",
-                        HeaderProfessor = CourseDisplayName(sec.ProfessorId, profNames),
-                        HeaderBlockStructure = FormatBlocks(sec),
-                        HeaderUnavailableRooms = FormatCourseNames(sec.UnavailableRooms, roomNames),
-                        HeaderCoteachProfessors = FormatCourseNames(sec.CoteachProfs, profNames),
-                        HeaderFixedTimes = FormatFixedTimes(new[] { sec }),
-                        HeaderCrossGroups = FormatCrossGroups(g.Key),
-                        IsImportedFromExcel = !string.IsNullOrWhiteSpace(sec.Department),
-                        Sections = new List<Course> { sec },
-                    });
-                }
-            }
-            else
-            {
-                // Non-fixed: one row for the whole group
-                var rep = sections[0];
-                var secPart = sections.Count > 1
-                    ? $"  ({string.Join("·", sections.Select(s => SectionLetter(s.Section)))}분반)"
-                    : "";
-                var label = $"{g.Key}  {rep.Name}  {rep.Grade}학년  {rep.HoursPerWeek}h{secPart}";
-                CourseGroups.Add(new CourseGroupItem
-                {
-                    BaseId = g.Key,
-                    DisplayLabel = label,
-                    HeaderCode = g.Key,
-                    HeaderName = rep.Name,
-                    HeaderGrade = $"{rep.Grade}학년",
-                    HeaderHours = $"{rep.HoursPerWeek}시간",
-                    HeaderSectionInfo = $"{sections.Count}개",
-                    HeaderProfessor = CourseDisplayName(rep.ProfessorId, profNames),
-                    HeaderBlockStructure = FormatBlocks(rep),
-                    HeaderUnavailableRooms = FormatCourseNames(rep.UnavailableRooms, roomNames),
-                    HeaderCoteachProfessors = FormatCourseNames(rep.CoteachProfs, profNames),
-                    HeaderFixedTimes = "",
-                    HeaderCrossGroups = FormatCrossGroups(g.Key),
-                    IsImportedFromExcel = sections.Any(s => !string.IsNullOrWhiteSpace(s.Department)),
-                    Sections = sections,
-                });
-            }
+                BaseId = g.Key,
+                DisplayLabel = label,
+                HeaderCode = g.Key,
+                HeaderName = rep.Name,
+                HeaderGrade = $"{rep.Grade}학년",
+                HeaderHours = $"{rep.HoursPerWeek}시간",
+                HeaderSectionInfo = $"{sections.Count}개",
+                HeaderProfessor = CourseDisplayName(rep.ProfessorId, profNames),
+                HeaderBlockStructure = FormatBlocks(rep),
+                HeaderUnavailableRooms = FormatCourseNames(rep.UnavailableRooms, roomNames),
+                HeaderCoteachProfessors = FormatCourseNames(rep.CoteachProfs, profNames),
+                HeaderFixedTimes = FormatFixedTimes(sections),
+                HeaderCrossGroups = FormatCrossGroups(g.Key),
+                IsImportedFromExcel = sections.Any(s => !string.IsNullOrWhiteSpace(s.Department)),
+                Sections = sections,
+            });
         }
     }
 
@@ -824,6 +796,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
         int? selectedSectionCount = null;
         int? selectedHours = null;
+        int? selectedGrade = null;
 
         if (_selectedCrossCandidateIds.Count > 0)
         {
@@ -832,6 +805,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             {
                 selectedSectionCount = selectedCourses.Count;
                 selectedHours = selectedCourses[0].HoursPerWeek;
+                selectedGrade = selectedCourses[0].Grade;
             }
         }
 
@@ -844,11 +818,11 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             {
                 vm.IsEnabled = false;
             }
-            else if (selectedSectionCount.HasValue && selectedHours.HasValue && !isSelected)
+            else if (selectedSectionCount.HasValue && selectedHours.HasValue && selectedGrade.HasValue && !isSelected)
             {
                 if (groups.TryGetValue(vm.Id, out var courses) && courses.Count > 0)
                 {
-                    vm.IsEnabled = (courses.Count == selectedSectionCount.Value && courses[0].HoursPerWeek == selectedHours.Value);
+                    vm.IsEnabled = (courses.Count == selectedSectionCount.Value && courses[0].HoursPerWeek == selectedHours.Value && courses[0].Grade == selectedGrade.Value);
                 }
                 else
                 {
@@ -1146,7 +1120,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                         .SelectMany(period => Enumerable.Range(0, 5).Select(day => new TimeSlot(day, period)))
                         .Count(slot => professor.UnavailableSlots.All(p => p.Day != slot.Day || p.Period != slot.Period));
                     if (availableSlots < Math.Max(course.HoursPerWeek, course.BlockStructure.Sum()))
-                        reasons.Add($"insufficient available time slots: {course.Name} / {professor.Name}");
+                        reasons.Add($"insufficient available time slots: {course.Name} 과목에 대해 {professor.Name} 교수의 가용 시간이 부족합니다");
                 }
             }
         }
@@ -1182,15 +1156,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 reasons.Add($"cross constraint conflict: {cross.Id} 총 시수가 다릅니다");
         }
 
-        reasons = reasons
-            .Where(reason => !string.IsNullOrWhiteSpace(reason))
-            .Distinct()
-            .Take(3)
-            .ToList();
-
         return reasons.Count == 0
             ? "INFEASIBLE: detailed reason unavailable"
-            : $"INFEASIBLE: {string.Join(" / ", reasons)}";
+            : $"INFEASIBLE: {string.Join(" / ", reasons.Distinct())}";
     }
 
     private string UnknownMessage() =>

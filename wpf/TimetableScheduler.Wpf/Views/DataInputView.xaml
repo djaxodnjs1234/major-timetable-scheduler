@@ -83,91 +83,14 @@
                                     Command="{Binding DataContext.EditProfessorCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                     CommandParameter="{Binding}"
                                     Padding="12,6" Margin="0,0,8,0"
-                                    Background="{StaticResource SurfaceContainer}" />
-                            <TextBlock Text="세부정보는 수정 버튼을 누른 뒤 편집할 수 있습니다."
-                                       VerticalAlignment="Center" FontSize="11"
-                                       Foreground="{StaticResource OnSurfaceVariant}" />
-                        </StackPanel>
-
-                        <Border Background="#FAFAFA"
-                                 BorderBrush="{StaticResource OutlineVariant}"
-                                 BorderThickness="1"
-                                 CornerRadius="4"
-                                 Padding="12,10"
-                                 Margin="0,2,0,12">
-                            <StackPanel>
-                                <TextBlock Text="기본 정보"
-                                           FontSize="11" FontWeight="Bold"
-                                           Foreground="{StaticResource OnSurfaceVariant}"
-                                           Margin="0,0,0,8" />
-                                <WrapPanel>
-                                    <StackPanel Width="170" Margin="0,0,8,8">
-                                        <TextBlock Text="이름 (읽기 전용)" FontSize="11" Margin="0,0,0,3" />
-                                        <Border Height="28" Width="170"
-                                                Background="#F3F4F6"
-                                                BorderBrush="{StaticResource OutlineVariant}"
-                                                BorderThickness="1"
-                                                CornerRadius="3"
-                                                Padding="6,4">
-                                            <TextBlock Text="{Binding Professor.Name}"
-                                                       TextTrimming="CharacterEllipsis"
-                                                       ToolTip="{Binding Professor.Name}"
-                                                       VerticalAlignment="Center" />
-                                        </Border>
-                                    </StackPanel>
-                                </WrapPanel>
-                            </StackPanel>
-                        </Border>
-
-                        <Border Background="#FAFAFA"
-                                 BorderBrush="{StaticResource OutlineVariant}"
-                                 BorderThickness="1"
-                                 CornerRadius="4"
-                                 Padding="12,10">
-                            <StackPanel>
-                                <TextBlock Text="운영 정보"
-                                           FontSize="11" FontWeight="Bold"
-                                           Foreground="{StaticResource OnSurfaceVariant}"
-                                           Margin="0,0,0,8" />
-
-                                <WrapPanel Margin="0,0,0,8"
-                                           Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
-                                    <TextBlock Text="불가 강의실: " FontSize="11" FontWeight="Bold"
-                                               Foreground="{StaticResource OnSurfaceVariant}" />
-                                    <TextBlock Text="{Binding HeaderUnavailableRooms}"
-                                               FontSize="11" Margin="0,0,16,0" />
-                                    <TextBlock Text="불가 시간: " FontSize="11" FontWeight="Bold"
-                                               Foreground="{StaticResource OnSurfaceVariant}" />
-                                    <TextBlock Text="{Binding HeaderUnavailableSlots}"
-                                               FontSize="11" />
-                                </WrapPanel>
-
-                                <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}">
-                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,4">
-                                        <TextBlock Text="불가 강의실"
-                                                   FontSize="11" FontWeight="Bold"
-                                                   Foreground="{StaticResource OnSurfaceVariant}" />
-                                        <Button Content="전체 선택" Click="OnProfessorAllRoomsClick"
-                                                Padding="8,2" Margin="12,0,0,0"
-                                                Background="{StaticResource SurfaceContainer}" />
-                                    </StackPanel>
-                                    <ctrl:CheckListPickerControl x:Name="UnavailableRoomsPicker" />
-
-                                    <TextBlock Text="불가 시간 (외래/겸임 출강)"
-                                               FontSize="11" FontWeight="Bold" Margin="0,12,0,4"
-                                               Foreground="{StaticResource OnSurfaceVariant}" />
-                                    <ctrl:TimeSlotPickerControl x:Name="UnavailableSlotsPicker"
-                                                                 Width="400" HorizontalAlignment="Left" />
-                                </StackPanel>
-                            </StackPanel>
-                        </Border>
-
-                        <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
+                                    Background="{StaticResource SurfaceContainer}"
+                                    Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}" />
                             <Button Content="저장"
                                     Click="OnProfessorSaveClick"
                                     CommandParameter="{Binding}"
                                     Padding="12,6" Margin="0,0,8,0"
-                                    Background="{StaticResource PrimaryBrush}" Foreground="White" />
+                                    Background="{StaticResource PrimaryBrush}" Foreground="White"
+                                    Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}" />
                             <Button Content="삭제"
                                     Command="{Binding DataContext.DeleteProfessorItemCommand,
                                               RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -248,16 +171,11 @@
                                     Command="{Binding DataContext.EditCourseCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                     CommandParameter="{Binding DataContext, RelativeSource={RelativeSource AncestorType=Expander}}"
                                     Padding="12,6" Margin="0,0,8,0"
-                                    Background="{StaticResource SurfaceContainer}" />
+                                    Background="{StaticResource SurfaceContainer}"
+                                    Visibility="{Binding IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}" />
                         </StackPanel>
 
-                        <Border Background="#FAFAFA"
-                                 BorderBrush="{StaticResource OutlineVariant}"
-                                 BorderThickness="1"
-                                 CornerRadius="4"
-                                 Padding="12,10"
-                                 Margin="0,2,0,12">
-                            <StackPanel>
+                        <StackPanel>
                                 <TextBlock Text="기본 정보"
                                            FontSize="11" FontWeight="Bold"
                                            Foreground="{StaticResource OnSurfaceVariant}"
@@ -354,13 +272,7 @@
                                     </StackPanel>
                                 </WrapPanel>
                             </StackPanel>
-                        </Border>
 
-                        <Border Background="#FAFAFA"
-                                 BorderBrush="{StaticResource OutlineVariant}"
-                                 BorderThickness="1"
-                                 CornerRadius="4"
-                                 Padding="12,10">
                             <StackPanel>
                                 <TextBlock Text="운영 정보"
                                            FontSize="11" FontWeight="Bold"
@@ -419,13 +331,13 @@
                                 <ctrl:FixedSlotEditorControl x:Name="FixedSlotEditor"
                                                              Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
                             </StackPanel>
-                        </Border>
 
                         <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                             <Button Content="저장"
                                     Click="OnCourseGroupSaveClick"
                                     Padding="12,6" Margin="0,0,8,0"
-                                    Background="{StaticResource PrimaryBrush}" Foreground="White" />
+                                    Background="{StaticResource PrimaryBrush}" Foreground="White"
+                                    Visibility="{Binding IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
                             <Button Content="삭제"
                                     Click="OnCourseGroupDeleteClick"
                                     Padding="12,6"
@@ -466,25 +378,16 @@
                 </Expander.Header>
                 <Border Background="White" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1">
                     <StackPanel>
-                    <TextBlock Text="세부정보는 수정 버튼을 누른 뒤 편집할 수 있습니다."
-                               Margin="0,0,0,8"
-                               FontSize="11"
-                               Foreground="{StaticResource OnSurfaceVariant}" />
                     <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <Button Content="수정"
                                 Command="{Binding DataContext.EditRoomCommand,
                                           RelativeSource={RelativeSource AncestorType=UserControl}}"
                                 CommandParameter="{Binding}"
                                 Padding="12,6" Margin="0,0,8,0"
-                                Background="{StaticResource SurfaceContainer}" />
+                                Background="{StaticResource SurfaceContainer}"
+                                Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}" />
                     </StackPanel>
 
-                    <Border Background="#FAFAFA"
-                             BorderBrush="{StaticResource OutlineVariant}"
-                             BorderThickness="1"
-                             CornerRadius="4"
-                             Padding="12,10"
-                             Margin="0,2,0,12">
                         <StackPanel>
                             <TextBlock Text="기본 정보"
                                        FontSize="11" FontWeight="Bold"
@@ -536,7 +439,6 @@
                                 </StackPanel>
                             </WrapPanel>
                         </StackPanel>
-                    </Border>
 
                     <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                         <Button Content="저장"
@@ -813,65 +715,6 @@
                             </Border>
 
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
-                                <TextBlock Text="선호 조건" FontSize="14" FontWeight="Bold" />
-                                <TextBlock Text=" (?)" FontSize="12" Foreground="{StaticResource PrimaryBrush}"
-                                           ToolTip="시간표가 반드시 지켜야 하는 규칙은 아니지만, 가능하면 더 좋은 시간표가 되도록 솔버가 줄이려는 조건입니다." />
-                            </StackPanel>
-                            <Border Background="#FAFAFA" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1" Margin="0,0,0,16">
-                                <StackPanel>
-                                    <CheckBox IsChecked="{Binding UseSc01}" Margin="0,4">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="월요일 오전 / 금요일 오후 피하기" />
-                                            <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
-                                                       ToolTip="월요일 이른 시간과 금요일 늦은 시간 수업을 줄여 학생·교수 부담을 낮춥니다." />
-                                        </StackPanel>
-                                    </CheckBox>
-                                    <CheckBox IsChecked="{Binding UseSc02}" Margin="0,4">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="교수별 강의 요일 3일 이내 선호" />
-                                            <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
-                                                       ToolTip="한 교수의 수업이 너무 많은 요일에 흩어지지 않도록 합니다." />
-                                        </StackPanel>
-                                    </CheckBox>
-                                    <CheckBox IsChecked="{Binding UseSc03}" Margin="0,4">
-                                        <StackPanel Orientation="Horizontal">
-                                            <TextBlock Text="같은 과목 수업 간격 확보" />
-                                            <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
-                                                       ToolTip="같은 과목의 여러 수업 블록이 너무 붙지 않게 배치합니다." />
-                                        </StackPanel>
-                                    </CheckBox>
-                                </StackPanel>
-                            </Border>
-
-                            <TextBlock Text="생성 설정" FontSize="14" FontWeight="Bold" Margin="0,0,0,12" />
-                            <Border Background="#FAFAFA" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1" Margin="0,0,0,16">
-                                <Grid>
-                                    <Grid.ColumnDefinitions>
-                                        <ColumnDefinition Width="210" />
-                                        <ColumnDefinition Width="*" />
-                                    </Grid.ColumnDefinitions>
-                                    <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                    </Grid.RowDefinitions>
-                                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,4" VerticalAlignment="Center">
-                                        <TextBlock Text="해 후보 수" />
-                                        <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
-                                                   ToolTip="자동 생성 후 비교해 볼 시간표 후보 개수입니다. 숫자가 클수록 더 많이 찾지만 시간이 더 걸릴 수 있습니다." />
-                                    </StackPanel>
-                                    <TextBox Grid.Row="0" Grid.Column="1" Padding="6,4" Margin="0,4" Width="120" HorizontalAlignment="Left"
-                                             Text="{Binding TotalSolutions, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="0,4" VerticalAlignment="Center">
-                                        <TextBlock Text="제한 시간 (초)" />
-                                        <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
-                                                   ToolTip="시간표를 찾기 위해 솔버가 사용할 최대 시간입니다. 시간이 길수록 해를 찾을 가능성이 높아질 수 있습니다." />
-                                    </StackPanel>
-                                    <TextBox Grid.Row="1" Grid.Column="1" Padding="6,4" Margin="0,4" Width="120" HorizontalAlignment="Left"
-                                             Text="{Binding TimeLimitSec, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                </Grid>
-                            </Border>
-
-                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                                 <TextBlock Text="Cross 수동 설정" FontSize="14" FontWeight="Bold" />
                                 <TextBlock Text=" (?)" FontSize="12" Foreground="{StaticResource PrimaryBrush}"
                                            ToolTip="Cross는 두 과목의 분반 시간을 서로 엇갈리게 묶어 시간표 공간을 아끼는 설정입니다. 공간이 줄어들면 다른 수업을 배치할 여지가 커져 해를 더 잘 찾을 수 있습니다. 단, 분반 수와 시수가 같은 과목 2개만 묶고, 너무 많이 설정하면 오히려 선택지가 줄어들 수 있습니다." />
@@ -930,6 +773,69 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
+
+                            <Expander Header="고급" Margin="0,0,0,16" FontSize="14" FontWeight="Bold">
+                                <StackPanel Margin="0,12,0,0">
+                            <TextBlock Text="생성 설정" FontSize="14" FontWeight="Bold" Margin="0,0,0,12" />
+                            <Border Background="#FAFAFA" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1" Margin="0,0,0,16">
+                                <Grid>
+                                    <Grid.ColumnDefinitions>
+                                        <ColumnDefinition Width="210" />
+                                        <ColumnDefinition Width="*" />
+                                    </Grid.ColumnDefinitions>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+                                    <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,4" VerticalAlignment="Center">
+                                        <TextBlock Text="해 후보 수" />
+                                        <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
+                                                   ToolTip="자동 생성 후 비교해 볼 시간표 후보 개수입니다. 숫자가 클수록 더 많이 찾지만 시간이 더 걸릴 수 있습니다." />
+                                    </StackPanel>
+                                    <TextBox Grid.Row="0" Grid.Column="1" Padding="6,4" Margin="0,4" Width="120" HorizontalAlignment="Left"
+                                             Text="{Binding TotalSolutions, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                    <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="0,4" VerticalAlignment="Center">
+                                        <TextBlock Text="제한 시간 (초)" />
+                                        <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
+                                                   ToolTip="시간표를 찾기 위해 솔버가 사용할 최대 시간입니다. 시간이 길수록 해를 찾을 가능성이 높아질 수 있습니다." />
+                                    </StackPanel>
+                                    <TextBox Grid.Row="1" Grid.Column="1" Padding="6,4" Margin="0,4" Width="120" HorizontalAlignment="Left"
+                                             Text="{Binding TimeLimitSec, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                </Grid>
+                            </Border>
+
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                <TextBlock Text="선호 조건" FontSize="14" FontWeight="Bold" />
+                                <TextBlock Text=" (?)" FontSize="12" Foreground="{StaticResource PrimaryBrush}"
+                                           ToolTip="시간표가 반드시 지켜야 하는 규칙은 아니지만, 가능하면 더 좋은 시간표가 되도록 솔버가 줄이려는 조건입니다." />
+                            </StackPanel>
+                            <Border Background="#FAFAFA" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1" Margin="0,0,0,16">
+                                <StackPanel>
+                                    <CheckBox IsChecked="{Binding UseSc01}" Margin="0,4">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="월요일 오전 / 금요일 오후 피하기" />
+                                            <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
+                                                       ToolTip="월요일 이른 시간과 금요일 늦은 시간 수업을 줄여 학생·교수 부담을 낮춥니다." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding UseSc02}" Margin="0,4">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="교수별 강의 요일 3일 이내 선호" />
+                                            <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
+                                                       ToolTip="한 교수의 수업이 너무 많은 요일에 흩어지지 않도록 합니다." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                    <CheckBox IsChecked="{Binding UseSc03}" Margin="0,4">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="같은 과목 수업 간격 확보" />
+                                            <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
+                                                       ToolTip="같은 과목의 여러 수업 블록이 너무 붙지 않게 배치합니다." />
+                                        </StackPanel>
+                                    </CheckBox>
+                                </StackPanel>
+                            </Border>
+                                </StackPanel>
+                            </Expander>
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>
