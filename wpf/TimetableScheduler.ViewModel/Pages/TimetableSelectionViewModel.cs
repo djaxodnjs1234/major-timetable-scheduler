@@ -93,10 +93,13 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         foreach (var p in _workspace.Professors)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignments, courses, (c, _) => c.ProfessorId == p.Id);
+            vm.Render(assignments, courses, (c, _) => IsCourseTaughtBy(c, p.Id));
             ProfessorViews.Add(new NamedGridViewModel(p.Id, p.Name, vm));
         }
     }
+
+    private static bool IsCourseTaughtBy(Domain.Course course, string professorId) =>
+        course.ProfessorId == professorId || course.CoteachProfs.Contains(professorId);
 
     [RelayCommand]
     private void DeleteTimetable(SavedTimetableRecord record)

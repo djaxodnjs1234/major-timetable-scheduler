@@ -121,7 +121,12 @@
             <TabControl Margin="8"
                         Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}">
                 <TabItem Header="통합 시간표">
-                    <ctrl:UnifiedTimetableControl DataContext="{Binding Preview}" />
+                    <DockPanel>
+                        <ctrl:GradeLegendControl DockPanel.Dock="Top"
+                                                 HorizontalAlignment="Right"
+                                                 Margin="0,6,12,4" />
+                        <ctrl:UnifiedTimetableControl DataContext="{Binding Preview}" />
+                    </DockPanel>
                 </TabItem>
                 <TabItem Header="학년별">
                     <TabControl ItemsSource="{Binding GradeViews}">
@@ -132,7 +137,12 @@
                         </TabControl.ItemTemplate>
                         <TabControl.ContentTemplate>
                             <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
-                                <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                <DockPanel>
+                                    <ctrl:GradeLegendControl DockPanel.Dock="Top"
+                                                             HorizontalAlignment="Right"
+                                                             Margin="0,6,12,4" />
+                                    <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                </DockPanel>
                             </DataTemplate>
                         </TabControl.ContentTemplate>
                     </TabControl>
@@ -146,7 +156,12 @@
                         </TabControl.ItemTemplate>
                         <TabControl.ContentTemplate>
                             <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
-                                <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                <DockPanel>
+                                    <ctrl:GradeLegendControl DockPanel.Dock="Top"
+                                                             HorizontalAlignment="Right"
+                                                             Margin="0,6,12,4" />
+                                    <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                </DockPanel>
                             </DataTemplate>
                         </TabControl.ContentTemplate>
                     </TabControl>
@@ -160,7 +175,12 @@
                         </TabControl.ItemTemplate>
                         <TabControl.ContentTemplate>
                             <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
-                                <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                <DockPanel>
+                                    <ctrl:GradeLegendControl DockPanel.Dock="Top"
+                                                             HorizontalAlignment="Right"
+                                                             Margin="0,6,12,4" />
+                                    <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                </DockPanel>
                             </DataTemplate>
                         </TabControl.ContentTemplate>
                     </TabControl>

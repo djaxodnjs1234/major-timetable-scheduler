@@ -211,6 +211,109 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
+    public void ClickMoveSuccess_ClearsAllSelectionAndMoveStates()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        var source = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+        vm.HandleCellClick(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+
+        vm.HandleCellClick(2, 1, 2, 0, null);
+
+        Assert.Null(vm.SelectedAssignment);
+        Assert.Null(vm.SelectedDay);
+        Assert.Null(vm.SelectedPeriod);
+        Assert.Null(vm.Grid.SelectedCell);
+        Assert.Empty(vm.Grid.EditStates);
+        Assert.False(vm.EvaluateCrossHover(2, 1, 2, 0, null).CanCreate);
+        Assert.False(vm.EvaluateSwapHover(2, 1, 2, 0, null).CanSwap);
+    }
+
+    [Fact]
+    public void ClickMoveSuccess_RebuildsGridAtNewPosition_AndOldPositionIsEmpty()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        var source = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+        vm.HandleCellClick(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+
+        vm.HandleCellClick(2, 1, 2, 0, null);
+
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 2 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        Assert.DoesNotContain(vm.Grid.Cells, c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        Assert.DoesNotContain(vm.Grid.EditStates.Keys, k => k.Day == 0 && k.Period == 1);
+    }
+
+    [Fact]
+    public void ClickMoveSuccess_DoesNotLeaveStaleSelectedCell()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        var source = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+        vm.HandleCellClick(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+        var selectedBeforeMove = vm.Grid.SelectedCell;
+
+        vm.HandleCellClick(2, 1, 2, 0, null);
+
+        Assert.NotNull(selectedBeforeMove);
+        Assert.Null(vm.Grid.SelectedCell);
+        Assert.Empty(vm.Grid.EditStates);
+        Assert.Null(vm.SelectedAssignment);
+    }
+
+    [Fact]
+    public void ClickMoveSuccess_DoesNotRecreateMoveStatesAfterClear()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        var source = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+        vm.HandleCellClick(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+        Assert.NotEmpty(vm.Grid.EditStates);
+
+        vm.HandleCellClick(2, 1, 2, 0, null);
+
+        Assert.Empty(vm.Grid.EditStates);
+        Assert.Null(vm.Grid.SelectedCell);
+    }
+
+    [Fact]
+    public void MoveFailure_KeepsSelectionAndDoesNotChangeGrid()
+    {
+        _ws.AddCourse(new Course
+        {
+            Id = "B-02",
+            Name = "두시간",
+            Grade = 2,
+            HoursPerWeek = 2,
+            ProfessorId = "P2",
+            BlockStructure = new List<int> { 2 },
+        });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("B-02", 0, 2, "R1"),
+            new SolutionAssignment("B-02", 0, 3, "R1"),
+            new SolutionAssignment("X-01", 1, 1, "R2")));
+        var source = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+        vm.HandleCellClick(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+        var before = vm.Grid.Cells
+            .Select(c => (c.Day, c.Period, c.Grade, c.SubColumnIdx, c.Assignment.CourseId, c.Assignment.RowSpan))
+            .ToHashSet();
+
+        vm.HandleCellClick(0, 3, 2, 0, null);
+
+        var after = vm.Grid.Cells
+            .Select(c => (c.Day, c.Period, c.Grade, c.SubColumnIdx, c.Assignment.CourseId, c.Assignment.RowSpan))
+            .ToHashSet();
+        Assert.NotNull(vm.SelectedAssignment);
+        Assert.Equal("X-01", vm.SelectedAssignment!.CourseId);
+        Assert.NotNull(vm.Grid.SelectedCell);
+        Assert.NotEmpty(vm.Grid.EditStates);
+        Assert.True(before.SetEquals(after));
+        Assert.Contains("전체 점유 범위", vm.StatusMessage);
+    }
+
+    [Fact]
     public void MoveTwoHourBelowDifferentSectionOneHour_IsAllowed()
     {
         _ws.AddCourse(new Course { Id = "Y-01", Name = "테스트", Grade = 2, Section = 2, HoursPerWeek = 1, ProfessorId = "P1" });
@@ -692,7 +795,7 @@ public class ManualEditViewModelTests : IDisposable
 
         var assignment = new TimetableScheduler.ViewModel.Grid.CellAssignment(
             "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1, 2, false);
-        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.SelectCell(2, 1, 2, 0, assignment);
 
         Assert.NotNull(vm.SelectedAssignment);
         Assert.Equal("X-01", vm.SelectedAssignment!.CourseId);
@@ -709,6 +812,9 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Equal("제한 없음", vm.SelectedAllowedRoomsText);
         Assert.Equal("이동 가능", vm.SelectedMoveStateText);
         Assert.Equal("없음", vm.SelectedBlockedReasonText);
+        Assert.False(vm.HasBlockingReasons);
+        Assert.False(vm.HasWarningReasons);
+        Assert.False(vm.HasAnyConstraintReasons);
     }
 
     [Fact]
@@ -750,7 +856,7 @@ public class ManualEditViewModelTests : IDisposable
 
         var assignment = new TimetableScheduler.ViewModel.Grid.CellAssignment(
             "F-02", "고급 테스트", "P1", 2, 1, new List<string> { "R1", "R2" }, 2, 2, true);
-        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.SelectCell(2, 1, 2, 0, assignment);
 
         Assert.Equal("2시간", vm.SelectedDurationText);
         Assert.Equal("1~2교시", vm.SelectedOccupiedSlotsText);
@@ -761,6 +867,9 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Equal("강의실1, 강의실2", vm.SelectedAllowedRoomsText);
         Assert.Equal("이동 불가", vm.SelectedMoveStateText);
         Assert.Contains("HC-13", vm.SelectedBlockedReasonText);
+        Assert.True(vm.HasBlockingReasons);
+        Assert.False(vm.HasWarningReasons);
+        Assert.True(vm.HasAnyConstraintReasons);
     }
 
     [Fact]
@@ -781,6 +890,9 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Equal("-", vm.SelectedProfessorName);
         Assert.Equal("-", vm.SelectedLocationText);
         Assert.Equal("-", vm.SelectedDurationText);
+        Assert.False(vm.HasBlockingReasons);
+        Assert.False(vm.HasWarningReasons);
+        Assert.False(vm.HasAnyConstraintReasons);
     }
 
     [Fact]
@@ -822,6 +934,12 @@ public class ManualEditViewModelTests : IDisposable
         var state = vm.Grid.EditStates[new TimetableScheduler.ViewModel.Grid.UnifiedCellKey(4, 6, 2, 0)];
         Assert.Equal(TimetableScheduler.ViewModel.Grid.ManualMoveCellState.Warning, state.State);
         Assert.Contains("금요일 오후", state.Reason);
+
+        vm.SelectCell(4, 6, 2, 0, assignment);
+
+        Assert.False(vm.HasBlockingReasons);
+        Assert.True(vm.HasWarningReasons);
+        Assert.True(vm.HasAnyConstraintReasons);
     }
 
     [Fact]
@@ -1605,7 +1723,38 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void ApplyRoomChange_NewConflicts_PromptsAndUserAccepts_KeepsChange()
+    public void SelectedAssignment_WithMultipleRoomCandidates_ShowsRoomCandidates()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var sol = MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1"));
+        vm.LoadFromSolution(sol);
+
+        var assignment = new TimetableScheduler.ViewModel.Grid.CellAssignment(
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1, 2, false);
+        vm.SelectCell(0, 1, 2, 0, assignment);
+
+        Assert.True(vm.HasMultipleRoomCandidates);
+        Assert.Equal(new[] { "R1", "R2" }, vm.AvailableRoomIds);
+    }
+
+    [Fact]
+    public void SelectedAssignment_WithFixedRoomStillShowsEditableRoomCandidates()
+    {
+        _ws.Courses.First(c => c.Id == "X-01").FixedRooms.Add("R1");
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var sol = MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1"));
+        vm.LoadFromSolution(sol);
+
+        var assignment = new TimetableScheduler.ViewModel.Grid.CellAssignment(
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1, 2, false);
+        vm.SelectCell(0, 1, 2, 0, assignment);
+
+        Assert.True(vm.HasMultipleRoomCandidates);
+        Assert.Equal(new[] { "R1", "R2" }, vm.AvailableRoomIds);
+    }
+
+    [Fact]
+    public void ApplyRoomChange_NewRoomConflict_DoesNotPromptAndRevertsChange()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         // Y-01 has DIFFERENT prof → no pre-existing conflict
@@ -1625,12 +1774,10 @@ public class ManualEditViewModelTests : IDisposable
         _dialog.ResponseToReturn = true;
         vm.ApplyRoomChangeCommand.Execute(null);
 
-        // Dialog prompted with the new room conflict
-        Assert.Single(_dialog.Calls);
-        Assert.Contains(_dialog.Calls[0], c => c.Type == ConflictType.RoomConflict);
-        // Change kept → conflict persists in right panel
-        Assert.Equal(new[] { "R2" }, vm.SelectedAssignment!.Rooms);
-        Assert.Contains(vm.Conflicts, c => c.Type == ConflictType.RoomConflict);
+        Assert.Empty(_dialog.Calls);
+        Assert.Equal(new[] { "R1" }, vm.SelectedAssignment!.Rooms);
+        Assert.Equal("R2", vm.NewRoomId);
+        Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.RoomConflict);
     }
 
     [Fact]
@@ -1653,10 +1800,1055 @@ public class ManualEditViewModelTests : IDisposable
         vm.ApplyRoomChangeCommand.Execute(null);
 
         // Dialog prompted
-        Assert.Single(_dialog.Calls);
+        Assert.Empty(_dialog.Calls);
         // Change was reverted — no conflicts remain (clean start state)
         Assert.Empty(vm.Conflicts);
-        Assert.Contains("취소", vm.StatusMessage);
+        Assert.Equal("해당 시간에 이미 사용 중인 강의실입니다.", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void Undo_AfterRoomChange_RestoresPreviousRoomId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var sol = MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1"));
+        vm.LoadFromSolution(sol);
+
+        var assignment = new TimetableScheduler.ViewModel.Grid.CellAssignment(
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1, 2, false);
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        vm.UndoCommand.Execute(null);
+
+        Assert.Equal(new[] { "R1" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+    }
+
+    [Fact]
+    public void MultiRoomSelection_ShowsAssignedRooms()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.Courses.First(c => c.Id == "X-01").FixedRooms.AddRange(new[] { "R1", "R2", "R3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+
+        Assert.True(vm.HasMultipleAssignedRooms);
+        Assert.Equal(new[] { "R1", "R2" }, vm.AssignedRoomsForSelectedAssignment);
+        Assert.Equal("R1", vm.SelectedOldRoomId);
+    }
+
+    [Fact]
+    public void MultiRoomReplacement_CandidatesExcludeAlreadyAssignedRooms()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.AddRoom(new Room { Id = "R4", Name = "강의실4" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+
+        var candidateIds = vm.ReplacementRoomCandidates.ToArray();
+        Assert.Equal(new[] { "R3", "R4" }, candidateIds);
+        Assert.DoesNotContain("R1", candidateIds);
+        Assert.DoesNotContain("R2", candidateIds);
+    }
+
+    [Fact]
+    public void ReplacementCandidates_FallbackToSessionRooms_WhenFilteredEmpty()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.Courses.First(c => c.Id == "X-01").FixedRooms.AddRange(new[] { "R1", "R2" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+
+        Assert.Equal(new[] { "R3" }, vm.ReplacementRoomCandidates.ToArray());
+    }
+
+    [Fact]
+    public void NewRoomCombo_SelectedValueType_MatchesRoomId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+
+        Assert.All(vm.SingleRoomChangeCandidates, r => Assert.IsType<string>(r));
+        Assert.Equal("R1", vm.NewRoomId);
+    }
+
+    [Fact]
+    public void SingleRoomChange_AvailableRoomIds_IsStringRoomIdList()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+
+        Assert.All(vm.AvailableRoomIds, id => Assert.IsType<string>(id));
+        Assert.Contains("R1", vm.AvailableRoomIds);
+        Assert.Contains("R2", vm.AvailableRoomIds);
+    }
+
+    [Fact]
+    public void SingleRoomChange_UsesNewRoomIdString_UpdatesRoomId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R2" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+    }
+
+    [Fact]
+    public void NewRoomId_Setter_RaisesApplyRoomChangeCanExecuteChanged()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        var raised = 0;
+        vm.ApplyRoomChangeCommand.CanExecuteChanged += (_, _) => raised++;
+
+        vm.NewRoomId = "R2";
+
+        Assert.True(raised > 0);
+    }
+
+    [Fact]
+    public void SelectedReplacementRoomId_Setter_RaisesApplyRoomChangeCanExecuteChanged()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.AddRoom(new Room { Id = "R4", Name = "강의실4" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        var raised = 0;
+        vm.ApplyRoomChangeCommand.CanExecuteChanged += (_, _) => raised++;
+
+        vm.SelectedReplacementRoomId = "R4";
+
+        Assert.True(raised > 0);
+    }
+
+    [Fact]
+    public void SelectedOldRoomId_Setter_RaisesApplyRoomChangeCanExecuteChanged()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        var raised = 0;
+        vm.ApplyRoomChangeCommand.CanExecuteChanged += (_, _) => raised++;
+
+        vm.SelectedOldRoomId = "R2";
+
+        Assert.True(raised > 0);
+    }
+
+    [Fact]
+    public void SingleRoomChange_CommandBecomesExecutableAfterNewRoomSelected()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+
+        vm.NewRoomId = "R2";
+
+        Assert.True(vm.ApplyRoomChangeCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void MultiRoomReplacement_CommandBecomesExecutableAfterOldAndNewSelected()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+
+        vm.SelectedOldRoomId = "R1";
+        vm.SelectedReplacementRoomId = "R3";
+
+        Assert.True(vm.ApplyRoomChangeCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void SingleRoomChange_CommandExecute_ChangesWorkingRoomId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.NewRoomId = "R2";
+
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R2" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+    }
+
+    [Fact]
+    public void MultiRoomReplacement_CommandExecute_ChangesSelectedOldRoomOnly()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.SelectedOldRoomId = "R1";
+        vm.SelectedReplacementRoomId = "R3";
+
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R2", "R3" }, AssignmentAt(vm, 0, 1, "X-01").Rooms.OrderBy(r => r).ToArray());
+    }
+
+    [Fact]
+    public void RoomChangeCommand_WithSelection_CanExecuteTrue_BeforeNewRoomSelected()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.NewRoomId = "";
+
+        Assert.True(vm.ApplyRoomChangeCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void SingleRoomChange_NoNewRoom_ShowsFailureMessage()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.NewRoomId = "";
+
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal("새 강의실을 선택하세요.", vm.RoomChangeStatusMessage);
+    }
+
+    [Fact]
+    public void SingleRoomChange_SameRoom_ShowsFailureMessage()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal("기존 강의실과 동일합니다.", vm.RoomChangeStatusMessage);
+    }
+
+    [Fact]
+    public void SingleRoomChange_RoomNotExists_ShowsFailureMessage()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.NewRoomId = "RX";
+
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal("존재하지 않는 강의실입니다.", vm.RoomChangeStatusMessage);
+    }
+
+    [Fact]
+    public void SingleRoomChange_ConflictRollback_ShowsFailureMessage()
+    {
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 3, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R2")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.NewRoomId = "R2";
+
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal("해당 시간에 이미 사용 중인 강의실입니다.", vm.RoomChangeStatusMessage);
+        Assert.Equal(new[] { "R1" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+    }
+
+    [Fact]
+    public void RoomChange_ChangedZero_ShowsFailureMessage()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        var stale = new TimetableScheduler.ViewModel.Grid.CellAssignment(
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R9" }, 1, 2, false);
+
+        vm.SelectCell(0, 1, 2, 0, stale);
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Contains("변경할 배정 항목을 찾지 못했습니다.", vm.RoomChangeStatusMessage);
+    }
+
+    [Fact]
+    public void SingleRoomChange_Failure_DoesNotResetNewRoomId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.NewRoomId = "RX";
+
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal("RX", vm.NewRoomId);
+    }
+
+    [Fact]
+    public void SingleRoomChange_Success_ShowsSuccessMessage()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.NewRoomId = "R2";
+
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal("강의실을 변경했습니다.", vm.RoomChangeStatusMessage);
+    }
+
+    [Fact]
+    public void MultiRoomReplacement_InvalidOldOrNew_ShowsFailureMessage()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.SelectedOldRoomId = "";
+        vm.SelectedReplacementRoomId = "R3";
+
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal("교체할 기존 강의실을 선택하세요.", vm.RoomChangeStatusMessage);
+    }
+
+    [Fact]
+    public void MultiRoomReplacement_Failure_DoesNotResetSelectedReplacementRoomId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.SelectedOldRoomId = "R1";
+        vm.SelectedReplacementRoomId = "RX";
+
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal("RX", vm.SelectedReplacementRoomId);
+        Assert.Equal("존재하지 않는 강의실입니다.", vm.RoomChangeStatusMessage);
+    }
+
+    [Fact]
+    public void MultiRoomReplacement_Success_ShowsSuccessMessage()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.SelectedOldRoomId = "R1";
+        vm.SelectedReplacementRoomId = "R3";
+
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal("강의실을 변경했습니다.", vm.RoomChangeStatusMessage);
+    }
+
+    [Fact]
+    public void SingleRoomChange_DoesNotRequireSelectedOldRoomId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.SelectedOldRoomId = "";
+        vm.SelectedReplacementRoomId = "";
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R2" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+    }
+
+    [Fact]
+    public void SingleRoomChange_DoesNotUseReplacementRoomCandidates()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.SelectedReplacementRoomId = "";
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R2" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+    }
+
+    [Fact]
+    public void ReplaceOneRoom_ChangesOnlySelectedOldRoom()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.SelectedOldRoomId = "R1";
+        vm.SelectedReplacementRoomId = "R3";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R2", "R3" }, AssignmentAt(vm, 0, 1, "X-01").Rooms.OrderBy(r => r).ToArray());
+        Assert.DoesNotContain("R1", AssignmentAt(vm, 0, 1, "X-01").Rooms);
+    }
+
+    [Fact]
+    public void TryApplyRoomChange_ChangedZero_DoesNotCommitOrCreateUndo()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        var stale = new TimetableScheduler.ViewModel.Grid.CellAssignment(
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R9" }, 1, 2, false);
+
+        vm.SelectCell(0, 1, 2, 0, stale);
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R1" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+        Assert.False(vm.UndoCommand.CanExecute(null));
+        Assert.Contains("변경할 배정 항목", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void SingleRoomChange_ChangesWorkingRoomId_AndRerenders()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R2" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+        Assert.Equal(new[] { "R2" }, vm.SelectedAssignment!.Rooms);
+        Assert.True(vm.UndoCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void MultiRoomReplacement_ChangesOnlySelectedOldRoom_InWorking()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.SelectedOldRoomId = "R1";
+        vm.SelectedReplacementRoomId = "R3";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R2", "R3" }, AssignmentAt(vm, 0, 1, "X-01").Rooms.OrderBy(r => r).ToArray());
+    }
+
+    [Fact]
+    public void SingleRoomChange_StaleSelectedAssignment_DoesNotReportSuccess()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        var stale = new TimetableScheduler.ViewModel.Grid.CellAssignment(
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R9" }, 1, 2, false);
+
+        vm.SelectCell(0, 1, 2, 0, stale);
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.DoesNotContain("변경 0건", vm.StatusMessage);
+        Assert.Contains("변경할 배정 항목을 찾지 못했습니다.", vm.StatusMessage);
+        Assert.Equal(new[] { "R1" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+    }
+
+    [Fact]
+    public void Save_AfterSuccessfulRoomChange_PersistsChangedWorkingRoomId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+        vm.SaveName = "강의실변경저장";
+        vm.SaveTimetableCommand.Execute(null);
+
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "강의실변경저장"));
+        Assert.Contains(saved.Assignments, a => a.CourseId == "X-01" && a.RoomId == "R2");
+        Assert.DoesNotContain(saved.Assignments, a => a.CourseId == "X-01" && a.RoomId == "R1");
+    }
+
+    [Fact]
+    public void LoadSaved_AfterRoomChange_RestoresChangedRoomId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+        vm.SaveName = "강의실변경로드";
+        vm.SaveTimetableCommand.Execute(null);
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "강의실변경로드"));
+
+        vm.LoadFromSavedTimetable(saved);
+
+        Assert.Equal(new[] { "R2" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+    }
+
+    [Fact]
+    public void RoomChange_TargetMatching_FindsTwoHourBlockAssignments()
+    {
+        _ws.Courses.First(c => c.Id == "X-01").BlockStructure = new List<int> { 2 };
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 2, "R1")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 2, 2, 0, assignment);
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R2" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+        Assert.DoesNotContain(vm.Grid.Cells, c => c.Assignment.CourseId == "X-01" && c.Assignment.Rooms.Contains("R1"));
+    }
+
+    [Fact]
+    public void RoomChange_TargetMatching_FailsWhenNoWorkingTarget()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        var stale = new TimetableScheduler.ViewModel.Grid.CellAssignment(
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R9" }, 1, 2, false);
+
+        vm.SelectCell(0, 1, 2, 0, stale);
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R1" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+        Assert.False(vm.UndoCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void SingleRoomChange_ChangedWorkingThenRerenderedRoomsContainNewRoom()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Contains("R2", AssignmentAt(vm, 0, 1, "X-01").Rooms);
+        Assert.DoesNotContain("R1", AssignmentAt(vm, 0, 1, "X-01").Rooms);
+    }
+
+    [Fact]
+    public void MultiRoomReplacement_OnlySelectedOldRoomChanged()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.SelectedOldRoomId = "R1";
+        vm.SelectedReplacementRoomId = "R3";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        var rooms = AssignmentAt(vm, 0, 1, "X-01").Rooms;
+        Assert.Contains("R2", rooms);
+        Assert.Contains("R3", rooms);
+        Assert.DoesNotContain("R1", rooms);
+    }
+
+    [Fact]
+    public void SaveLoad_AfterRoomChange_RestoresChangedRoom()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+        vm.SaveName = "저장로드강의실";
+        vm.SaveTimetableCommand.Execute(null);
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "저장로드강의실"));
+
+        vm.LoadFromSaved(saved);
+        Assert.Equal(new[] { "R2" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+    }
+
+    [Fact]
+    public void RoomChange_ChangedZero_ReportsDiagnosticState()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        var stale = new TimetableScheduler.ViewModel.Grid.CellAssignment(
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R9" }, 1, 2, false);
+
+        vm.SelectCell(0, 1, 2, 0, stale);
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Contains("CourseId=X-01", vm.StatusMessage);
+        Assert.Contains("Day=0", vm.StatusMessage);
+        Assert.Contains("SelectedPeriod=1", vm.StatusMessage);
+        Assert.Contains("RowSpan=1", vm.StatusMessage);
+        Assert.Contains("OldRoomId=R9", vm.StatusMessage);
+        Assert.Contains("NewRoomId=R2", vm.StatusMessage);
+        Assert.Contains("SameCourseDay=1", vm.StatusMessage);
+        Assert.Contains("SameCourseDayRoom=0", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void RoomChange_AfterApply_SelectedAssignmentRoomsUpdated()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R2" }, vm.SelectedAssignment!.Rooms);
+        Assert.Equal("강의실2", vm.SelectedRoomsText);
+    }
+
+    [Fact]
+    public void RoomChange_AfterApply_IntegratedRenderShowsNewRoom()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R2" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+    }
+
+    [Fact]
+    public void RoomChange_AfterApply_RoomViewMovesFromOldRoomToNewRoom()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        var oldRoomView = vm.RoomViews.Single(v => v.Id == "R1");
+        var newRoomView = vm.RoomViews.Single(v => v.Id == "R2");
+        Assert.DoesNotContain(oldRoomView.Grid.Cells.SelectMany(c => c.Items), a => a.CourseId == "X-01");
+        Assert.Contains(newRoomView.Grid.Cells.SelectMany(c => c.Items), a => a.CourseId == "X-01" && a.Rooms.Contains("R2"));
+    }
+
+    [Fact]
+    public void RoomChange_WorkspaceOnlyRoom_SaveLoadRestoresRoomId()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var snapshot = new AppData(
+            _ws.Courses.ToList(),
+            _ws.Professors.ToList(),
+            new List<Room> { new() { Id = "R1", Name = "강의실1" } },
+            _ws.CrossGroups.ToList(),
+            _ws.RetakeScenarios.ToList());
+        var record = new SavedTimetableRecord(
+            "saved",
+            "저장",
+            DateTime.Now,
+            new[] { new TimetableAssignmentRow("X-01", 0, 1, "R1") },
+            Array.Empty<SavedManualCrossLinkRow>(),
+            System.Text.Json.JsonSerializer.Serialize(snapshot));
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSaved(record);
+
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.NewRoomId = "R3";
+        vm.ApplyRoomChangeCommand.Execute(null);
+        vm.SaveName = "워크스페이스방저장";
+        vm.SaveTimetableCommand.Execute(null);
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "워크스페이스방저장"));
+
+        vm.LoadFromSaved(saved);
+
+        Assert.Equal(new[] { "R3" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+        Assert.Contains(vm.RoomViews, v => v.Id == "R3");
+    }
+
+    [Fact]
+    public void MultiRoomReplacement_SaveLoadKeepsAllRooms()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.SelectedOldRoomId = "R1";
+        vm.SelectedReplacementRoomId = "R3";
+        vm.ApplyRoomChangeCommand.Execute(null);
+        vm.SaveName = "다중강의실저장";
+        vm.SaveTimetableCommand.Execute(null);
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "다중강의실저장"));
+
+        vm.LoadFromSaved(saved);
+
+        Assert.Equal(new[] { "R2", "R3" }, AssignmentAt(vm, 0, 1, "X-01").Rooms.OrderBy(r => r).ToArray());
+    }
+
+    [Fact]
+    public void RoomChange_ConflictRollback_DoesNotUpdateRenderedRooms()
+    {
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 3, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R2")));
+
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R1" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
+        Assert.Equal(new[] { "R1" }, vm.SelectedAssignment!.Rooms);
+        Assert.DoesNotContain(vm.RoomViews.Single(v => v.Id == "R2").Grid.Cells.SelectMany(c => c.Items), a => a.CourseId == "X-01");
+    }
+
+    [Fact]
+    public void MultiRoomReplacement_DoesNotUseNewRoomId()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.NewRoomId = "R2";
+        vm.SelectedOldRoomId = "R1";
+        vm.SelectedReplacementRoomId = "R3";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R2", "R3" }, AssignmentAt(vm, 0, 1, "X-01").Rooms.OrderBy(r => r).ToArray());
+    }
+
+    [Fact]
+    public void ReplaceOneRoom_KeepsOtherAssignedRooms()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.SelectedOldRoomId = "R1";
+        vm.SelectedReplacementRoomId = "R3";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Contains("R2", AssignmentAt(vm, 0, 1, "X-01").Rooms);
+    }
+
+    [Fact]
+    public void ReplaceOneRoom_ToAlreadyAssignedRoom_IsRejected()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.SelectedOldRoomId = "R1";
+        vm.SelectedReplacementRoomId = "R2";
+
+        Assert.True(vm.ApplyRoomChangeCommand.CanExecute(null));
+        vm.ApplyRoomChangeCommand.Execute(null);
+        Assert.False(vm.UndoCommand.CanExecute(null));
+        Assert.Equal("새 강의실이 이미 이 수업에 배정되어 있습니다.", vm.RoomChangeStatusMessage);
+        Assert.Equal(new[] { "R1", "R2" }, AssignmentAt(vm, 0, 1, "X-01").Rooms.OrderBy(r => r).ToArray());
+    }
+
+    [Fact]
+    public void ReplaceOneRoom_WithRoomConflict_IsRejected()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 3, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"),
+            new SolutionAssignment("Y-01", 0, 1, "R3")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.SelectedOldRoomId = "R1";
+        vm.SelectedReplacementRoomId = "R3";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal(new[] { "R1", "R2" }, AssignmentAt(vm, 0, 1, "X-01").Rooms.OrderBy(r => r).ToArray());
+        Assert.False(vm.UndoCommand.CanExecute(null));
+        Assert.Equal("해당 시간에 이미 사용 중인 강의실입니다.", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void ReplaceOneRoom_Success_CreatesUndoSnapshot()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.SelectedOldRoomId = "R1";
+        vm.SelectedReplacementRoomId = "R3";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.True(vm.UndoCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void ReplaceOneRoom_Failure_DoesNotCreateUndoSnapshot()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 3, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"),
+            new SolutionAssignment("Y-01", 0, 1, "R3")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.SelectedOldRoomId = "R1";
+        vm.SelectedReplacementRoomId = "R3";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.False(vm.UndoCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void Undo_AfterReplaceOneRoom_RestoresOriginalRooms()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.SelectedOldRoomId = "R1";
+        vm.SelectedReplacementRoomId = "R3";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        vm.UndoCommand.Execute(null);
+
+        Assert.Equal(new[] { "R1", "R2" }, AssignmentAt(vm, 0, 1, "X-01").Rooms.OrderBy(r => r).ToArray());
+    }
+
+    [Fact]
+    public void SingleRoomSelection_KeepsExistingRoomChangeUi()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+
+        Assert.False(vm.HasMultipleAssignedRooms);
+        Assert.True(vm.HasSingleAssignedRoomChangeUi);
+        Assert.True(vm.HasSingleAssignedRoomDisplay);
+        Assert.Equal(new[] { "R1", "R2" }, vm.AvailableRoomIds);
+    }
+
+    [Fact]
+    public void SavedSnapshotRoomsMissing_WorkspaceRoomStillAppearsInAvailableRoomIds()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var snapshot = new AppData(
+            _ws.Courses.ToList(),
+            _ws.Professors.ToList(),
+            new List<Room> { new() { Id = "R1", Name = "강의실1" } },
+            _ws.CrossGroups.ToList(),
+            _ws.RetakeScenarios.ToList());
+        var record = new SavedTimetableRecord(
+            "saved",
+            "저장",
+            DateTime.Now,
+            new[] { new TimetableAssignmentRow("X-01", 0, 1, "R1") },
+            Array.Empty<SavedManualCrossLinkRow>(),
+            System.Text.Json.JsonSerializer.Serialize(snapshot));
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSaved(record);
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+
+        Assert.Contains("R3", vm.AvailableRoomIds);
+    }
+
+    [Fact]
+    public void RoomExists_UsesWorkspaceSnapshotAndAssignedRoomsUnion()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.NewRoomId = "R3";
+
+        Assert.True(vm.ApplyRoomChangeCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void SingleRoomChange_UsesEditableRoomIds_NotOnlyFixedRooms()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.Courses.First(c => c.Id == "X-01").FixedRooms.Add("R1");
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+
+        Assert.Contains("R3", vm.AvailableRoomIds);
+    }
+
+    [Fact]
+    public void MultiRoomReplacement_UsesEditableRoomIdsAndExcludesOtherAssignedRooms()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.Courses.First(c => c.Id == "X-01").FixedRooms.AddRange(new[] { "R1", "R2" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+
+        Assert.Contains("R3", vm.ReplacementRoomCandidates);
+        Assert.DoesNotContain("R1", vm.ReplacementRoomCandidates);
+        Assert.DoesNotContain("R2", vm.ReplacementRoomCandidates);
+    }
+
+    [Fact]
+    public void SelectedOldRoomChange_RefreshesReplacementCandidates()
+    {
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.AddRoom(new Room { Id = "R4", Name = "강의실4" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        vm.SelectedReplacementRoomId = "R3";
+        vm.SelectedOldRoomId = "R2";
+
+        Assert.Equal("R3", vm.SelectedReplacementRoomId);
+        Assert.Equal(new[] { "R3", "R4" }, vm.ReplacementRoomCandidates);
+    }
+
+    [Fact]
+    public void ProfessorDisplay_DeduplicatesPrimaryProfessorInCoteachList()
+    {
+        var assignment = new TimetableScheduler.ViewModel.Grid.CellAssignment(
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1, 2, false)
+        {
+            CoteachProfIds = new[] { "P1", "P2" },
+        };
+
+        Assert.Equal("P1, P2", assignment.ProfessorLabel);
+    }
+
+    [Fact]
+    public void ProfessorDisplay_KeepsPrimaryThenCoteachersOrder()
+    {
+        var assignment = new TimetableScheduler.ViewModel.Grid.CellAssignment(
+            "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 1, 2, false)
+        {
+            CoteachProfIds = new[] { "P3", "P2" },
+        };
+
+        Assert.Equal("P1, P3, P2", assignment.ProfessorLabel);
+    }
+
+    [Fact]
+    public void InspectorCoteachText_DeduplicatesPrimaryProfessor()
+    {
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "공동" });
+        _ws.Courses.First(c => c.Id == "X-01").CoteachProfs.AddRange(new[] { "P1", "P2" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        var assignment = AssignmentAt(vm, 0, 1, "X-01");
+        vm.SelectCell(0, 1, 2, 0, assignment);
+
+        Assert.Equal("공동", vm.SelectedCoteachText);
     }
 
     [Fact]
@@ -2032,7 +3224,80 @@ public class ManualEditViewModelTests : IDisposable
         Assert.True(moved);
         Assert.Contains(vm.Grid.Cells, c => c.Day == 2 && c.Period == 1 && c.Assignment.CourseId == "X-01");
         Assert.DoesNotContain(vm.Grid.Cells, c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        Assert.Null(vm.SelectedAssignment);
+        Assert.Null(vm.Grid.SelectedCell);
+        Assert.Empty(vm.Grid.EditStates);
+        Assert.False(vm.EvaluateCrossHover(2, 1, 2, 0, null).CanCreate);
+        Assert.False(vm.EvaluateSwapHover(2, 1, 2, 0, null).CanSwap);
         Assert.True(vm.UndoCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void DndMoveSuccess_UsesSamePostMoveCleanupAsClickMove()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        var source = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+
+        var moved = vm.HandleDropMove(
+            source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment,
+            2, 1, 2, 0);
+
+        Assert.True(moved);
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 2 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        Assert.DoesNotContain(vm.Grid.Cells, c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        Assert.Null(vm.SelectedAssignment);
+        Assert.Null(vm.Grid.SelectedCell);
+        Assert.Empty(vm.Grid.EditStates);
+    }
+
+    [Fact]
+    public void CrossDrop_SourceNotSelected_CreatesManualCrossLink()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 1, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R2")));
+        var source = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+        var target = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "Y-01");
+
+        Assert.Null(vm.SelectedAssignment);
+
+        vm.HandleCrossDrop(
+            source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment,
+            target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "Y-01");
+        Assert.Null(vm.SelectedAssignment);
+        Assert.Empty(vm.Grid.EditStates);
+    }
+
+    [Fact]
+    public void SwapDrop_SourceNotSelected_PerformsSwap()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "교환대상", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 3, "R2")));
+        var source = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+        var target = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "Y-01");
+
+        Assert.Null(vm.SelectedAssignment);
+
+        vm.HandleSwapDrop(
+            source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment,
+            target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.CourseId == "X-01" && c.Day == 0 && c.Period == 3);
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.CourseId == "Y-01" && c.Day == 0 && c.Period == 1);
+        Assert.Null(vm.SelectedAssignment);
+        Assert.Empty(vm.Grid.EditStates);
     }
 
     [Fact]
@@ -2066,6 +3331,10 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Contains("전체 점유 범위", vm.StatusMessage);
         Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "X-01");
         Assert.Contains(vm.Grid.Cells, c => c.Day == 0 && c.Period == 2 && c.Assignment.CourseId == "B-02" && c.Assignment.RowSpan == 2);
+        Assert.NotNull(vm.SelectedAssignment);
+        Assert.Equal("X-01", vm.SelectedAssignment!.CourseId);
+        Assert.NotNull(vm.Grid.SelectedCell);
+        Assert.NotEmpty(vm.Grid.EditStates);
         Assert.False(vm.UndoCommand.CanExecute(null));
     }
 
@@ -2091,6 +3360,62 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Contains("Cross 표시용 열", vm.StatusMessage);
         Assert.Contains(vm.Grid.Cells, c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "X-01");
         Assert.False(vm.UndoCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void TwoHourMoveSuccess_RebuildsRowSpanAtNewRange()
+    {
+        _ws.AddCourse(new Course
+        {
+            Id = "B-02",
+            Name = "두시간",
+            Grade = 2,
+            HoursPerWeek = 2,
+            ProfessorId = "P1",
+            BlockStructure = new List<int> { 2 },
+        });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("B-02", 0, 6, "R1"),
+            new SolutionAssignment("B-02", 0, 7, "R1")));
+        var source = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "B-02");
+        vm.HandleCellClick(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+
+        vm.HandleCellClick(1, 3, 2, 0, null);
+
+        var moved = Assert.Single(vm.Grid.Cells, c => c.Assignment.CourseId == "B-02");
+        Assert.Equal(1, moved.Day);
+        Assert.Equal(3, moved.Period);
+        Assert.Equal(2, moved.Assignment.RowSpan);
+        Assert.DoesNotContain(vm.Grid.Cells, c => c.Day == 0 && c.Assignment.CourseId == "B-02");
+        Assert.Null(vm.SelectedAssignment);
+        Assert.Empty(vm.Grid.EditStates);
+    }
+
+    [Fact]
+    public void TwoHourMoveSuccess_DoesNotRenderBlankCoveredCell()
+    {
+        _ws.AddCourse(new Course
+        {
+            Id = "B-02",
+            Name = "두시간",
+            Grade = 2,
+            HoursPerWeek = 2,
+            ProfessorId = "P1",
+            BlockStructure = new List<int> { 2 },
+        });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("B-02", 0, 6, "R1"),
+            new SolutionAssignment("B-02", 0, 7, "R1")));
+        var source = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "B-02");
+        vm.HandleCellClick(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+
+        vm.HandleCellClick(1, 3, 2, 0, null);
+
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 3 && c.Assignment.CourseId == "B-02" && c.Assignment.RowSpan == 2);
+        Assert.DoesNotContain(vm.Grid.Cells, c => c.Day == 1 && c.Period == 4 && c.Assignment.CourseId == "B-02");
+        Assert.Empty(vm.Grid.EditStates);
     }
 
     [Fact]
@@ -2157,6 +3482,27 @@ public class ManualEditViewModelTests : IDisposable
         vm.SaveTimetableCommand.Execute(null);
         Assert.Contains("저장 차단", vm.StatusMessage);
         Assert.DoesNotContain(_ws.SavedTimetables, t => t.Name == "교수충돌저장");
+    }
+
+    [Fact]
+    public void ForceMoveSuccess_ClearsSelectionWithoutBlankCell()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "충돌", Grade = 3, HoursPerWeek = 1, ProfessorId = "P1" });
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 1, 1, "R2")));
+        var source = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+        vm.HandleCellClick(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+
+        vm.HandleCellClick(1, 1, 2, 0, null);
+
+        Assert.Contains("강제 이동", vm.StatusMessage);
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        Assert.DoesNotContain(vm.Grid.Cells, c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        Assert.Null(vm.SelectedAssignment);
+        Assert.Null(vm.Grid.SelectedCell);
+        Assert.Empty(vm.Grid.EditStates);
     }
 
     [Fact]
@@ -2653,6 +3999,30 @@ public class ManualEditViewModelTests : IDisposable
 
         Assert.Empty(vm.WorkingCrossLinks);
         Assert.Contains("기존 크로스가 해제", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void CrossMoveSuccess_RebuildsGridAndDoesNotLeaveStaleSelection()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 1, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R2")));
+        var selected = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+        var target = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "Y-01");
+        vm.HandleCellClick(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+
+        vm.HandleCrossAddRequested(target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "Y-01");
+        Assert.DoesNotContain(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        Assert.Null(vm.SelectedAssignment);
+        Assert.Null(vm.Grid.SelectedCell);
+        Assert.Empty(vm.Grid.EditStates);
     }
 
     [Fact]

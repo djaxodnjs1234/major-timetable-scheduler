@@ -331,85 +331,130 @@
             </Expander>
         </DataTemplate>
 
-        <DataTemplate x:Key="RoomRowTemplate" DataType="{x:Type vm:RoomItem}">
-            <Expander Margin="0,0,0,4">
-                <Expander.Header>
-                    <Border Padding="6,4">
-                        <Border.Style>
-                            <Style TargetType="Border">
-                                <Setter Property="Background" Value="White" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsImportedFromExcel}" Value="True">
-                                        <Setter Property="Background" Value="#F3F4F6" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Border.Style>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="58" SharedSizeGroup="RoomId" />
-                                <ColumnDefinition Width="170" SharedSizeGroup="RoomName" />
-                                <ColumnDefinition Width="70" SharedSizeGroup="RoomLab" />
-                                <ColumnDefinition Width="82" SharedSizeGroup="RoomCapacity" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0" Text="{Binding HeaderId}" FontWeight="Bold" Margin="6,0" />
-                            <TextBlock Grid.Column="1" Text="{Binding HeaderName}" TextTrimming="CharacterEllipsis" Margin="6,0" />
-                            <TextBlock Grid.Column="2" Text="{Binding HeaderLab}" Margin="6,0" />
-                            <TextBlock Grid.Column="3" Text="{Binding HeaderCapacity}" Margin="6,0" />
-                        </Grid>
-                    </Border>
-                </Expander.Header>
-                <Border Background="White" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1">
-                    <StackPanel>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
-                        <Button Content="수정"
-                                Command="{Binding DataContext.EditRoomCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                CommandParameter="{Binding}"
-                                Padding="12,6" Margin="0,0,8,0"
-                                Background="{StaticResource SurfaceContainer}" />
-                        <TextBlock Text="세부정보는 수정 버튼을 누른 뒤 편집할 수 있습니다."
-                                   VerticalAlignment="Center" FontSize="11"
-                                   Foreground="{StaticResource OnSurfaceVariant}" />
-                    </StackPanel>
-                    <Grid IsEnabled="{Binding IsEditing}">
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="120" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="이름" Margin="0,4" />
-                        <TextBox Grid.Row="0" Grid.Column="1" Text="{Binding Room.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 Margin="0,4" Padding="6,4" />
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="실습실 여부" Margin="0,4" />
-                        <CheckBox Grid.Row="1" Grid.Column="1" IsChecked="{Binding Room.IsLab, Mode=TwoWay}" Margin="0,4" />
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="허용 인원 수" Margin="0,4" />
-                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Room.Capacity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 Width="120" HorizontalAlignment="Left" Margin="0,4" Padding="6,4" />
+<DataTemplate x:Key="RoomRowTemplate" DataType="{x:Type vm:RoomItem}">
+    <Expander Margin="0,0,0,4">
+        <Expander.Header>
+            <Border Padding="6,4">
+                <Border.Style>
+                    <Style TargetType="Border">
+                        <Setter Property="Background" Value="White" />
+                        <Style.Triggers>
+                            <DataTrigger Binding="{Binding IsImportedFromExcel}" Value="True">
+                                <Setter Property="Background" Value="#F3F4F6" />
+                            </DataTrigger>
+                        </Style.Triggers>
+                    </Style>
+                </Border.Style>
 
-                    </Grid>
-                    <StackPanel Orientation="Horizontal" Margin="120,12,0,0">
-                        <Button Content="저장"
-                                Command="{Binding DataContext.SaveRoomCommand,
-                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                CommandParameter="{Binding}"
-                                Padding="12,6" Margin="0,0,8,0"
-                                Background="{StaticResource PrimaryBrush}" Foreground="White" />
-                        <Button Content="삭제"
-                                Command="{Binding DataContext.DeleteRoomItemCommand,
-                                          RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                CommandParameter="{Binding}"
-                                Padding="12,6"
-                                Background="#BA1A1A" Foreground="White" />
-                    </StackPanel>
-                    </StackPanel>
-                </Border>
-            </Expander>
-        </DataTemplate>
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="58" SharedSizeGroup="RoomId" />
+                        <ColumnDefinition Width="170" SharedSizeGroup="RoomName" />
+                        <ColumnDefinition Width="70" SharedSizeGroup="RoomLab" />
+                        <ColumnDefinition Width="82" SharedSizeGroup="RoomCapacity" />
+                    </Grid.ColumnDefinitions>
+
+                    <TextBlock Grid.Column="0"
+                               Text="{Binding HeaderId}"
+                               FontWeight="Bold"
+                               Margin="6,0" />
+                    <TextBlock Grid.Column="1"
+                               Text="{Binding HeaderName}"
+                               TextTrimming="CharacterEllipsis"
+                               Margin="6,0" />
+                    <TextBlock Grid.Column="2"
+                               Text="{Binding HeaderLab}"
+                               Margin="6,0" />
+                    <TextBlock Grid.Column="3"
+                               Text="{Binding HeaderCapacity}"
+                               Margin="6,0" />
+                </Grid>
+            </Border>
+        </Expander.Header>
+
+        <Border Background="White"
+                Padding="16"
+                BorderBrush="{StaticResource OutlineVariant}"
+                BorderThickness="1">
+            <StackPanel>
+                <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
+                    <Button Content="수정"
+                            Command="{Binding DataContext.EditRoomCommand,
+                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                            CommandParameter="{Binding}"
+                            Padding="12,6"
+                            Margin="0,0,8,0"
+                            Background="{StaticResource SurfaceContainer}" />
+                    <TextBlock Text="세부정보는 수정 버튼을 누른 뒤 편집할 수 있습니다."
+                               VerticalAlignment="Center"
+                               FontSize="11"
+                               Foreground="{StaticResource OnSurfaceVariant}" />
+                </StackPanel>
+
+                <Grid IsEnabled="{Binding IsEditing}">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="120" />
+                        <ColumnDefinition Width="*" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition Height="Auto" />
+                    </Grid.RowDefinitions>
+
+                    <TextBlock Grid.Row="0"
+                               Grid.Column="0"
+                               Text="이름"
+                               Margin="0,4" />
+                    <TextBox Grid.Row="0"
+                             Grid.Column="1"
+                             Text="{Binding Room.Name, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             Margin="0,4"
+                             Padding="6,4" />
+
+                    <TextBlock Grid.Row="1"
+                               Grid.Column="0"
+                               Text="실습실 여부"
+                               Margin="0,4" />
+                    <CheckBox Grid.Row="1"
+                              Grid.Column="1"
+                              IsChecked="{Binding Room.IsLab, Mode=TwoWay}"
+                              Margin="0,4" />
+
+                    <TextBlock Grid.Row="2"
+                               Grid.Column="0"
+                               Text="허용 인원 수"
+                               Margin="0,4" />
+                    <TextBox Grid.Row="2"
+                             Grid.Column="1"
+                             Text="{Binding Room.Capacity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                             Width="120"
+                             HorizontalAlignment="Left"
+                             Margin="0,4"
+                             Padding="6,4" />
+                </Grid>
+
+                <StackPanel Orientation="Horizontal" Margin="120,12,0,0">
+                    <Button Content="저장"
+                            Command="{Binding DataContext.SaveRoomCommand,
+                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                            CommandParameter="{Binding}"
+                            Padding="12,6"
+                            Margin="0,0,8,0"
+                            Background="{StaticResource PrimaryBrush}"
+                            Foreground="White" />
+                    <Button Content="삭제"
+                            Command="{Binding DataContext.DeleteRoomItemCommand,
+                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                            CommandParameter="{Binding}"
+                            Padding="12,6"
+                            Background="#BA1A1A"
+                            Foreground="White" />
+                </StackPanel>
+            </StackPanel>
+        </Border>
+    </Expander>
+</DataTemplate>
     </UserControl.Resources>
 
     <Grid Background="{StaticResource Surface}">

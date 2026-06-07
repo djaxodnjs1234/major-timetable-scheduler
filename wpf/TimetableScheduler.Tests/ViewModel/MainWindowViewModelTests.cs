@@ -1,4 +1,5 @@
 using Microsoft.Extensions.DependencyInjection;
+using TimetableScheduler.Domain;
 using TimetableScheduler.Solver;
 using TimetableScheduler.ViewModel;
 using TimetableScheduler.ViewModel.Pages;
@@ -165,5 +166,32 @@ public class MainWindowViewModelTests : IDisposable
 
         Assert.IsType<TimetableSelectionViewModel>(main.CurrentPage);
         Assert.Equal("시간표 선택", main.CurrentPage.Title);
+    }
+
+    [Fact]
+    public void ProfessorViews_IncludeCoteachingCourse_ForEachProfessor()
+    {
+        var workspace = _sp.GetRequiredService<WorkspaceService>();
+        workspace.AddProfessor(new Professor { Id = "P1", Name = "대표" });
+        workspace.AddProfessor(new Professor { Id = "P2", Name = "공동" });
+        workspace.AddProfessor(new Professor { Id = "P3", Name = "무관" });
+        workspace.AddRoom(new Room { Id = "R1", Name = "강의실" });
+        workspace.AddCourse(new Course
+        {
+            Id = "T-01",
+            Name = "팀티칭",
+            Grade = 4,
+            HoursPerWeek = 1,
+            ProfessorId = "P1",
+            CoteachProfs = new List<string> { "P2" },
+        });
+        workspace.SaveTimetable("team", new[] { new SolutionAssignment("T-01", 0, 1, "R1") });
+
+        var vm = _sp.GetRequiredService<TimetableSelectionViewModel>();
+        vm.SelectedTimetable = workspace.SavedTimetables.Single(t => t.Name == "team");
+
+        Assert.True(vm.ProfessorViews.Single(v => v.Id == "P1").Grid.CellAt(0, 1).IsOccupied);
+        Assert.True(vm.ProfessorViews.Single(v => v.Id == "P2").Grid.CellAt(0, 1).IsOccupied);
+        Assert.False(vm.ProfessorViews.Single(v => v.Id == "P3").Grid.CellAt(0, 1).IsOccupied);
     }
 }
