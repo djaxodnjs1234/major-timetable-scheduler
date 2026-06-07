@@ -15,6 +15,8 @@ public class Course
 
     public List<string> FixedRooms { get; set; } = new();
 
+    public List<string> UnavailableRooms { get; set; } = new();
+
     public List<int> BlockStructure { get; set; } = new();
 
     public bool IsFixed { get; set; }

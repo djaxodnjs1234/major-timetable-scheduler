@@ -68,14 +68,14 @@ public static class XlsxLoader
             else if (xlsxBlocks.Count > 0 && xlsxBlocks.Sum() == hours) blockStructure = xlsxBlocks;
             else blockStructure = new List<int> { hours };
 
-            var baseId = DomainHelpers.BaseId(code);
-            counts[baseId] = counts.GetValueOrDefault(baseId, 0) + 1;
+            var sourceBaseId = DomainHelpers.BaseId(code);
+            counts[sourceBaseId] = counts.GetValueOrDefault(sourceBaseId, 0) + 1;
 
-            if (!seen.ContainsKey(baseId))
+            if (!seen.ContainsKey(sourceBaseId))
             {
-                seen[baseId] = new Course
+                seen[sourceBaseId] = new Course
                 {
-                    Id = baseId,
+                    Id = (seen.Count + 1).ToString(),
                     Name = name,
                     Grade = grade,
                     HoursPerWeek = hours,
@@ -84,6 +84,7 @@ public static class XlsxLoader
                     Section = 1,   // updated below
                     Department = dept,
                     FixedRooms = fixedRoom != null ? new List<string> { fixedRoom } : new List<string>(),
+                    UnavailableRooms = new List<string>(),
                     BlockStructure = blockStructure,
                 };
             }
@@ -94,13 +95,31 @@ public static class XlsxLoader
 
         // Set Section = number of sections found per base
         var courses = seen.Values.ToList();
-        foreach (var c in courses)
-            c.Section = counts[c.Id];
+        var professorIds = profNames.OrderBy(n => n)
+            .Select((name, index) => (name, id: (index + 1).ToString()))
+            .ToDictionary(x => x.name, x => x.id);
+        var roomIdsByName = roomIds.OrderBy(r => r)
+            .Select((name, index) => (name, id: (index + 1).ToString()))
+            .ToDictionary(x => x.name, x => x.id);
 
-        var professors = profNames.OrderBy(n => n)
-            .Select(n => new Professor { Id = n, Name = n }).ToList();
-        var rooms = roomIds.OrderBy(r => r)
-            .Select(r => new Room { Id = r, Name = r }).ToList();
+        foreach (var (sourceBaseId, course) in seen)
+        {
+            course.Section = counts[sourceBaseId];
+            if (professorIds.TryGetValue(course.ProfessorId, out var professorId))
+                course.ProfessorId = professorId;
+            course.FixedRooms = course.FixedRooms
+                .Select(room => roomIdsByName.TryGetValue(room, out var roomId) ? roomId : room)
+                .ToList();
+        }
+
+        var professors = professorIds
+            .OrderBy(pair => int.Parse(pair.Value))
+            .Select(pair => new Professor { Id = pair.Value, Name = pair.Key })
+            .ToList();
+        var rooms = roomIdsByName
+            .OrderBy(pair => int.Parse(pair.Value))
+            .Select(pair => new Room { Id = pair.Value, Name = pair.Key })
+            .ToList();
 
         return new XlsxLoadResult(courses, professors, rooms);
     }

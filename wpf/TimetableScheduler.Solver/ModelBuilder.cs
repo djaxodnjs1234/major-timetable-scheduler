@@ -65,6 +65,7 @@ public static class ModelBuilder
         BasicHcs.AddHc12_Lunch(model, x, courses, rooms);
         BasicHcs.AddHc13_Fixed(model, y, courses);
         BlockHcs.AddHc14_FixedRooms(model, x, courses, rooms);
+        BlockHcs.AddHc14_UnavailableRooms(model, x, courses, rooms);
         BlockHcs.AddHc15_SectionBackToBack(model, startVarsByBlock, courses);
         GroupingHcs.AddHc16_Cross(model, y, courses, crosses);
         GroupingHcs.AddHc17_Retake(model, y, courses, retakes);

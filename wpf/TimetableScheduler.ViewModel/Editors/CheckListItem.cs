@@ -28,7 +28,8 @@ public static class CheckListBinder
         IReadOnlyList<T> source,
         Func<T, string> idSelector,
         Func<T, string> displaySelector,
-        IList<string> selected)
+        IList<string> selected,
+        Action<string, bool>? changed = null)
     {
         var items = new List<CheckListItem>();
         foreach (var src in source)
@@ -46,6 +47,7 @@ public static class CheckListBinder
                 {
                     selected.Remove(item.Id);
                 }
+                changed?.Invoke(item.Id, item.IsChecked);
             };
             items.Add(item);
         }

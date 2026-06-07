@@ -160,6 +160,27 @@ public class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void SaveTimetable_UsesProvidedSnapshotWhenPresent()
+    {
+        var ws = new WorkspaceService(_repo);
+        ws.AddCourse(new Course { Id = "GLOBAL-01", Name = "전역", Grade = 1, HoursPerWeek = 3 });
+        var snapshot = new AppData(
+            new List<Course> { new() { Id = "SESSION-01", Name = "세션", Grade = 2, HoursPerWeek = 3 } },
+            new List<Professor>(), new List<Room>(),
+            new List<CrossGroup>(), new List<RetakeScenario>());
+
+        ws.SaveTimetable(
+            "session-snap",
+            Array.Empty<TimetableScheduler.Solver.SolutionAssignment>(),
+            snapshot: snapshot);
+
+        var fresh = new WorkspaceService(_repo);
+        var saved = fresh.SavedTimetables.Single(t => t.Name == "session-snap");
+        var savedSnapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(saved.SnapshotJson!)!;
+        Assert.Equal("SESSION-01", savedSnapshot.Courses.Single().Id);
+    }
+
+    [Fact]
     public void CreateSession_CrudDoesNotTouchMainDb()
     {
         // Seed the main DB via a global workspace.

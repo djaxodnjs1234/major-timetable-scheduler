@@ -13,6 +13,7 @@ CREATE TABLE IF NOT EXISTS Courses (
     Section           INTEGER NOT NULL DEFAULT 1,
     Department        TEXT NOT NULL,
     FixedRoomsJson    TEXT NOT NULL,
+    UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]',
     BlockStructureJson TEXT NOT NULL,
     IsFixed           INTEGER NOT NULL,
     FixedSlotsJson    TEXT NOT NULL,
@@ -24,12 +25,15 @@ CREATE TABLE IF NOT EXISTS Professors (
     Id                   TEXT PRIMARY KEY,
     Name                 TEXT NOT NULL,
     UnavailableSlotsJson TEXT NOT NULL,
-    AllowedRoomsJson     TEXT NOT NULL
+    AllowedRoomsJson     TEXT NOT NULL,
+    UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]'
 );
 
 CREATE TABLE IF NOT EXISTS Rooms (
-    Id   TEXT PRIMARY KEY,
-    Name TEXT NOT NULL
+    Id       TEXT PRIMARY KEY,
+    Name     TEXT NOT NULL,
+    IsLab    INTEGER NOT NULL DEFAULT 0,
+    Capacity INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS CrossGroups (

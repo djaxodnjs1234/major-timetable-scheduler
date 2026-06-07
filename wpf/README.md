@@ -106,10 +106,11 @@ TimetableScheduler.Tests       xUnit (94개)
 
 좌측 사이드바 (Resource Explorer) — 교수/교과목/강의실/솔버 nav.
 
-- **교수 깊은 편집**: AllowedRooms 체크리스트 + UnavailableSlots 5×9 토글 그리드
-- **교과목 깊은 편집**: IsFixed, FixedRooms 체크리스트, FixedSlots 5×9, BlockStructure CSV, CoteachProfs 체크리스트
+- **교수 깊은 편집**: 불가 강의실 체크리스트 + 불가 시간 5×9 토글 그리드
+- **교과목 깊은 편집**: IsFixed, 불가 강의실 체크리스트, FixedSlots 5×9, BlockStructure CSV, CoteachProfs 체크리스트
+- **강의실 깊은 편집**: 실습실 여부 + 허용 인원 수
 - **xlsx 가져오기** 버튼
-- **🪄 시간표 자동 생성**: SC 토글 + total_solutions/time_limit_sec + 진행바 + 취소
+- **🪄 시간표 자동 생성**: 선호 조건 토글 + 해 후보 수/제한 시간 + Cross 수동 설정 + 진행바 + 취소
 
 ### 3번 화면 (해 미리보기)
 
@@ -130,7 +131,7 @@ TimetableScheduler.Tests       xUnit (94개)
 
 - exe 위치부터 위로 8단계까지 `개설강좌 편람.xlsx` 탐색 → 자동 임포트 (DB 비었을 때만)
 - 모든 CRUD는 즉시 SQLite 영속 (`WorkspaceService.Persist`)
-- List 필드 (FixedRooms, BlockStructure, FixedSlots, UnavailableSlots, AllowedRooms, CoteachProfs, BaseIds)는 JSON 컬럼
+- List 필드 (FixedRooms, BlockStructure, FixedSlots, UnavailableSlots, AllowedRooms, Professor.UnavailableRooms, CoteachProfs, BaseIds)는 JSON 컬럼
 
 ## Python ↔ C# 차이
 

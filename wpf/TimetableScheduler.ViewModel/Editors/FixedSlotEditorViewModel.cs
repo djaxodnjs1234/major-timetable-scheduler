@@ -10,14 +10,33 @@ public sealed partial class BlockSlotEntry : ObservableObject
     public int BlockSize { get; init; }
 
     public string[] DayOptions { get; } = { "월", "화", "수", "목", "금" };
-    public int[] PeriodOptions { get; } = { 1, 2, 3, 4, 6, 7, 8, 9 };
+    public IReadOnlyList<TimePeriodOption> PeriodOptions => BuildPeriodOptions(BlockSize);
 
     [ObservableProperty] private int selectedDayIndex;
     [ObservableProperty] private int selectedPeriod = 1;
 
     public IEnumerable<TimeSlot> ToSlots() =>
         Enumerable.Range(0, BlockSize).Select(k => new TimeSlot(SelectedDayIndex, SelectedPeriod + k));
+
+    private static IReadOnlyList<TimePeriodOption> BuildPeriodOptions(int blockSize)
+    {
+        var starts = blockSize == 2
+            ? new[] { 1, 3, 6, 8 }
+            : new[] { 1, 2, 3, 4, 6, 7, 8, 9 }
+                .Where(start => Enumerable.Range(start, blockSize).All(p => p is >= 1 and <= 9 and not 5))
+                .ToArray();
+        return starts.Select(start => new TimePeriodOption(start, FormatRange(start, blockSize))).ToList();
+    }
+
+    private static string FormatRange(int start, int blockSize)
+    {
+        var end = start + blockSize - 1;
+        var range = blockSize == 1 ? $"{start}교시" : $"{start}~{end}교시";
+        return $"{8 + start:00}:00~{9 + end:00}:00 ({range})";
+    }
 }
+
+public sealed record TimePeriodOption(int Period, string Label);
 
 public sealed class SectionSlotEditor
 {
@@ -41,8 +60,7 @@ public sealed partial class FixedSlotEditorViewModel : ObservableObject
             ? rep.BlockStructure
             : new List<int> { rep.HoursPerWeek };
 
-        var summary = $"블록 구성: {string.Join("+", blocks)}  · 분반 {item.Sections.Count}개" +
-                      "  (강의실은 과목 또는 교수 설정을 따름)";
+        var summary = $"블록 구성: {string.Join("+", blocks)}  · 분반 {item.Sections.Count}개";
 
         var editors = new List<SectionSlotEditor>();
         for (int si = 0; si < item.Sections.Count; si++)

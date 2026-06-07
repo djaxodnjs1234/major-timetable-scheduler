@@ -14,14 +14,21 @@ public static class SoftConstraints
             new[] { 1, 2, 3, 4 }.Select(p => (0, p))
             .Concat(new[] { 6, 7, 8, 9 }.Select(p => (4, p))));
 
-    public static readonly int Sc01SlackAbs = 10;
+    // SC-01 최적값보다 허용할 추가 회피 슬롯 위반 수.
+    public static readonly int Sc01SlackAbs = 0;
 
+    // SC-02 교수별 강의 요일 수가 이 값을 넘으면 패널티.
     public static readonly int Sc02DayThreshold = 3;
+    // SC-02 적용 대상 교수의 최소 담당 과목 수.
     public static readonly int Sc02MinCourses = 2;
+    // SC-02 계산에서 시간 고정 과목 제외 여부.
     public static readonly bool Sc02ExcludeFixed = true;
+    // SC-02 계산에서 팀티칭 추가 교수 제외 여부.
     public static readonly bool Sc02ExcludeCoteach = true;
+    // SC-02 최적값보다 허용할 추가 교수 요일 초과량.
     public static readonly int Sc02SlackAbs = 1;
 
+    // SC-03 최적값보다 허용할 추가 블록 간격 위반 과목 수.
     public static readonly int Sc03SlackAbs = 0;
 
     public static LinearExpr Sc01PenaltyTerm(

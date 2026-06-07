@@ -80,12 +80,13 @@ public sealed class WorkspaceService
     public void SaveTimetable(
         string name,
         IReadOnlyList<SolutionAssignment> assignments,
-        IReadOnlyList<SavedManualCrossLinkRow>? manualCrossLinks = null)
+        IReadOnlyList<SavedManualCrossLinkRow>? manualCrossLinks = null,
+        AppData? snapshot = null)
     {
         var rows = assignments
             .Select(a => new TimetableAssignmentRow(a.CourseId, a.Day, a.Period, a.RoomId))
             .ToList();
-        var snapshotJson = System.Text.Json.JsonSerializer.Serialize(Snapshot());
+        var snapshotJson = System.Text.Json.JsonSerializer.Serialize(snapshot ?? Snapshot());
         var record = new SavedTimetableRecord(
             Guid.NewGuid().ToString(),
             name,

@@ -60,14 +60,16 @@ public partial class DataInputView : UserControl
 
     private void OnProfessorExpanded(object sender, RoutedEventArgs e)
     {
-        if (sender is not Expander expander || expander.DataContext is not Professor prof || Vm == null) return;
+        if (sender is not Expander expander || expander.DataContext is not ProfessorItem item || Vm == null) return;
+        var prof = item.Professor;
 
-        if (expander.FindName("AllowedRoomsPicker") is CheckListPickerControl roomsPicker)
+        if (expander.FindName("UnavailableRoomsPicker") is CheckListPickerControl roomsPicker)
         {
             roomsPicker.DataContext = CheckListBinder.Bind(
                 Vm.Workspace.Rooms.ToList(),
-                r => r.Id, r => $"{r.Id} ({r.Name})",
-                prof.AllowedRooms);
+                r => r.Id,
+                r => RoomDisplayLabel(r),
+                prof.UnavailableRooms);
         }
         if (expander.FindName("UnavailableSlotsPicker") is TimeSlotPickerControl slotPicker)
         {
@@ -80,18 +82,18 @@ public partial class DataInputView : UserControl
         if (sender is not Expander expander || expander.DataContext is not CourseGroupItem item || Vm == null) return;
         var course = item.Sections[0];
 
-        if (expander.FindName("GroupFixedRoomsPicker") is CheckListPickerControl roomsPicker)
+        if (expander.FindName("GroupUnavailableRoomsPicker") is CheckListPickerControl roomsPicker)
         {
             roomsPicker.DataContext = CheckListBinder.Bind(
                 Vm.Workspace.Rooms.ToList(),
-                r => r.Id, r => $"{r.Id} ({r.Name})",
-                course.FixedRooms);
+                r => r.Id, r => RoomDisplayLabel(r),
+                course.UnavailableRooms);
         }
         if (expander.FindName("GroupCoteachProfsPicker") is CheckListPickerControl coteachPicker)
         {
             coteachPicker.DataContext = CheckListBinder.Bind(
                 Vm.Workspace.Professors.ToList(),
-                p => p.Id, p => $"{p.Id} ({p.Name})",
+                p => p.Id, p => p.Name,
                 course.CoteachProfs);
         }
         if (expander.FindName("FixedSlotEditor") is FixedSlotEditorControl editor)
@@ -158,7 +160,7 @@ public partial class DataInputView : UserControl
         if (rep.BlockStructure.Count > 0 && rep.BlockStructure.Sum() != rep.HoursPerWeek)
         {
             MessageBox.Show(
-                $"블록구조 합({rep.BlockStructure.Sum()})이 시수/주({rep.HoursPerWeek})와 일치하지 않습니다.\n" +
+                $"블록구조 합({rep.BlockStructure.Sum()})이 주당 수업시간({rep.HoursPerWeek})과 일치하지 않습니다.\n" +
                 "해를 찾을 수 없으니 값을 맞춰주세요.",
                 "저장 불가",
                 MessageBoxButton.OK,
@@ -203,28 +205,57 @@ public partial class DataInputView : UserControl
         var item = FindCourseGroupItem(dep);
         if (item != null) Vm.RemoveSectionCommand.Execute(item);
     }
+private void OnProfessorSaveClick(object sender, RoutedEventArgs e)
+{
+    if (sender is not FrameworkElement el || el.DataContext is not ProfessorItem item || Vm == null) return;
 
-    private void OnProfessorSaveClick(object sender, RoutedEventArgs e)
+    if (Vm.Workspace.Rooms.Count > 0 && item.Professor.UnavailableRooms.Count >= Vm.Workspace.Rooms.Count)
     {
-        if (sender is FrameworkElement el && el.DataContext is Professor p && Vm != null)
-            Vm.SelectedItem = p;
+        MessageBox.Show(
+            "모든 강의실을 불가 강의실로 선택하면 시간표를 만들 수 없습니다. 최소 1개 강의실은 사용할 수 있게 남겨주세요.",
+            "저장 불가",
+            MessageBoxButton.OK,
+            MessageBoxImage.Warning);
+
+        var expander = FindAncestor<Expander>(el);
+        if (expander?.FindName("UnavailableRoomsPicker") is CheckListPickerControl picker
+            && picker.DataContext is IEnumerable<CheckListItem> rooms)
+        {
+            foreach (var room in rooms)
+                room.IsChecked = false;
+        }
+
+        return;
     }
 
-    private void OnProfessorDeleteClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement el && el.DataContext is Professor p && Vm != null)
-            Vm.SelectedItem = p;
-    }
+    Vm.SaveProfessorCommand.Execute(item);
+}
 
-    private void OnRoomSaveClick(object sender, RoutedEventArgs e)
-    {
-        if (sender is FrameworkElement el && el.DataContext is Room r && Vm != null)
-            Vm.SelectedItem = r;
-    }
+private void OnProfessorAllRoomsClick(object sender, RoutedEventArgs e)
+{
+    var expander = sender is DependencyObject dep ? FindAncestor<Expander>(dep) : null;
+    if (expander?.FindName("UnavailableRoomsPicker") is not CheckListPickerControl picker) return;
 
-    private void OnRoomDeleteClick(object sender, RoutedEventArgs e)
+    if (picker.DataContext is IEnumerable<CheckListItem> items)
     {
-        if (sender is FrameworkElement el && el.DataContext is Room r && Vm != null)
-            Vm.SelectedItem = r;
+        foreach (var item in items)
+            item.IsChecked = true;
+    }
+}
+
+private static string RoomDisplayLabel(Room room)
+{
+    var parts = new List<string>();
+
+    if (room.IsLab)
+        parts.Add("실습실");
+
+    if (room.Capacity > 0)
+        parts.Add($"{room.Capacity}명");
+
+    return parts.Count == 0
+        ? room.Name
+        : $"{room.Name} ({string.Join(", ", parts)})";
+}
     }
 }

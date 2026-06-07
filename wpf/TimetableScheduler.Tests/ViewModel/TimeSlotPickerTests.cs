@@ -1,5 +1,6 @@
 using TimetableScheduler.Domain;
 using TimetableScheduler.ViewModel.Editors;
+using TimetableScheduler.ViewModel.Pages;
 
 namespace TimetableScheduler.Tests.ViewModel;
 
@@ -38,5 +39,24 @@ public class TimeSlotPickerTests
         vm.Toggle(0, 5);  // lunch
         Assert.Empty(target);
         Assert.False(vm.CellAt(0, 5).IsSelected);
+    }
+
+    [Fact]
+    public void FixedSlotEditor_LenTwoBlocksUseTimeRangesAndAllowedStarts()
+    {
+        var item = new CourseGroupItem
+        {
+            BaseId = "X",
+            Sections = new List<Course>
+            {
+                new() { Id = "X-01", HoursPerWeek = 3, BlockStructure = new List<int> { 2, 1 }, IsFixed = true },
+            },
+        };
+
+        var vm = FixedSlotEditorViewModel.Build(item, isFixed: true);
+        var firstBlock = vm.SectionEditors.Single().BlockEntries[0];
+
+        Assert.Equal(new[] { 1, 3, 6, 8 }, firstBlock.PeriodOptions.Select(o => o.Period));
+        Assert.Contains("09:00~11:00", firstBlock.PeriodOptions[0].Label);
     }
 }

@@ -41,6 +41,7 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         ConflictType.SectionConflict => "HC-08 분반 중복",
         ConflictType.GradeConflict => "HC-11 학년 충돌",
         ConflictType.FixedRoomViolation => "HC-14 고정 강의실 위반",
+        ConflictType.CourseUnavailableRoomViolation => "HC-14 불가 강의실 위반",
         ConflictType.FixedTimeViolation => "HC-13 고정 시간표",
         ConflictType.BlockStartViolation => "HC-19 블록 시작 교시",
         ConflictType.SameCourseSameDayConflict => "HC-20 동일 수업 동일 요일",

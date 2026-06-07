@@ -1,0 +1,91 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1200" height="720" viewBox="0 0 1200 720" role="img" aria-labelledby="title desc">
+  <title id="title">시간표 자동생성 엔진 흐름</title>
+  <desc id="desc">사용자 입력에서 Workspace snapshot, CP-SAT 모델 빌드, SC 단계별 최적화, 다양성 탐색, 점수화와 화면 렌더링으로 이어지는 흐름</desc>
+  <defs>
+    <style>
+      .bg { fill: #f8fafc; }
+      .stage { fill: #ffffff; stroke: #cbd5e1; stroke-width: 2; rx: 16; }
+      .input { fill: #eff6ff; stroke: #60a5fa; }
+      .solver { fill: #fffbeb; stroke: #f59e0b; }
+      .score { fill: #ecfdf5; stroke: #34d399; }
+      .ui { fill: #f5f3ff; stroke: #a78bfa; }
+      .title { font: 700 27px 'Segoe UI', 'Apple SD Gothic Neo', sans-serif; fill: #0f172a; }
+      .label { font: 700 18px 'Segoe UI', 'Apple SD Gothic Neo', sans-serif; fill: #1e293b; }
+      .small { font: 500 14px 'Segoe UI', 'Apple SD Gothic Neo', sans-serif; fill: #475569; }
+      .arrow { stroke: #64748b; stroke-width: 2.5; marker-end: url(#arrowhead); fill: none; }
+    </style>
+    <marker id="arrowhead" markerWidth="10" markerHeight="10" refX="8" refY="3" orient="auto">
+      <path d="M0,0 L0,6 L9,3 z" fill="#64748b" />
+    </marker>
+  </defs>
+  <rect class="bg" x="0" y="0" width="1200" height="720" />
+  <text class="title" x="600" y="44" text-anchor="middle">시간표 자동생성 엔진: 입력 → 제약 모델 → 다양한 해 → 점수/렌더링</text>
+
+  <rect class="stage input" x="52" y="100" width="220" height="112" />
+  <text class="label" x="162" y="136" text-anchor="middle">입력 데이터</text>
+  <text class="small" x="162" y="164" text-anchor="middle">Course / Professor / Room</text>
+  <text class="small" x="162" y="188" text-anchor="middle">CrossGroup / RetakeScenario</text>
+
+  <rect class="stage input" x="342" y="100" width="220" height="112" />
+  <text class="label" x="452" y="136" text-anchor="middle">Workspace Snapshot</text>
+  <text class="small" x="452" y="164" text-anchor="middle">분반 확장</text>
+  <text class="small" x="452" y="188" text-anchor="middle">DB와 분리된 계산 입력</text>
+
+  <rect class="stage solver" x="632" y="100" width="220" height="112" />
+  <text class="label" x="742" y="136" text-anchor="middle">ModelBuilder</text>
+  <text class="small" x="742" y="164" text-anchor="middle">x/y/start/day 변수 생성</text>
+  <text class="small" x="742" y="188" text-anchor="middle">HC-01~21 등록</text>
+
+  <rect class="stage solver" x="922" y="100" width="220" height="112" />
+  <text class="label" x="1032" y="136" text-anchor="middle">CP-SAT 모델</text>
+  <text class="small" x="1032" y="164" text-anchor="middle">시간·강의실 격자</text>
+  <text class="small" x="1032" y="188" text-anchor="middle">모든 하드 제약 포함</text>
+
+  <path class="arrow" d="M272 156 L342 156" />
+  <path class="arrow" d="M562 156 L632 156" />
+  <path class="arrow" d="M852 156 L922 156" />
+
+  <rect class="stage solver" x="130" y="310" width="220" height="126" />
+  <text class="label" x="240" y="346" text-anchor="middle">Phase 1A</text>
+  <text class="small" x="240" y="374" text-anchor="middle">SC-01 최소화</text>
+  <text class="small" x="240" y="398" text-anchor="middle">월오전/금오후 회피</text>
+
+  <rect class="stage solver" x="410" y="310" width="220" height="126" />
+  <text class="label" x="520" y="346" text-anchor="middle">Phase 1B</text>
+  <text class="small" x="520" y="374" text-anchor="middle">SC-01 bound 유지</text>
+  <text class="small" x="520" y="398" text-anchor="middle">SC-02 교수 요일 집중</text>
+
+  <rect class="stage solver" x="690" y="310" width="220" height="126" />
+  <text class="label" x="800" y="346" text-anchor="middle">Phase 1C</text>
+  <text class="small" x="800" y="374" text-anchor="middle">SC-01/02 bound 유지</text>
+  <text class="small" x="800" y="398" text-anchor="middle">SC-03 블록 간격</text>
+
+  <rect class="stage solver" x="970" y="310" width="160" height="126" />
+  <text class="label" x="1050" y="346" text-anchor="middle">Phase 2</text>
+  <text class="small" x="1050" y="374" text-anchor="middle">bound 고정</text>
+  <text class="small" x="1050" y="398" text-anchor="middle">seed loop</text>
+
+  <path class="arrow" d="M1032 212 C1032 252,240 252,240 310" />
+  <path class="arrow" d="M350 373 L410 373" />
+  <path class="arrow" d="M630 373 L690 373" />
+  <path class="arrow" d="M910 373 L970 373" />
+
+  <rect class="stage score" x="182" y="540" width="220" height="112" />
+  <text class="label" x="292" y="576" text-anchor="middle">해 목록</text>
+  <text class="small" x="292" y="604" text-anchor="middle">SolutionAssignment[]</text>
+  <text class="small" x="292" y="628" text-anchor="middle">중복 제거된 여러 해</text>
+
+  <rect class="stage score" x="490" y="540" width="220" height="112" />
+  <text class="label" x="600" y="576" text-anchor="middle">Scoring / Rank</text>
+  <text class="small" x="600" y="604" text-anchor="middle">SC01+SC02+SC03</text>
+  <text class="small" x="600" y="628" text-anchor="middle">Top-M 정렬</text>
+
+  <rect class="stage ui" x="798" y="540" width="220" height="112" />
+  <text class="label" x="908" y="576" text-anchor="middle">결과 화면</text>
+  <text class="small" x="908" y="604" text-anchor="middle">통합/학년/강의실/교수</text>
+  <text class="small" x="908" y="628" text-anchor="middle">수동 편집으로 연결</text>
+
+  <path class="arrow" d="M1050 436 C1050 500,292 500,292 540" />
+  <path class="arrow" d="M402 596 L490 596" />
+  <path class="arrow" d="M710 596 L798 596" />
+</svg>
