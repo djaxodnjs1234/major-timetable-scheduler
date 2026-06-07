@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using TimetableScheduler.Data;
 using TimetableScheduler.Domain;
 using TimetableScheduler.Scoring;
+using TimetableScheduler.Solver;
 using TimetableScheduler.ViewModel.Grid;
 
 namespace TimetableScheduler.ViewModel.Pages;
@@ -59,6 +60,20 @@ public sealed partial class ResultsViewModel : PageViewModelBase
 
     private bool CanEditSelected() => SelectedSolution != null;
 
+    [RelayCommand]
+    private void KeepSolution(SolutionCardViewModel? card)
+    {
+        if (card is null)
+            return;
+
+        var name = $"Kept Solution {DateTime.Now:yyyy-MM-dd HH:mm:ss}";
+        _workspace.SaveTimetable(
+            name,
+            card.Solution.Assignment,
+            snapshot: _sessionData ?? _workspace.Snapshot());
+        card.IsKept = true;
+    }
+
     public void SetSolutions(IEnumerable<RankedSolution> ranked, AppData? sessionData = null)
     {
         _sessionData = sessionData;
@@ -99,6 +114,7 @@ public sealed partial class ResultsViewModel : PageViewModelBase
         if (globalMax == 0) globalMax = 1;
 
         int rank = 1;
+        var courses = SessionCourses.ToDictionary(c => c.Id);
         foreach (var s in Solutions)
         {
             var days = Enumerable.Range(0, 5).Select(d => new DayDensityItem(
@@ -107,9 +123,67 @@ public sealed partial class ResultsViewModel : PageViewModelBase
                     .Select(a => a.CourseId).Distinct().Count() / globalMax
             )).ToList();
 
+            var previewRows = BuildPreviewRows(s.Assignment, courses);
+
             var normalized = Math.Round(s.Score.Total / maxScore * 100, 1);
-            SolutionCards.Add(new SolutionCardViewModel(s, rank++, normalized, days));
+            SolutionCards.Add(new SolutionCardViewModel(s, rank++, normalized, days, previewRows));
         }
+    }
+
+    private static IReadOnlyList<MiniPreviewRow> BuildPreviewRows(
+        IReadOnlyList<SolutionAssignment> assignments,
+        IReadOnlyDictionary<string, Course> courses)
+    {
+        var rows = new List<MiniPreviewRow>();
+        for (var period = 1; period <= 9; period++)
+        {
+            var cells = new List<MiniPreviewCell>();
+            for (var day = 0; day < 5; day++)
+            {
+                if (period == 5)
+                {
+                    cells.Add(new MiniPreviewCell("점", false, true, null));
+                    continue;
+                }
+
+                var slotCourses = assignments
+                    .Where(a => a.Day == day && a.Period == period)
+                    .Select(a => a.CourseId)
+                    .Distinct()
+                    .Select(id => courses.TryGetValue(id, out var course) ? course : null)
+                    .Where(course => course is not null)
+                    .Cast<Course>()
+                    .OrderBy(course => course.Grade)
+                    .ThenBy(course => course.Name, StringComparer.Ordinal)
+                    .ToList();
+
+                if (slotCourses.Count == 0)
+                {
+                    cells.Add(new MiniPreviewCell(string.Empty, false, false, null));
+                    continue;
+                }
+
+                var first = slotCourses[0];
+                var label = $"{first.Grade}{ShortName(first.Name)}";
+                if (slotCourses.Count > 1)
+                    label += $"+{slotCourses.Count - 1}";
+
+                cells.Add(new MiniPreviewCell(label, true, false, first.Grade));
+            }
+
+            rows.Add(new MiniPreviewRow(period, cells));
+        }
+
+        return rows;
+    }
+
+    private static string ShortName(string name)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+            return "?";
+
+        var compact = name.Replace(" ", string.Empty);
+        return compact.Length <= 3 ? compact : compact[..3];
     }
 
     private void RenderCurrent()

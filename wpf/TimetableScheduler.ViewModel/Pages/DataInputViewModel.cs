@@ -85,6 +85,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private readonly SolverService _solver;
     private CancellationTokenSource? _cts;
     private EventHandler? _workspaceChangedHandler;
+    private List<string> _selectedCrossCandidateIds = new();
 
     public override string Title => "정보 입력";
 
@@ -186,15 +187,12 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     [RelayCommand]
     private void AddCross()
     {
-        var chosen = CrossCandidateItems
-            .Where(item => item.IsChecked)
-            .Select(item => item.Id)
-            .ToList();
-        if (chosen.Count != 2)
+        if (_selectedCrossCandidateIds.Count != 2)
         {
             CrossStatusMessage = "Cross는 과목 2개만 선택할 수 있습니다.";
             return;
         }
+        var chosen = _selectedCrossCandidateIds.ToList();
 
         var groups = CourseBaseGroups();
         var sectionCounts = chosen.Select(id => groups[id].Count).Distinct().ToList();
@@ -457,12 +455,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private int timeLimitSec = 120;
 
     [ObservableProperty]
-    private bool useAdvancedPerSolveTimeSec;
-
-    [ObservableProperty]
-    private int perSolveTimeSec = new DiverseSolverOptions().PerSolveTimeSec;
-
-    [ObservableProperty]
     private bool useSc01 = true;
 
     [ObservableProperty]
@@ -716,9 +708,11 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     private void RebuildCrossManager(bool clearCandidateSelection = false)
     {
-        var selected = clearCandidateSelection
-            ? new HashSet<string>()
-            : CrossCandidateItems.Where(item => item.IsChecked).Select(item => item.Id).ToHashSet();
+        _selectedCrossCandidateIds = clearCandidateSelection
+            ? new List<string>()
+            : CrossCandidateItems.Where(item => item.IsChecked).Select(item => item.Id).ToList();
+        if (_selectedCrossCandidateIds.Count > 2)
+            _selectedCrossCandidateIds = _selectedCrossCandidateIds.Take(2).ToList();
         var groups = CourseBaseGroups();
 
         CrossGroupItems.Clear();
@@ -739,19 +733,37 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             .ThenBy(g => SortNumericFirst(g.Key))
             .GroupBy(g => g.Value[0].Grade))
         {
-            var items = new ObservableCollection<CheckListItem>();
-            foreach (var (baseId, courses) in gradeGroup)
+            var items = CheckListBinder.Bind(
+                gradeGroup.ToList(),
+                entry => entry.Key,
+                entry => $"{entry.Value[0].Name} (분반 {entry.Value.Count}개, {entry.Value[0].HoursPerWeek}h)",
+                _selectedCrossCandidateIds,
+                (id, isChecked) =>
+                {
+                    if (isChecked)
+                    {
+                        if (_selectedCrossCandidateIds.Count > 2)
+                        {
+                            var itemToUncheck = CrossCandidateItems.First(item => item.Id == id);
+                            itemToUncheck.IsChecked = false;
+                            CrossStatusMessage = "Cross는 최대 2개의 과목만 선택할 수 있습니다.";
+                        } else {
+                            CrossStatusMessage = "";
+                        }
+                    } else {
+                        CrossStatusMessage = "";
+                    }
+                }
+            );
+            foreach (var item in items)
             {
-                var rep = courses[0];
-                var item = new CheckListItem(
-                    baseId,
-                    $"{rep.Name} (분반 {courses.Count}개, {rep.HoursPerWeek}h)",
-                    selected.Contains(baseId));
                 CrossCandidateItems.Add(item);
-                items.Add(item);
             }
-            CrossCandidateGradeGroups.Add(new CrossCandidateGradeGroup($"{gradeGroup.Key}학년", items));
+            CrossCandidateGradeGroups.Add(new CrossCandidateGradeGroup($"{gradeGroup.Key}학년", new ObservableCollection<CheckListItem>(items)));
         }
+
+        if (_selectedCrossCandidateIds.Count == 2 && CrossStatusMessage == "Cross는 최대 2개의 과목만 선택할 수 있습니다.")
+            CrossStatusMessage = "";
     }
 
     private Dictionary<string, List<Course>> CourseBaseGroups() => _workspace.Courses
@@ -937,9 +949,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             {
                 TotalSolutions = TotalSolutions,
                 TimeLimitSec = TimeLimitSec,
-                PerSolveTimeSec = UseAdvancedPerSolveTimeSec
-                    ? Math.Max(1, PerSolveTimeSec)
-                    : new DiverseSolverOptions().PerSolveTimeSec,
+                PerSolveTimeSec = new DiverseSolverOptions().PerSolveTimeSec,
                 UseSc01 = UseSc01,
                 UseSc02 = UseSc02,
                 UseSc03 = UseSc03,
@@ -995,24 +1005,94 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private string InfeasibleMessage()
     {
         var reasons = new List<string>();
+        var professorsById = _workspace.Professors.ToDictionary(professor => professor.Id);
+
+        foreach (var course in _workspace.Courses)
+        {
+            if (course.IsFixed && course.FixedSlots.Count == 0)
+                reasons.Add($"fixed time conflict: {course.Name} 고정 시간이 비어 있습니다");
+
+            if (course.IsFixed && course.FixedSlots.Any(slot => slot.Period == 5))
+                reasons.Add($"fixed time conflict: {course.Name} 이 점심 시간에 고정되어 있습니다");
+
+            if (course.BlockStructure.Count > 0 && course.BlockStructure.Sum() != course.HoursPerWeek)
+                reasons.Add($"insufficient available time slots: {course.Name} 블록 합이 시수와 다릅니다");
+
+            var availableRoomCount = _workspace.Rooms.Count(room =>
+                !course.UnavailableRooms.Contains(room.Id) &&
+                (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)));
+            if (_workspace.Rooms.Count > 0 && availableRoomCount == 0)
+                reasons.Add($"room capacity/type conflict: {course.Name} 에 사용 가능한 강의실이 없습니다");
+
+            if (professorsById.TryGetValue(course.ProfessorId, out var professor))
+            {
+                if (course.IsFixed && course.FixedSlots.Any(slot => professor.UnavailableSlots.Any(p => p.Day == slot.Day && p.Period == slot.Period)))
+                    reasons.Add($"professor unavailable time conflict: {course.Name} / {professor.Name}");
+
+                var availableProfessorRooms = _workspace.Rooms.Count(room =>
+                    !course.UnavailableRooms.Contains(room.Id) &&
+                    !professor.UnavailableRooms.Contains(room.Id) &&
+                    (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)) &&
+                    (professor.AllowedRooms.Count == 0 || professor.AllowedRooms.Contains(room.Id) || course.FixedRooms.Contains(room.Id)));
+                if (_workspace.Rooms.Count > 0 && availableProfessorRooms == 0)
+                    reasons.Add($"room capacity/type conflict: {course.Name} / {professor.Name} 조건을 만족하는 강의실이 없습니다");
+
+                if (!course.IsFixed)
+                {
+                    var availableSlots = Constants.Periods
+                        .Where(period => period != 5)
+                        .SelectMany(period => Enumerable.Range(0, 5).Select(day => new TimeSlot(day, period)))
+                        .Count(slot => professor.UnavailableSlots.All(p => p.Day != slot.Day || p.Period != slot.Period));
+                    if (availableSlots < Math.Max(course.HoursPerWeek, course.BlockStructure.Sum()))
+                        reasons.Add($"insufficient available time slots: {course.Name} / {professor.Name}");
+                }
+            }
+        }
+
         foreach (var prof in _workspace.Professors)
             if (_workspace.Rooms.Count > 0 && prof.UnavailableRooms.Count >= _workspace.Rooms.Count)
-                reasons.Add($"{prof.Name} 교수의 불가 강의실이 전체 선택됨");
+                reasons.Add($"room capacity/type conflict: {prof.Name} 교수의 사용 가능 강의실이 없습니다");
         foreach (var course in _workspace.Courses)
             if (_workspace.Rooms.Count > 0 && course.UnavailableRooms.Count >= _workspace.Rooms.Count)
-                reasons.Add($"{course.Name} 과목의 불가 강의실이 전체 선택됨");
-        foreach (var course in _workspace.Courses)
-            if (course.BlockStructure.Count > 0 && course.BlockStructure.Sum() != course.HoursPerWeek)
-                reasons.Add($"{course.Name} 과목의 블록구조 합이 주당 수업시간과 다름");
+                reasons.Add($"room capacity/type conflict: {course.Name} 과목의 사용 가능 강의실이 없습니다");
+
+        foreach (var cross in _workspace.CrossGroups)
+        {
+            if (cross.BaseIds.Count != 2)
+            {
+                reasons.Add($"cross constraint conflict: {cross.Id} 는 과목 2개만 포함해야 합니다");
+                continue;
+            }
+
+            var groupedCourses = cross.BaseIds
+                .Select(id => new { Id = id, Courses = _workspace.Courses.Where(course => DomainHelpers.BaseId(course.Id) == id).ToList() })
+                .ToList();
+            if (groupedCourses.Any(group => group.Courses.Count == 0))
+            {
+                reasons.Add($"cross constraint conflict: {cross.Id} 대상 과목을 찾을 수 없습니다");
+                continue;
+            }
+
+            if (groupedCourses.Select(group => group.Courses.Count).Distinct().Count() > 1)
+                reasons.Add($"cross constraint conflict: {cross.Id} 분반 수가 다릅니다");
+
+            if (groupedCourses.Select(group => group.Courses[0].HoursPerWeek).Distinct().Count() > 1)
+                reasons.Add($"cross constraint conflict: {cross.Id} 총 시수가 다릅니다");
+        }
+
+        reasons = reasons
+            .Where(reason => !string.IsNullOrWhiteSpace(reason))
+            .Distinct()
+            .Take(3)
+            .ToList();
 
         return reasons.Count == 0
-            ? "해를 찾지 못했습니다. 불가 시간, 불가 강의실, 시간 고정, Cross 설정을 줄여보세요."
-            : $"해를 찾지 못했습니다. 원인: {string.Join(" / ", reasons.Take(3))}";
+            ? "INFEASIBLE: detailed reason unavailable"
+            : $"INFEASIBLE: {string.Join(" / ", reasons)}";
     }
 
     private string UnknownMessage() =>
-        "시간 초과(UNKNOWN): 제한 시간 안에 해를 찾거나 불가능함을 확정하지 못했습니다. " +
-        "고급 설정의 '한 번 탐색 제한 시간'을 켜고 값을 늘려 다시 시도해 보세요.";
+        "시간 초과(UNKNOWN): 제한 시간 안에 해를 찾거나 불가능함을 확정하지 못했습니다. 제한 시간을 늘려 다시 시도해 보세요.";
 
     private string NoSolutionMessage(string status) =>
         $"해를 찾지 못했습니다({status}). 불가 시간, 불가 강의실, 시간 고정, Cross 설정을 줄이거나 제한 시간을 늘려보세요.";
