@@ -37,6 +37,13 @@ public static class XlsxLoader
         new($"^([{KoreanMonday}{KoreanTuesday}{KoreanWednesday}{KoreanThursday}{KoreanFriday}])(\\d+)$", RegexOptions.Compiled);
     private static readonly Regex SplitRegex = new(@"[,\s]+", RegexOptions.Compiled);
 
+    private static List<int> DefaultBlockStructureForHours(int hours) => hours switch
+    {
+        3 => new List<int> { 1, 2 },
+        4 => new List<int> { 2, 2 },
+        _ => new List<int> { hours },
+    };
+
     public static XlsxLoadResult Load(string path)
     {
         using var wb = new XLWorkbook(path);
@@ -93,10 +100,9 @@ public static class XlsxLoader
             var xlsxBlocks = schedule.Select(entry => entry.Periods.Count).ToList();
 
             List<int> blockStructure;
-            if (hours == 3) blockStructure = new List<int> { 2, 1 };
-            else if (hours == 4) blockStructure = new List<int> { 2, 2 };
+            if (hours is 3 or 4) blockStructure = DefaultBlockStructureForHours(hours);
             else if (xlsxBlocks.Count > 0 && xlsxBlocks.Sum() == hours) blockStructure = xlsxBlocks;
-            else blockStructure = new List<int> { hours };
+            else blockStructure = DefaultBlockStructureForHours(hours);
 
             var normalizedName = name.Replace(" ", "", StringComparison.Ordinal);
             var isCapstoneDesign =
@@ -110,6 +116,7 @@ public static class XlsxLoader
                 ? explicitSectionMatch.Groups["base"].Value
                 : DomainHelpers.BaseId(code);
             var isCapstoneCode = sourceBaseId.StartsWith("CP", StringComparison.OrdinalIgnoreCase);
+            var shouldCollapseCapstone = hasExplicitSectionId && (isCapstoneDesign || isCapstoneCode);
 
             var importedBaseId = GetOrCreateImportedBaseId(sourceBaseId);
 
@@ -133,7 +140,9 @@ public static class XlsxLoader
             }
             else
             {
-                counts[sourceBaseId] = counts.GetValueOrDefault(sourceBaseId, 0) + 1;
+                counts[sourceBaseId] = shouldCollapseCapstone
+                    ? 1
+                    : counts.GetValueOrDefault(sourceBaseId, 0) + 1;
 
                 if (!seen.ContainsKey(sourceBaseId))
                 {

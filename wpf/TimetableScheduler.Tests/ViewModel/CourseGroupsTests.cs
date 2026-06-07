@@ -118,32 +118,30 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
-    public void Fixed_TwoSections_ProducesTwoIndividualRows()
+    public void Fixed_TwoSections_RemainsOneGroupRow()
     {
         _workspace.AddCourse(MakeCourse("GA1005-01", 1, isFixed: true));
         _workspace.AddCourse(MakeCourse("GA1005-02", 2, isFixed: true));
 
         var vm = MakeVm();
 
-        Assert.Equal(2, vm.CourseGroups.Count);
-        Assert.True(vm.CourseGroups[0].IsFixedIndividual);
-        Assert.True(vm.CourseGroups[1].IsFixedIndividual);
-        Assert.Single(vm.CourseGroups[0].Sections);
-        Assert.Single(vm.CourseGroups[1].Sections);
+        Assert.Single(vm.CourseGroups);
+        Assert.Equal(2, vm.CourseGroups[0].Sections.Count);
+        Assert.False(vm.CourseGroups[0].IsFixedIndividual);
+        Assert.Contains("★", vm.CourseGroups[0].DisplayLabel);
     }
 
     [Fact]
-    public void Mixed_FixedAndNonFixed_SplitsCorrectly()
+    public void Mixed_FixedAndNonFixed_StaysGroupedByBaseCourse()
     {
         _workspace.AddCourse(MakeCourse("GA1004-01", 1));           // non-fixed group
         _workspace.AddCourse(MakeCourse("GA1004-02", 2));
-        _workspace.AddCourse(MakeCourse("GA1005-01", 1, isFixed: true));  // fixed individual
+        _workspace.AddCourse(MakeCourse("GA1005-01", 1, isFixed: true));
         _workspace.AddCourse(MakeCourse("GA1005-02", 2, isFixed: true));
 
         var vm = MakeVm();
 
-        // GA1004 group (1 row) + GA1005-01 + GA1005-02 = 3 rows total
-        Assert.Equal(3, vm.CourseGroups.Count);
+        Assert.Equal(2, vm.CourseGroups.Count);
     }
 
     [Fact]
@@ -312,7 +310,7 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
-    public void SaveGroup_PropagatesIsFixed_ToAllSections()
+    public void SaveGroup_PropagatesIsFixed_ToAllSections_WithoutSplittingTheGroup()
     {
         _workspace.AddCourse(MakeCourse("GA1004-01", 1));
         _workspace.AddCourse(MakeCourse("GA1004-02", 2));
@@ -325,6 +323,8 @@ public class CourseGroupsTests : IDisposable
         var courses = _workspace.Courses.OrderBy(c => c.Id).ToList();
         Assert.True(courses[0].IsFixed);
         Assert.True(courses[1].IsFixed);
+        Assert.Single(vm.CourseGroups);
+        Assert.Equal(2, vm.CourseGroups[0].Sections.Count);
     }
 
     [Fact]

@@ -1,8 +1,10 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TimetableScheduler.Data;
+using TimetableScheduler.Domain;
 using TimetableScheduler.Solver;
 using TimetableScheduler.ViewModel.Grid;
 
@@ -47,6 +49,26 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
     private void OnSavedTimetablesChanged(object? sender, NotifyCollectionChangedEventArgs e)
     {
         OnPropertyChanged(nameof(HasNoTimetable));
+
+        if (SavedTimetables.Count == 0)
+        {
+            SelectedTimetable = null;
+            return;
+        }
+
+        if (e.Action == NotifyCollectionChangedAction.Add
+            && e.NewItems is { Count: > 0 }
+            && e.NewItems[0] is SavedTimetableRecord added)
+        {
+            SelectedTimetable = added;
+            return;
+        }
+
+        if (SelectedTimetable == null
+            || !SavedTimetables.Any(t => t.Id == SelectedTimetable.Id))
+        {
+            SelectedTimetable = SavedTimetables.FirstOrDefault();
+        }
     }
 
     partial void OnSelectedTimetableChanged(SavedTimetableRecord? value)
@@ -57,23 +79,31 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
 
         if (value == null)
         {
-            RenderViews(Array.Empty<SolutionAssignment>(), Array.Empty<Domain.Course>());
+            RenderViews(
+                Array.Empty<SolutionAssignment>(),
+                Array.Empty<Course>(),
+                Array.Empty<Professor>(),
+                Array.Empty<Room>());
             return;
         }
 
         var assignments = value.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
             .ToList();
-        RenderViews(assignments, _workspace.ExpandedCourses);
+        var snapshot = DeserializeSnapshot(value.SnapshotJson);
+        RenderViews(
+            assignments,
+            snapshot?.Courses ?? _workspace.ExpandedCourses,
+            (IReadOnlyList<Professor>?)snapshot?.Professors ?? _workspace.Professors,
+            (IReadOnlyList<Room>?)snapshot?.Rooms ?? _workspace.Rooms);
     }
 
     private void RenderViews(
         IReadOnlyList<SolutionAssignment> assignments,
-        IReadOnlyList<Domain.Course> courses)
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<Professor> professors,
+        IReadOnlyList<Room> rooms)
     {
-        var professors = _workspace.Professors;
-        var rooms = _workspace.Rooms;
-
         Preview.Render(assignments, courses, professors, rooms);
 
         GradeViews.Clear();
@@ -98,6 +128,21 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
             var vm = new TimetableGridViewModel();
             vm.Render(assignments, courses, (c, _) => c.ProfessorId == p.Id, professors, rooms);
             ProfessorViews.Add(new NamedGridViewModel(p.Id, p.Name, vm));
+        }
+    }
+
+    private static AppData? DeserializeSnapshot(string? snapshotJson)
+    {
+        if (string.IsNullOrWhiteSpace(snapshotJson))
+            return null;
+
+        try
+        {
+            return JsonSerializer.Deserialize<AppData>(snapshotJson);
+        }
+        catch (JsonException)
+        {
+            return null;
         }
     }
 

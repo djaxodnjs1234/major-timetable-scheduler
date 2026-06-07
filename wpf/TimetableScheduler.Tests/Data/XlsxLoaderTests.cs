@@ -33,13 +33,13 @@ public class XlsxLoaderTests
     }
 
     [Fact]
-    public void Load_RealXlsx_BlockStructure3hr_Is21()
+    public void Load_RealXlsx_BlockStructure3hr_Is12()
     {
         var path = Path.Combine(TestPaths.FindRepoRoot(), "개설강좌 편람.xlsx");
         var data = XlsxLoader.Load(path);
         var threeHourCourses = data.Courses.Where(course => course.HoursPerWeek == 3).ToList();
         if (threeHourCourses.Count == 0) return;
-        Assert.All(threeHourCourses, course => Assert.Equal(new[] { 2, 1 }, course.BlockStructure));
+        Assert.All(threeHourCourses, course => Assert.Equal(new[] { 1, 2 }, course.BlockStructure));
     }
 
     [Fact]
@@ -89,7 +89,24 @@ public class XlsxLoaderTests
 
         var course = Assert.Single(data.Courses);
         Assert.Equal("1", course.Id);
-        Assert.Equal(2, course.Section);
+        Assert.Equal(1, course.Section);
+        Assert.Equal(new[] { 1, 2 }, course.BlockStructure);
+    }
+
+    [Fact]
+    public void Load_MapsProfessorAndRequiredTypeAndDefaultBlocks()
+    {
+        var path = CreateWorkbook(
+            ("3", "\uD544\uC218", "\uC54C\uACE0\uB9AC\uC998", "3", "GA2001", "\uD64D\uAE38\uB3D9", "\uCEF4\uD4E8\uD130", "\uD65423/A101"));
+
+        var data = XlsxLoader.Load(path);
+
+        var course = Assert.Single(data.Courses);
+        var professor = Assert.Single(data.Professors);
+        Assert.Equal("전필", course.CourseType);
+        Assert.Equal(new[] { 1, 2 }, course.BlockStructure);
+        Assert.Equal(professor.Id, course.ProfessorId);
+        Assert.Equal("홍길동", professor.Name);
     }
 
     private static string CreateWorkbook(params (string Grade, string Type, string Name, string Hours, string Code, string Professor, string Department, string Schedule)[] rows)
