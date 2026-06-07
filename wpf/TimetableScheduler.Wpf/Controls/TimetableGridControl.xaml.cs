@@ -164,7 +164,7 @@ public partial class TimetableGridControl : UserControl
         });
         panel.Children.Add(new TextBlock
         {
-            Text = a.ProfessorId,
+            Text = a.ProfessorLabel,
             FontSize = 9,
             TextAlignment = TextAlignment.Center,
             Foreground = Brushes.DimGray,

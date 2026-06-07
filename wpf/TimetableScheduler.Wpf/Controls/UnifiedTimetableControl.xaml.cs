@@ -281,8 +281,8 @@ public partial class UnifiedTimetableControl : UserControl
             TextWrapping = TextWrapping.Wrap,
         });
         var allProfs = new List<string>();
-        if (!string.IsNullOrEmpty(a.ProfessorId)) allProfs.Add(a.ProfessorId);
-        allProfs.AddRange(a.CoteachProfIds);
+        if (!string.IsNullOrEmpty(a.ProfessorLabel)) allProfs.Add(a.ProfessorLabel);
+        allProfs.AddRange(a.CoteachProfLabels);
         if (allProfs.Count > 0)
             panel.Children.Add(new TextBlock
             {

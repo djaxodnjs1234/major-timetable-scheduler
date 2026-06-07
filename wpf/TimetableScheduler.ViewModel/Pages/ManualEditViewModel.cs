@@ -1419,7 +1419,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private void Rerender()
     {
         Grid.SetCrossParallelOrder(BuildCrossParallelOrder());
-        Grid.Render(_working, SessionCourses);
+        Grid.Render(_working, SessionCourses, SessionProfessors, SessionRooms);
         Grid.SetCrossLinkLabels(BuildCrossLinkLabels());
         RenderBreakdownViews();
         RefreshConflicts();
@@ -1435,28 +1435,30 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private void RenderBreakdownViews()
     {
         var courses = SessionCourses;
+        var professors = SessionProfessors;
+        var rooms = SessionRooms;
 
         GradeViews.Clear();
         foreach (var g in new[] { 1, 2, 3, 4 })
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(_working, courses, (c, _) => c.Grade == g);
+            vm.Render(_working, courses, (c, _) => c.Grade == g, professors, rooms);
             GradeViews.Add(new NamedGridViewModel(g.ToString(), $"{g}학년", vm));
         }
 
         RoomViews.Clear();
-        foreach (var r in SessionRooms)
+        foreach (var r in rooms)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(_working, courses, (_, rid) => rid == r.Id);
+            vm.Render(_working, courses, (_, rid) => rid == r.Id, professors, rooms);
             RoomViews.Add(new NamedGridViewModel(r.Id, r.Name, vm));
         }
 
         ProfessorViews.Clear();
-        foreach (var p in SessionProfessors)
+        foreach (var p in professors)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(_working, courses, (c, _) => c.ProfessorId == p.Id);
+            vm.Render(_working, courses, (c, _) => c.ProfessorId == p.Id, professors, rooms);
             ProfessorViews.Add(new NamedGridViewModel(p.Id, p.Name, vm));
         }
     }

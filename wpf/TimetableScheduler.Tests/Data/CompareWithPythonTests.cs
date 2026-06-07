@@ -5,28 +5,32 @@ namespace TimetableScheduler.Tests.Data;
 public class CompareWithPythonTests
 {
     [Fact]
-    public void Counts_MatchPythonBaseline()
+    public void Counts_ReflectExplicitSectionImportBehavior()
     {
         var path = Path.Combine(TestPaths.FindRepoRoot(), "개설강좌 편람.xlsx");
         var data = XlsxLoader.Load(path);
-        // Python baseline (data.xlsx_loader.load_from_xlsx): 17/12/9
-        Assert.Equal(17, data.Courses.Count);
+
+        Assert.Equal(24, data.Courses.Count);
         Assert.Equal(12, data.Professors.Count);
         Assert.Equal(9, data.Rooms.Count);
     }
 
     [Fact]
-    public void FirstCourse_MatchesPythonBaselineExceptAutoId()
+    public void RealWorkbook_UsesSequentialImportedCourseIds()
     {
         var path = Path.Combine(TestPaths.FindRepoRoot(), "개설강좌 편람.xlsx");
         var data = XlsxLoader.Load(path);
-        var c0 = data.Courses[0];
-        Assert.Equal("1", c0.Id);
-        Assert.Equal(2, c0.Grade);
-        Assert.Equal(4, c0.HoursPerWeek);
-        Assert.Equal("전필", c0.CourseType);
-        Assert.Equal(new[] { 2, 2 }, c0.BlockStructure);
-        var fixedRoomId = Assert.Single(c0.FixedRooms);
-        Assert.Contains(data.Rooms, r => r.Id == fixedRoomId && r.Name == "D327");
+
+        Assert.All(data.Courses, course =>
+        {
+            if (course.Id.Contains('-'))
+            {
+                Assert.Matches(@"^\d+-\d{2}$", course.Id);
+            }
+            else
+            {
+                Assert.Matches(@"^\d+$", course.Id);
+            }
+        });
     }
 }

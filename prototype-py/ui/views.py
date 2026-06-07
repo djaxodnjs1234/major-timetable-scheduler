@@ -15,7 +15,15 @@ from .theme import (
 from .widgets import make_scrollable, time_label, section_letter
 
 
-def format_course_cell(course, section_count, rooms=None) -> str:
+def _display_name(name_map, item_id):
+    if not item_id:
+        return item_id
+    name = (name_map or {}).get(item_id)
+    return name or item_id
+
+
+def format_course_cell(course, section_count, rooms=None,
+                       professor_names=None, room_names=None) -> str:
     """과목명·분반 / 교수명 / 강의실 — 컴팩트 3줄 포맷.
 
     rooms: 해당 슬롯에서 점유 중인 방 id 집합. 다중방이면 콤마 결합,
@@ -23,9 +31,10 @@ def format_course_cell(course, section_count, rooms=None) -> str:
     """
     sec_label = (f"·{section_letter(course.section)}"
                  if section_count > 1 else "")
-    line = f"{course.name}{sec_label}\n{course.professor_id}"
+    professor = _display_name(professor_names, course.professor_id)
+    line = f"{course.name}{sec_label}\n{professor}"
     if rooms:
-        rs = sorted(rooms)
+        rs = sorted(_display_name(room_names, rid) for rid in rooms)
         if len(rs) <= 3:
             room_str = ",".join(rs)
         else:
@@ -102,6 +111,8 @@ def render_view(tab_dict, state, run_len, inside, accept_fn, color_fn):
     """
     assignments = state.current_assignment()
     course_map = state.course_map
+    professor_names = {p.id: p.name for p in state.professors}
+    room_names = {r.id: r.name for r in state.rooms}
     for key, frame in tab_dict.items():
         # cells[(d, p)] = {cid: set(rid)} — 다중방 정보 보존
         cells = {(d, p): {} for d in range(DAYS) for p in PERIODS}
@@ -118,7 +129,8 @@ def render_view(tab_dict, state, run_len, inside, accept_fn, color_fn):
                 rs = run_len.get((cid, d, p), 1)
                 result.append((
                     format_course_cell(
-                        c, state.section_count(cid), rids),
+                        c, state.section_count(cid), rids,
+                        professor_names, room_names),
                     color_fn(key, c), rs))
             return result
 
@@ -134,6 +146,8 @@ def render_unified(unified_frame, state, run_len, inside):
     """
     assignments = state.current_assignment()
     course_map = state.course_map
+    professor_names = {p.id: p.name for p in state.professors}
+    room_names = {r.id: r.name for r in state.rooms}
     expand_all = bool(getattr(state, "expand_all_grades", False))
 
     # slot_courses[(d, p)] = {cid: set(rid)} — 다중방 정보 보존
@@ -253,7 +267,8 @@ def render_unified(unified_frame, state, run_len, inside):
                         rs = run_len.get((c.id, d, period), 1)
                         tk.Label(grid,
                                  text=format_course_cell(
-                                     c, state.section_count(c.id), rids),
+                                      c, state.section_count(c.id), rids,
+                                      professor_names, room_names),
                                  bg=GRADE_COLORS[g], relief="solid",
                                  bd=1, font=("맑은 고딕", 7),
                                  justify="center", wraplength=52

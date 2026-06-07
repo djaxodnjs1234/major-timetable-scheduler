@@ -190,30 +190,32 @@ public sealed partial class ResultsViewModel : PageViewModelBase
     {
         var assignment = SelectedSolution?.Assignment ?? Array.Empty<Solver.SolutionAssignment>();
         var courses = SessionCourses;
+        var professors = SessionProfessors;
+        var rooms = SessionRooms;
 
-        Unified.Render(assignment, courses);
+        Unified.Render(assignment, courses, professors, rooms);
 
         GradeViews.Clear();
         foreach (var g in new[] { 1, 2, 3, 4 })
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignment, courses, (c, _) => c.Grade == g);
+            vm.Render(assignment, courses, (c, _) => c.Grade == g, professors, rooms);
             GradeViews.Add(new NamedGridViewModel(g.ToString(), $"{g}학년", vm));
         }
 
         RoomViews.Clear();
-        foreach (var r in SessionRooms)
+        foreach (var r in rooms)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignment, courses, (_, rid) => rid == r.Id);
+            vm.Render(assignment, courses, (_, rid) => rid == r.Id, professors, rooms);
             RoomViews.Add(new NamedGridViewModel(r.Id, r.Name, vm));
         }
 
         ProfessorViews.Clear();
-        foreach (var p in SessionProfessors)
+        foreach (var p in professors)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignment, courses, (c, _) => c.ProfessorId == p.Id);
+            vm.Render(assignment, courses, (c, _) => c.ProfessorId == p.Id, professors, rooms);
             ProfessorViews.Add(new NamedGridViewModel(p.Id, p.Name, vm));
         }
     }

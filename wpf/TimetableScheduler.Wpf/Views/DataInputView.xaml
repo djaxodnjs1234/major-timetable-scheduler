@@ -88,38 +88,79 @@
                                        VerticalAlignment="Center" FontSize="11"
                                        Foreground="{StaticResource OnSurfaceVariant}" />
                         </StackPanel>
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="120" />
-                                <ColumnDefinition Width="*" />
-                            </Grid.ColumnDefinitions>
-                            <Grid.RowDefinitions>
-                                <RowDefinition Height="Auto" />
-                            </Grid.RowDefinitions>
 
-                            <TextBlock Grid.Row="0" Grid.Column="0" Text="이름" Margin="0,4" />
-                            <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Professor.Name}"
-                                       Margin="0,4" Padding="6,4" />
-                        </Grid>
-
-                        <StackPanel IsEnabled="{Binding IsEditing}">
-                            <StackPanel Orientation="Horizontal" Margin="0,12,0,4">
-                                <TextBlock Text="불가 강의실"
+                        <Border Background="#FAFAFA"
+                                 BorderBrush="{StaticResource OutlineVariant}"
+                                 BorderThickness="1"
+                                 CornerRadius="4"
+                                 Padding="12,10"
+                                 Margin="0,2,0,12">
+                            <StackPanel>
+                                <TextBlock Text="기본 정보"
                                            FontSize="11" FontWeight="Bold"
-                                           Foreground="{StaticResource OnSurfaceVariant}" />
-                                <Button Content="전체 선택" Click="OnProfessorAllRoomsClick"
-                                        Padding="8,2" Margin="12,0,0,0"
-                                        Background="{StaticResource SurfaceContainer}" />
+                                           Foreground="{StaticResource OnSurfaceVariant}"
+                                           Margin="0,0,0,8" />
+                                <WrapPanel>
+                                    <StackPanel Width="170" Margin="0,0,8,8">
+                                        <TextBlock Text="이름 (읽기 전용)" FontSize="11" Margin="0,0,0,3" />
+                                        <Border Height="28" Width="170"
+                                                Background="#F3F4F6"
+                                                BorderBrush="{StaticResource OutlineVariant}"
+                                                BorderThickness="1"
+                                                CornerRadius="3"
+                                                Padding="6,4">
+                                            <TextBlock Text="{Binding Professor.Name}"
+                                                       TextTrimming="CharacterEllipsis"
+                                                       ToolTip="{Binding Professor.Name}"
+                                                       VerticalAlignment="Center" />
+                                        </Border>
+                                    </StackPanel>
+                                </WrapPanel>
                             </StackPanel>
-                            <ctrl:CheckListPickerControl x:Name="UnavailableRoomsPicker" />
-                        </StackPanel>
+                        </Border>
 
-                        <TextBlock Text="불가 시간 (외래/겸임 출강)"
-                                   FontSize="11" FontWeight="Bold" Margin="0,12,0,4"
-                                   Foreground="{StaticResource OnSurfaceVariant}" />
-                        <ctrl:TimeSlotPickerControl x:Name="UnavailableSlotsPicker"
-                                                     IsEnabled="{Binding IsEditing}"
-                                                     Width="400" HorizontalAlignment="Left" />
+                        <Border Background="#FAFAFA"
+                                 BorderBrush="{StaticResource OutlineVariant}"
+                                 BorderThickness="1"
+                                 CornerRadius="4"
+                                 Padding="12,10">
+                            <StackPanel>
+                                <TextBlock Text="운영 정보"
+                                           FontSize="11" FontWeight="Bold"
+                                           Foreground="{StaticResource OnSurfaceVariant}"
+                                           Margin="0,0,0,8" />
+
+                                <WrapPanel Margin="0,0,0,8"
+                                           Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
+                                    <TextBlock Text="불가 강의실: " FontSize="11" FontWeight="Bold"
+                                               Foreground="{StaticResource OnSurfaceVariant}" />
+                                    <TextBlock Text="{Binding HeaderUnavailableRooms}"
+                                               FontSize="11" Margin="0,0,16,0" />
+                                    <TextBlock Text="불가 시간: " FontSize="11" FontWeight="Bold"
+                                               Foreground="{StaticResource OnSurfaceVariant}" />
+                                    <TextBlock Text="{Binding HeaderUnavailableSlots}"
+                                               FontSize="11" />
+                                </WrapPanel>
+
+                                <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}">
+                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,4">
+                                        <TextBlock Text="불가 강의실"
+                                                   FontSize="11" FontWeight="Bold"
+                                                   Foreground="{StaticResource OnSurfaceVariant}" />
+                                        <Button Content="전체 선택" Click="OnProfessorAllRoomsClick"
+                                                Padding="8,2" Margin="12,0,0,0"
+                                                Background="{StaticResource SurfaceContainer}" />
+                                    </StackPanel>
+                                    <ctrl:CheckListPickerControl x:Name="UnavailableRoomsPicker" />
+
+                                    <TextBlock Text="불가 시간 (외래/겸임 출강)"
+                                               FontSize="11" FontWeight="Bold" Margin="0,12,0,4"
+                                               Foreground="{StaticResource OnSurfaceVariant}" />
+                                    <ctrl:TimeSlotPickerControl x:Name="UnavailableSlotsPicker"
+                                                                 Width="400" HorizontalAlignment="Left" />
+                                </StackPanel>
+                            </StackPanel>
+                        </Border>
 
                         <StackPanel Orientation="Horizontal" Margin="0,16,0,0">
                             <Button Content="저장"
@@ -426,56 +467,78 @@
                 <Border Background="White" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1">
                     <StackPanel>
                     <TextBlock Text="세부정보는 수정 버튼을 누른 뒤 편집할 수 있습니다."
-                               Margin="0,0,0,10"
+                               Margin="0,0,0,8"
                                FontSize="11"
                                Foreground="{StaticResource OnSurfaceVariant}" />
-                    <Grid>
-                        <Grid.ColumnDefinitions>
-                            <ColumnDefinition Width="120" />
-                            <ColumnDefinition Width="*" />
-                        </Grid.ColumnDefinitions>
-                        <Grid.RowDefinitions>
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                            <RowDefinition Height="Auto" />
-                        </Grid.RowDefinitions>
-                        <TextBlock Grid.Row="0" Grid.Column="0" Text="이름" Margin="0,4" />
-                        <TextBlock Grid.Row="0" Grid.Column="1" Text="{Binding Room.Name}"
-                                   Margin="0,4" Padding="6,4" />
-                        <TextBlock Grid.Row="1" Grid.Column="0" Text="실습실 여부" Margin="0,4" />
-                        <TextBlock Grid.Row="1" Grid.Column="1" Margin="0,4" Padding="6,4"
-                                   Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
-                            <TextBlock.Style>
-                                <Style TargetType="TextBlock">
-                                    <Setter Property="Text" Value="일반" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding Room.IsLab}" Value="True">
-                                            <Setter Property="Text" Value="실습실" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                        <CheckBox Grid.Row="1" Grid.Column="1" IsChecked="{Binding Room.IsLab, Mode=TwoWay}" Margin="0,4"
-                                  Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}" />
-                        <TextBlock Grid.Row="2" Grid.Column="0" Text="허용 인원 수" Margin="0,4" />
-                        <TextBlock Grid.Row="2" Grid.Column="1" Text="{Binding Room.Capacity}"
-                                   Margin="0,4" Padding="6,4"
-                                   Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}" />
-                        <TextBox Grid.Row="2" Grid.Column="1" Text="{Binding Room.Capacity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                 Width="120" HorizontalAlignment="Left" Margin="0,4" Padding="6,4"
-                                 Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}" />
-
-                    </Grid>
-                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
+                    <StackPanel Orientation="Horizontal" Margin="0,0,0,10">
                         <Button Content="수정"
                                 Command="{Binding DataContext.EditRoomCommand,
                                           RelativeSource={RelativeSource AncestorType=UserControl}}"
                                 CommandParameter="{Binding}"
                                 Padding="12,6" Margin="0,0,8,0"
-                                Background="{StaticResource SurfaceContainer}"
-                                Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}" />
+                                Background="{StaticResource SurfaceContainer}" />
+                    </StackPanel>
+
+                    <Border Background="#FAFAFA"
+                             BorderBrush="{StaticResource OutlineVariant}"
+                             BorderThickness="1"
+                             CornerRadius="4"
+                             Padding="12,10"
+                             Margin="0,2,0,12">
+                        <StackPanel>
+                            <TextBlock Text="기본 정보"
+                                       FontSize="11" FontWeight="Bold"
+                                       Foreground="{StaticResource OnSurfaceVariant}"
+                                       Margin="0,0,0,8" />
+                            <WrapPanel>
+                                <StackPanel Width="170" Margin="0,0,8,8">
+                                    <TextBlock Text="이름 (읽기 전용)" FontSize="11" Margin="0,0,0,3" />
+                                    <Border Height="28" Width="170"
+                                            Background="#F3F4F6"
+                                            BorderBrush="{StaticResource OutlineVariant}"
+                                            BorderThickness="1"
+                                            CornerRadius="3"
+                                            Padding="6,4">
+                                        <TextBlock Text="{Binding Room.Name}"
+                                                   TextTrimming="CharacterEllipsis"
+                                                   VerticalAlignment="Center" />
+                                    </Border>
+                                </StackPanel>
+                                <StackPanel Width="80" Margin="0,0,8,8">
+                                    <TextBlock Text="구분" FontSize="11" Margin="0,0,0,3" />
+                                    <Border Height="28" Width="74"
+                                            Background="#F3F4F6"
+                                            BorderBrush="{StaticResource OutlineVariant}"
+                                            BorderThickness="1"
+                                            CornerRadius="3"
+                                            Padding="6,4"
+                                            Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
+                                        <TextBlock Text="{Binding HeaderLab}" VerticalAlignment="Center" />
+                                    </Border>
+                                    <CheckBox Content="실습실" IsChecked="{Binding Room.IsLab, Mode=TwoWay}"
+                                              Height="28" VerticalAlignment="Center" Margin="4,0,0,0"
+                                              Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}" />
+                                </StackPanel>
+                                <StackPanel Width="120" Margin="0,0,8,8">
+                                    <TextBlock Text="허용 인원" FontSize="11" Margin="0,0,0,3" />
+                                    <Border Height="28" Width="114"
+                                            Background="#F3F4F6"
+                                            BorderBrush="{StaticResource OutlineVariant}"
+                                            BorderThickness="1"
+                                            CornerRadius="3"
+                                            Padding="6,4"
+                                            Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
+                                        <TextBlock Text="{Binding HeaderCapacity}" VerticalAlignment="Center" />
+                                    </Border>
+                                    <TextBox Height="28" Width="114" Padding="6,4"
+                                             Text="{Binding Room.Capacity, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                             Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}" />
+                                </StackPanel>
+                            </WrapPanel>
+                        </StackPanel>
+                    </Border>
+
+                    <StackPanel Orientation="Horizontal" Margin="0,12,0,0">
                         <Button Content="저장"
                                 Command="{Binding DataContext.SaveRoomCommand,
                                           RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -642,9 +705,9 @@
                     BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1">
                 <ScrollViewer VerticalScrollBarVisibility="Auto">
                     <Grid>
-                        <StackPanel Visibility="{Binding IsProfessorSelected, Converter={StaticResource BoolToVisibility}}" Margin="8"
+                        <StackPanel Visibility="{Binding IsProfessorSelected, Converter={StaticResource BoolToVisibility}}" Margin="8" Background="#F3F4F6"
                                     Grid.IsSharedSizeScope="True">
-                            <Grid Background="#EEF0F4" Height="30" Margin="0,0,0,4">
+                            <Grid Background="{StaticResource PrimaryBrush}" Height="30" Margin="0,0,0,4">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="22" />
                                     <ColumnDefinition Width="72" SharedSizeGroup="ProfessorId" />
@@ -652,10 +715,10 @@
                                     <ColumnDefinition Width="220" SharedSizeGroup="ProfessorUnavailableSlots" />
                                     <ColumnDefinition Width="260" SharedSizeGroup="ProfessorUnavailableRooms" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="1" Text="교수 ID" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="2" Text="이름" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="3" Text="불가 시간" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="4" Text="불가 강의실" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="1" Text="교수 ID" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="2" Text="이름" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="3" Text="불가 시간" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="4" Text="불가 강의실" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                             </Grid>
                             <ItemsControl ItemsSource="{Binding ProfessorItems}"
                                           ItemTemplate="{StaticResource ProfessorRowTemplate}" />
@@ -691,9 +754,9 @@
                             <ItemsControl ItemsSource="{Binding CourseGroups}"
                                           ItemTemplate="{StaticResource CourseGroupRowTemplate}" />
                         </StackPanel>
-                        <StackPanel Visibility="{Binding IsRoomSelected, Converter={StaticResource BoolToVisibility}}" Margin="8"
+                        <StackPanel Visibility="{Binding IsRoomSelected, Converter={StaticResource BoolToVisibility}}" Margin="8" Background="#F3F4F6"
                                     Grid.IsSharedSizeScope="True">
-                            <Grid Background="#EEF0F4" Height="30" Margin="0,0,0,4">
+                            <Grid Background="{StaticResource PrimaryBrush}" Height="30" Margin="0,0,0,4">
                                 <Grid.ColumnDefinitions>
                                     <ColumnDefinition Width="22" />
                                     <ColumnDefinition Width="58" SharedSizeGroup="RoomId" />
@@ -701,10 +764,10 @@
                                     <ColumnDefinition Width="70" SharedSizeGroup="RoomLab" />
                                     <ColumnDefinition Width="82" SharedSizeGroup="RoomCapacity" />
                                 </Grid.ColumnDefinitions>
-                                <TextBlock Grid.Column="1" Text="강의실 ID" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="2" Text="이름" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="3" Text="구분" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="4" Text="허용 인원" FontWeight="Bold" FontSize="11" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="1" Text="강의실 ID" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="2" Text="이름" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="3" Text="구분" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="4" Text="허용 인원" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                             </Grid>
                             <ItemsControl ItemsSource="{Binding RoomItems}"
                                            ItemTemplate="{StaticResource RoomRowTemplate}" />
@@ -713,6 +776,23 @@
                         <!-- Solve panel -->
                         <StackPanel Margin="32,24"
                                     Visibility="{Binding IsSolveSelected, Converter={StaticResource BoolToVisibility}}">
+
+                            <!-- Action Buttons moved to top -->
+                            <StackPanel Orientation="Horizontal" Margin="0,0,0,16">
+                                <Button Content="시간표 자동 생성 (해 계산)"
+                                        Command="{Binding SolveCommand}"
+                                        Padding="20,10" FontWeight="Bold" FontSize="13"
+                                        Margin="0,0,8,0"
+                                        Background="{StaticResource PrimaryBrush}" Foreground="White" />
+                                <Button Content="취소" Command="{Binding CancelCommand}"
+                                        Padding="14,10"
+                                        IsEnabled="{Binding IsSolving}" />
+                                <Button Content="해 미리보기로 →"
+                                        Command="{Binding GoToSelectionCommand}"
+                                        Padding="14,10" Margin="8,0,0,0"
+                                        Background="#2E7D32" Foreground="White"
+                                        Visibility="{Binding IsSolveComplete, Converter={StaticResource BoolToVisibility}}" />
+                            </StackPanel>
 
                             <TextBlock Text="진행 상황" FontSize="14" FontWeight="Bold" Margin="0,0,0,12" />
                             <Border Background="#FAFAFA" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1" Margin="0,0,0,16">
@@ -832,7 +912,7 @@
                                         <ItemsControl ItemsSource="{Binding CrossCandidateGradeGroups}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate DataType="{x:Type vm:CrossCandidateGradeGroup}">
-                                                    <Expander Header="{Binding Header}" IsExpanded="True" Margin="0,0,0,8">
+                                                    <Expander Header="{Binding Header}" IsExpanded="False" Margin="0,0,0,8">
                                                         <ctrl:CheckListPickerControl DataContext="{Binding Items}" />
                                                     </Expander>
                                                 </DataTemplate>
@@ -850,28 +930,6 @@
                                     </StackPanel>
                                 </Grid>
                             </Border>
-
-                            <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                <Button Content="시간표 자동 생성 (해 계산)"
-                                        Command="{Binding SolveCommand}"
-                                        Padding="20,10" FontWeight="Bold" FontSize="13"
-                                        Margin="0,0,8,0">
-                                    <Button.Style>
-                                        <Style TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
-                                            <Setter Property="Background" Value="{StaticResource PrimaryBrush}" />
-                                            <Setter Property="Foreground" Value="White" />
-                                        </Style>
-                                    </Button.Style>
-                                </Button>
-                                <Button Content="취소" Command="{Binding CancelCommand}"
-                                        Padding="14,10"
-                                        IsEnabled="{Binding IsSolving}" />
-                                <Button Content="해 미리보기로 →"
-                                        Command="{Binding GoToSelectionCommand}"
-                                        Padding="14,10" Margin="8,0,0,0"
-                                        Background="#2E7D32" Foreground="White"
-                                        Visibility="{Binding IsSolveComplete, Converter={StaticResource BoolToVisibility}}" />
-                            </StackPanel>
                         </StackPanel>
                     </Grid>
                 </ScrollViewer>

@@ -78,20 +78,28 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
     partial void OnExpandAllGradesChanged(bool value)
     {
         if (_lastAssignment != null && _lastCourses != null)
-            Render(_lastAssignment, _lastCourses);
+            Render(_lastAssignment, _lastCourses, _lastProfessors, _lastRooms);
     }
 
     private IReadOnlyList<SolutionAssignment>? _lastAssignment;
     private IReadOnlyList<Course>? _lastCourses;
+    private IReadOnlyList<Professor>? _lastProfessors;
+    private IReadOnlyList<Room>? _lastRooms;
 
     public void Render(
         IReadOnlyList<SolutionAssignment> assignment,
-        IReadOnlyList<Course> courses)
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<Professor>? professors = null,
+        IReadOnlyList<Room>? rooms = null)
     {
         _lastAssignment = assignment;
         _lastCourses = courses;
+        _lastProfessors = professors;
+        _lastRooms = rooms;
 
         var courseMap = courses.ToDictionary(c => c.Id);
+        var professorNames = BuildProfessorNameMap(professors);
+        var roomNames = BuildRoomNameMap(rooms);
 
         // (cid, d, p) → set of rooms
         var roomsBySlot = new Dictionary<(string Cid, int Day, int Period), HashSet<string>>();
@@ -163,7 +171,7 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
                         var c = courseMap[block.CourseId];
                         cells.Add(new UnifiedCell(
                             d, p, g, block.SubColumnIdx,
-                            CellAssignment.FromCourse(c, block.Rooms, block.RowSpan)));
+                            CellAssignment.FromCourse(c, block.Rooms, block.RowSpan, professorNames, roomNames)));
                     }
                 }
             }
@@ -234,7 +242,7 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         RunInfo runs)
     {
         var blocks = new List<VisualBlock>();
-        foreach (var ((cid, d, p), rooms) in roomsBySlot)
+        foreach (var ((cid, d, p), slotRooms) in roomsBySlot)
         {
             if (!courseMap.ContainsKey(cid)) continue;
             if (runs.Inside.Contains((cid, d, p))) continue;
@@ -245,7 +253,7 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
                 Day = d,
                 StartPeriod = p,
                 RowSpan = rowSpan,
-                Rooms = rooms,
+                Rooms = slotRooms,
             });
         }
 
@@ -331,6 +339,12 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
     {
         CrossParallelOrder = order;
         if (_lastAssignment != null && _lastCourses != null)
-            Render(_lastAssignment, _lastCourses);
+            Render(_lastAssignment, _lastCourses, _lastProfessors, _lastRooms);
     }
+
+    private static Dictionary<string, string>? BuildProfessorNameMap(IReadOnlyList<Professor>? professors) =>
+        professors?.ToDictionary(p => p.Id, p => p.Name);
+
+    private static Dictionary<string, string>? BuildRoomNameMap(IReadOnlyList<Room>? rooms) =>
+        rooms?.ToDictionary(r => r.Id, r => r.Name);
 }

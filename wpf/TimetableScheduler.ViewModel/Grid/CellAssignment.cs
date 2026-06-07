@@ -14,6 +14,17 @@ public sealed record CellAssignment(
     bool IsFixed)
 {
     public IReadOnlyList<string> CoteachProfIds { get; init; } = Array.Empty<string>();
+    public string ProfessorDisplayName { get; init; } = "";
+    public IReadOnlyList<string> CoteachProfDisplayNames { get; init; } = Array.Empty<string>();
+    public IReadOnlyList<string> RoomDisplayNames { get; init; } = Array.Empty<string>();
+
+    public string ProfessorLabel => string.IsNullOrWhiteSpace(ProfessorDisplayName)
+        ? ProfessorId
+        : ProfessorDisplayName;
+
+    public IReadOnlyList<string> CoteachProfLabels => CoteachProfDisplayNames.Count == 0
+        ? CoteachProfIds
+        : CoteachProfDisplayNames;
 
     public string SectionLabel => Section >= 1 ? ((char)('A' + Section - 1)).ToString() : "";
 
@@ -21,21 +32,38 @@ public sealed record CellAssignment(
     {
         get
         {
-            if (Rooms.Count == 0) return "";
-            return string.Join("\n", Rooms.OrderBy(r => r, StringComparer.Ordinal));
+            var labels = RoomDisplayNames.Count == 0 ? Rooms : RoomDisplayNames;
+            if (labels.Count == 0) return "";
+            return string.Join("\n", labels.OrderBy(r => r, StringComparer.Ordinal));
         }
     }
 
     public static CellAssignment FromCourse(
         Course course,
         IEnumerable<string> rooms,
-        int rowSpan)
-        => new(
+        int rowSpan,
+        IReadOnlyDictionary<string, string>? professorNames = null,
+        IReadOnlyDictionary<string, string>? roomNames = null)
+    {
+        var roomList = rooms.ToList();
+        return new(
             course.Id, course.Name, course.ProfessorId,
             course.Grade, course.Section,
-            rooms.ToList(), rowSpan,
+            roomList, rowSpan,
             course.HoursPerWeek, course.IsFixed)
         {
             CoteachProfIds = course.CoteachProfs.ToList(),
+            ProfessorDisplayName = DisplayName(professorNames, course.ProfessorId),
+            CoteachProfDisplayNames = course.CoteachProfs.Select(id => DisplayName(professorNames, id)).ToList(),
+            RoomDisplayNames = roomList.Select(id => DisplayName(roomNames, id)).ToList(),
         };
+
+        static string DisplayName(IReadOnlyDictionary<string, string>? names, string id) =>
+            !string.IsNullOrWhiteSpace(id)
+            && names != null
+            && names.TryGetValue(id, out var name)
+            && !string.IsNullOrWhiteSpace(name)
+                ? name
+                : id;
+    }
 }

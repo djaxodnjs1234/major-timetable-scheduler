@@ -132,6 +132,36 @@ public class TimetableGridViewModelTests
     }
 
     [Fact]
+    public void Render_UsesProfessorAndRoomNamesForDisplayLabels()
+    {
+        var vm = new TimetableGridViewModel();
+        var courses = new List<Course>
+        {
+            new() { Id = "X-01", Name = "캡스톤", Grade = 4, ProfessorId = "P1" },
+        };
+        var professors = new List<Professor>
+        {
+            new() { Id = "P1", Name = "김교수" },
+        };
+        var rooms = new List<Room>
+        {
+            new() { Id = "R1", Name = "공학관 101" },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("X-01", 0, 1, "R1"),
+        };
+
+        vm.Render(assignment, courses, professors: professors, rooms: rooms);
+
+        var item = Assert.Single(vm.CellAt(0, 1).Items);
+        Assert.Equal("김교수", item.ProfessorLabel);
+        Assert.Equal("공학관 101", item.RoomsLabel);
+        Assert.Equal("P1", item.ProfessorId);
+        Assert.Equal(new[] { "R1" }, item.Rooms);
+    }
+
+    [Fact]
     public void Render_TwoSectionsSameSlot_BothShownInCell()
     {
         var vm = new TimetableGridViewModel();

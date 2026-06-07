@@ -17,7 +17,38 @@ public sealed record ManualEditHandoff(
 
 public sealed record CrossGroupListItem(string Id, string Display);
 
-public sealed record CrossCandidateGradeGroup(string Header, ObservableCollection<CheckListItem> Items);
+public sealed partial class CrossCandidateItemViewModel : ObservableObject
+{
+    public CheckListItem BaseItem { get; }
+    public string Id => BaseItem.Id;
+    public string Display => BaseItem.Display;
+
+    public bool IsChecked
+    {
+        get => BaseItem.IsChecked;
+        set => BaseItem.IsChecked = value;
+    }
+
+    [ObservableProperty]
+    private bool isEnabled = true;
+
+    public CrossCandidateItemViewModel(CheckListItem baseItem)
+    {
+        BaseItem = baseItem;
+        if (baseItem is System.ComponentModel.INotifyPropertyChanged inpc)
+        {
+            inpc.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(CheckListItem.IsChecked) || e.PropertyName == "IsChecked")
+                {
+                    OnPropertyChanged(nameof(IsChecked));
+                }
+            };
+        }
+    }
+}
+
+public sealed record CrossCandidateGradeGroup(string Header, ObservableCollection<CrossCandidateItemViewModel> Items);
 
 public sealed partial class ProfessorItem : ObservableObject
 {
@@ -103,7 +134,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public ObservableCollection<RoomItem> RoomItems { get; } = new();
 
     public ObservableCollection<CrossGroupListItem> CrossGroupItems { get; } = new();
-    public ObservableCollection<CheckListItem> CrossCandidateItems { get; } = new();
+    public ObservableCollection<CrossCandidateItemViewModel> CrossCandidateItems { get; } = new();
     public ObservableCollection<CrossCandidateGradeGroup> CrossCandidateGradeGroups { get; } = new();
 
     public int[] GradeOptions { get; } = { 1, 2, 3, 4 };
@@ -455,6 +486,12 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private int timeLimitSec = 120;
 
     [ObservableProperty]
+    private bool useAdvancedPerSolveTimeSec;
+
+    [ObservableProperty]
+    private int perSolveTimeSec = new DiverseSolverOptions().PerSolveTimeSec;
+
+    [ObservableProperty]
     private bool useSc01 = true;
 
     [ObservableProperty]
@@ -740,30 +777,93 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 _selectedCrossCandidateIds,
                 (id, isChecked) =>
                 {
-                    if (isChecked)
+                    _selectedCrossCandidateIds = CrossCandidateItems
+                        .Where(item => item.IsChecked)
+                        .Select(item => item.Id)
+                        .ToList();
+
+                    if (isChecked && _selectedCrossCandidateIds.Count > 2)
                     {
-                        if (_selectedCrossCandidateIds.Count > 2)
+                        var itemToUncheck = CrossCandidateItems.FirstOrDefault(item => item.Id == id);
+                        if (itemToUncheck != null)
                         {
-                            var itemToUncheck = CrossCandidateItems.First(item => item.Id == id);
                             itemToUncheck.IsChecked = false;
-                            CrossStatusMessage = "Cross는 최대 2개의 과목만 선택할 수 있습니다.";
-                        } else {
-                            CrossStatusMessage = "";
+                            _selectedCrossCandidateIds.Remove(id);
                         }
-                    } else {
+                        CrossStatusMessage = "Cross는 최대 2개의 과목만 선택할 수 있습니다.";
+                    }
+                    else
+                    {
                         CrossStatusMessage = "";
                     }
+                    UpdateCrossCandidateEnabledState();
                 }
             );
-            foreach (var item in items)
+            
+            var viewModels = items.Select(item => new CrossCandidateItemViewModel(item)).ToList();
+            foreach (var vm in viewModels)
             {
-                CrossCandidateItems.Add(item);
+                CrossCandidateItems.Add(vm);
             }
-            CrossCandidateGradeGroups.Add(new CrossCandidateGradeGroup($"{gradeGroup.Key}학년", new ObservableCollection<CheckListItem>(items)));
+            CrossCandidateGradeGroups.Add(new CrossCandidateGradeGroup($"{gradeGroup.Key}학년", new ObservableCollection<CrossCandidateItemViewModel>(viewModels)));
         }
+
+        UpdateCrossCandidateEnabledState();
 
         if (_selectedCrossCandidateIds.Count == 2 && CrossStatusMessage == "Cross는 최대 2개의 과목만 선택할 수 있습니다.")
             CrossStatusMessage = "";
+    }
+
+    private void UpdateCrossCandidateEnabledState()
+    {
+        var usedInOtherCrossGroups = _workspace.CrossGroups
+            .SelectMany(g => g.BaseIds)
+            .ToHashSet();
+
+        var groups = CourseBaseGroups();
+
+        int? selectedSectionCount = null;
+        int? selectedHours = null;
+
+        if (_selectedCrossCandidateIds.Count > 0)
+        {
+            var firstSelected = _selectedCrossCandidateIds.First();
+            if (groups.TryGetValue(firstSelected, out var selectedCourses) && selectedCourses.Count > 0)
+            {
+                selectedSectionCount = selectedCourses.Count;
+                selectedHours = selectedCourses[0].HoursPerWeek;
+            }
+        }
+
+        foreach (var vm in CrossCandidateItems)
+        {
+            bool isUsed = usedInOtherCrossGroups.Contains(vm.Id);
+            bool isSelected = _selectedCrossCandidateIds.Contains(vm.Id);
+
+            if (isUsed && !isSelected)
+            {
+                vm.IsEnabled = false;
+            }
+            else if (selectedSectionCount.HasValue && selectedHours.HasValue && !isSelected)
+            {
+                if (groups.TryGetValue(vm.Id, out var courses) && courses.Count > 0)
+                {
+                    vm.IsEnabled = (courses.Count == selectedSectionCount.Value && courses[0].HoursPerWeek == selectedHours.Value);
+                }
+                else
+                {
+                    vm.IsEnabled = false;
+                }
+            }
+            else if (_selectedCrossCandidateIds.Count >= 2 && !isSelected)
+            {
+                vm.IsEnabled = false;
+            }
+            else
+            {
+                vm.IsEnabled = true;
+            }
+        }
     }
 
     private Dictionary<string, List<Course>> CourseBaseGroups() => _workspace.Courses
@@ -949,7 +1049,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             {
                 TotalSolutions = TotalSolutions,
                 TimeLimitSec = TimeLimitSec,
-                PerSolveTimeSec = new DiverseSolverOptions().PerSolveTimeSec,
+                PerSolveTimeSec = UseAdvancedPerSolveTimeSec
+                    ? Math.Max(1, PerSolveTimeSec)
+                    : new DiverseSolverOptions().PerSolveTimeSec,
                 UseSc01 = UseSc01,
                 UseSc02 = UseSc02,
                 UseSc03 = UseSc03,

@@ -15,6 +15,7 @@
             <DataTemplate DataType="{x:Type ed:CheckListItem}">
                 <Border Padding="4,2" Margin="0,0,4,4">
                     <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                              IsEnabled="{Binding IsEnabled, FallbackValue=True}"
                               Content="{Binding Display}" FontSize="11" />
                 </Border>
             </DataTemplate>

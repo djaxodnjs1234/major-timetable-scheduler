@@ -460,7 +460,7 @@ public class CourseGroupsTests : IDisposable
         Assert.False(vm.IsSolveComplete);
         Assert.Empty(vm.RankedResults);
         Assert.Equal(0, completedCount);
-        Assert.Contains("원인", vm.StatusMessage);
+        Assert.Contains("INFEASIBLE", vm.StatusMessage);
         Assert.DoesNotContain("top", vm.StatusMessage);
     }
 }

@@ -8,11 +8,13 @@ namespace TimetableScheduler.Wpf.Controls;
 
 public partial class TimeSlotPickerControl : UserControl
 {
-    private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
-    private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
+    private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0x00, 0x5F, 0xB8));
+    private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xD7, 0xE6, 0xF7));
     private static readonly Brush EmptyBg = Brushes.White;
-    private static readonly Brush SelectedBg = CreateSelectedBrush();
-    private static readonly Brush Border = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC));
+    private static readonly Brush SelectedBg = new SolidColorBrush(Color.FromRgb(0xE2, 0xE5, 0xEA));
+    private static readonly Brush Border = new SolidColorBrush(Color.FromRgb(0xC2, 0xC6, 0xD4));
+    private static readonly Brush HeaderForeground = Brushes.White;
+    private static readonly Brush SelectedStroke = new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x7D));
 
     static TimeSlotPickerControl()
     {
@@ -45,7 +47,6 @@ public partial class TimeSlotPickerControl : UserControl
     private void OnCellPropertyChanged(object? sender, System.ComponentModel.PropertyChangedEventArgs e)
     {
         if (e.PropertyName != nameof(TimeSlotPickerCell.IsSelected)) return;
-        // Find the matching button and update its background
         if (sender is not TimeSlotPickerCell cell) return;
         foreach (var child in RootGrid.Children)
         {
@@ -54,11 +55,7 @@ public partial class TimeSlotPickerControl : UserControl
                 && key.Item1 == cell.Day && key.Item2 == cell.Period)
             {
                 b.Background = cell.IsSelected ? SelectedBg : EmptyBg;
-                if (b.Child is TextBlock tb)
-                {
-                    tb.Text = "";
-                    tb.Foreground = Brushes.Black;
-                }
+                b.Child = BuildSlotContent(cell);
                 break;
             }
         }
@@ -79,7 +76,6 @@ public partial class TimeSlotPickerControl : UserControl
         for (int i = 0; i < 5; i++)
             RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-        // Day headers
         string[] dayNames = { "월", "화", "수", "목", "금" };
         for (int d = 0; d < 5; d++)
         {
@@ -94,6 +90,7 @@ public partial class TimeSlotPickerControl : UserControl
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
                     FontSize = 11, FontWeight = FontWeights.Bold,
+                    Foreground = HeaderForeground,
                 },
             };
             Grid.SetRow(hdr, 0);
@@ -101,10 +98,8 @@ public partial class TimeSlotPickerControl : UserControl
             RootGrid.Children.Add(hdr);
         }
 
-        // Period rows
         foreach (var cell in vm.Cells)
         {
-            // Period label (only once per period, on day 0)
             if (cell.Day == 0)
             {
                 var lbl = new System.Windows.Controls.Border
@@ -118,6 +113,7 @@ public partial class TimeSlotPickerControl : UserControl
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Center,
                         FontSize = 11,
+                        Foreground = HeaderForeground,
                     },
                 };
                 Grid.SetRow(lbl, cell.Period);
@@ -131,16 +127,9 @@ public partial class TimeSlotPickerControl : UserControl
                 BorderThickness = new Thickness(0.5),
                 Background = cell.IsLunch ? LunchBg : (cell.IsSelected ? SelectedBg : EmptyBg),
                 Tag = (cell.Day, cell.Period),
-                MinHeight = 22,
+                MinHeight = 34,
                 Cursor = cell.IsLunch ? Cursors.Arrow : Cursors.Hand,
-                Child = new TextBlock
-                {
-                    Text = cell.IsLunch ? "점심" : "",
-                    HorizontalAlignment = HorizontalAlignment.Center,
-                    VerticalAlignment = VerticalAlignment.Center,
-                    FontSize = 9,
-                    Foreground = Brushes.Black,
-                },
+                Child = BuildSlotContent(cell),
             };
             if (!cell.IsLunch) btn.MouseLeftButtonDown += OnCellClicked;
             Grid.SetRow(btn, cell.Period);
@@ -160,33 +149,45 @@ public partial class TimeSlotPickerControl : UserControl
         }
     }
 
-    private static Brush CreateSelectedBrush()
+    private static UIElement BuildSlotContent(TimeSlotPickerCell cell)
     {
-        var group = new DrawingGroup();
-        group.Children.Add(new GeometryDrawing(
-            new SolidColorBrush(Color.FromRgb(0xE5, 0xF0, 0xFF)),
-            null,
-            new RectangleGeometry(new Rect(0, 0, 8, 8))));
-        group.Children.Add(new GeometryDrawing(
-            null,
-            new Pen(new SolidColorBrush(Color.FromRgb(0x7C, 0x8B, 0xA1)), 1),
-            new GeometryGroup
-            {
-                Children =
-                {
-                    new LineGeometry(new Point(-2, 8), new Point(8, -2)),
-                    new LineGeometry(new Point(0, 10), new Point(10, 0)),
-                },
-            }));
-
-        var brush = new DrawingBrush(group)
+        if (cell.IsLunch)
         {
-            TileMode = TileMode.Tile,
-            Viewport = new Rect(0, 0, 8, 8),
-            ViewportUnits = BrushMappingMode.Absolute,
-            Stretch = Stretch.None,
-        };
-        brush.Freeze();
-        return brush;
+            return new TextBlock
+            {
+                Text = "점심",
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 9,
+                Foreground = HeaderForeground,
+            };
+        }
+
+        var grid = new Grid();
+        if (!cell.IsSelected) return grid;
+
+        grid.Children.Add(new System.Windows.Shapes.Line
+        {
+            X1 = 0,
+            Y1 = 0,
+            X2 = 1,
+            Y2 = 1,
+            Stretch = Stretch.Fill,
+            Stroke = SelectedStroke,
+            StrokeThickness = 2,
+            SnapsToDevicePixels = true,
+        });
+        grid.Children.Add(new System.Windows.Shapes.Line
+        {
+            X1 = 1,
+            Y1 = 0,
+            X2 = 0,
+            Y2 = 1,
+            Stretch = Stretch.Fill,
+            Stroke = SelectedStroke,
+            StrokeThickness = 2,
+            SnapsToDevicePixels = true,
+        });
+        return grid;
     }
 }

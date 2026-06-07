@@ -71,29 +71,32 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         IReadOnlyList<SolutionAssignment> assignments,
         IReadOnlyList<Domain.Course> courses)
     {
-        Preview.Render(assignments, courses);
+        var professors = _workspace.Professors;
+        var rooms = _workspace.Rooms;
+
+        Preview.Render(assignments, courses, professors, rooms);
 
         GradeViews.Clear();
         foreach (var g in new[] { 1, 2, 3, 4 })
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignments, courses, (c, _) => c.Grade == g);
+            vm.Render(assignments, courses, (c, _) => c.Grade == g, professors, rooms);
             GradeViews.Add(new NamedGridViewModel(g.ToString(), $"{g}학년", vm));
         }
 
         RoomViews.Clear();
-        foreach (var r in _workspace.Rooms)
+        foreach (var r in rooms)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignments, courses, (_, rid) => rid == r.Id);
+            vm.Render(assignments, courses, (_, rid) => rid == r.Id, professors, rooms);
             RoomViews.Add(new NamedGridViewModel(r.Id, r.Name, vm));
         }
 
         ProfessorViews.Clear();
-        foreach (var p in _workspace.Professors)
+        foreach (var p in professors)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignments, courses, (c, _) => c.ProfessorId == p.Id);
+            vm.Render(assignments, courses, (c, _) => c.ProfessorId == p.Id, professors, rooms);
             ProfessorViews.Add(new NamedGridViewModel(p.Id, p.Name, vm));
         }
     }
