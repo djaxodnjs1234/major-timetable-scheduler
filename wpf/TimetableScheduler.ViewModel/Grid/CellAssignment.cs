@@ -17,6 +17,19 @@ public sealed record CellAssignment(
 
     public string SectionLabel => Section >= 1 ? ((char)('A' + Section - 1)).ToString() : "";
 
+    public string ProfessorLabel
+    {
+        get
+        {
+            var ids = new[] { ProfessorId }
+                .Concat(CoteachProfIds)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            return string.Join(", ", ids);
+        }
+    }
+
     public string RoomsLabel
     {
         get

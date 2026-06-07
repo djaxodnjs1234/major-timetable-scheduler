@@ -30,7 +30,23 @@ public sealed class GradeToBrushConverter : IValueConverter
     }
 
     public object Convert(object value, Type targetType, object? parameter, CultureInfo culture)
-        => value is int g ? BrushFor(g) : (object)Brushes.White;
+        => TryNormalizeGrade(value, out var grade) ? BrushFor(grade) : (object)Brushes.White;
+
+    private static bool TryNormalizeGrade(object value, out int grade)
+    {
+        switch (value)
+        {
+            case int g:
+                grade = g;
+                return true;
+            case string text:
+                var digits = new string(text.Where(char.IsDigit).ToArray());
+                return int.TryParse(digits, out grade);
+            default:
+                grade = 0;
+                return false;
+        }
+    }
 
     public object ConvertBack(object value, Type targetType, object? parameter, CultureInfo culture)
         => throw new NotSupportedException();

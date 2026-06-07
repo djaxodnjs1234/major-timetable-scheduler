@@ -298,11 +298,13 @@
                             <Button Content="저장"
                                     Command="{Binding DataContext.SaveSelectedCommand,
                                               RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    Click="OnRoomSaveClick"
                                     Padding="12,6" Margin="0,0,8,0"
                                     Background="{StaticResource PrimaryBrush}" Foreground="White" />
                             <Button Content="삭제"
                                     Command="{Binding DataContext.DeleteSelectedCommand,
                                               RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    Click="OnRoomDeleteClick"
                                     Padding="12,6"
                                     Background="#BA1A1A" Foreground="White" />
                         </StackPanel>

@@ -215,4 +215,16 @@ public partial class DataInputView : UserControl
         if (sender is FrameworkElement el && el.DataContext is Professor p && Vm != null)
             Vm.SelectedItem = p;
     }
+
+    private void OnRoomSaveClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement el && el.DataContext is Room r && Vm != null)
+            Vm.SelectedItem = r;
+    }
+
+    private void OnRoomDeleteClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is FrameworkElement el && el.DataContext is Room r && Vm != null)
+            Vm.SelectedItem = r;
+    }
 }
