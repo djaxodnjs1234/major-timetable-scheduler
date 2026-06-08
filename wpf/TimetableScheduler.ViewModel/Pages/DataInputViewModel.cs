@@ -56,8 +56,7 @@ public sealed partial class ProfessorItem : ObservableObject
     public Professor Professor { get; init; } = new();
     public string HeaderId => Professor.Id;
     public string HeaderName => Professor.Name;
-    public string HeaderUnavailableSlots { get; init; } = "-";
-    public string HeaderUnavailableRooms { get; init; } = "-";
+    public string HeaderUnavailableSlots { get; init; } = "없음";
     public bool IsImportedFromExcel { get; init; }
 
     [ObservableProperty]
@@ -94,6 +93,7 @@ public sealed partial class CourseGroupItem : ObservableObject
     public string HeaderProfessor { get; init; } = "";
     public string HeaderBlockStructure { get; init; } = "";
     public string HeaderUnavailableRooms { get; init; } = "";
+    public string HeaderFixedRooms { get; init; } = "";
     public string HeaderCoteachProfessors { get; init; } = "";
     public string HeaderFixedTimes { get; init; } = "";
     public string HeaderCrossGroups { get; init; } = "";
@@ -101,9 +101,10 @@ public sealed partial class CourseGroupItem : ObservableObject
     /// <summary>All sections in this group (N>1 for grouped, 1 for individual fixed).</summary>
     public List<Course> Sections { get; init; } = new();
     public bool IsFixedIndividual => Sections.Count == 1 && Sections[0].IsFixed;
-    public string ReadOnlyProfessor => HeaderProfessor;
+    public string ReadOnlyProfessor => string.IsNullOrWhiteSpace(HeaderProfessor) ? "없음" : HeaderProfessor;
     public string ReadOnlyBlockStructure => HeaderBlockStructure;
     public string ReadOnlyUnavailableRooms => string.IsNullOrWhiteSpace(HeaderUnavailableRooms) ? "없음" : HeaderUnavailableRooms;
+    public string ReadOnlyFixedRooms => string.IsNullOrWhiteSpace(HeaderFixedRooms) ? "없음" : HeaderFixedRooms;
     public string ReadOnlyCoteachProfessors => string.IsNullOrWhiteSpace(HeaderCoteachProfessors) ? "없음" : HeaderCoteachProfessors;
     public string ReadOnlyFixedTimes => string.IsNullOrWhiteSpace(HeaderFixedTimes) ? "없음" : HeaderFixedTimes;
 
@@ -769,6 +770,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 HeaderProfessor = CourseDisplayName(rep.ProfessorId, profNames),
                 HeaderBlockStructure = FormatBlocks(rep),
                 HeaderUnavailableRooms = FormatCourseNames(rep.UnavailableRooms, roomNames),
+                HeaderFixedRooms = FormatCourseNames(rep.FixedRooms, roomNames),
                 HeaderCoteachProfessors = FormatCourseNames(rep.CoteachProfs, profNames),
                 HeaderFixedTimes = FormatFixedTimes(sections),
                 HeaderCrossGroups = FormatCrossGroups(g.Key),
@@ -798,6 +800,13 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             var unavailableRooms = sections.FirstOrDefault(s => s.UnavailableRooms.Count > 0)?.UnavailableRooms;
             if (unavailableRooms != null)
                 rep.UnavailableRooms = new List<string>(unavailableRooms);
+        }
+
+        if (rep.FixedRooms.Count == 0)
+        {
+            var fixedRooms = sections.FirstOrDefault(s => s.FixedRooms.Count > 0)?.FixedRooms;
+            if (fixedRooms != null)
+                rep.FixedRooms = new List<string>(fixedRooms);
         }
 
         if (rep.CoteachProfs.Count == 0)
@@ -844,7 +853,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void RebuildProfessorItems()
     {
         ProfessorItems.Clear();
-        var roomNames = _workspace.Rooms.ToDictionary(r => r.Id, RoomDisplayLabel);
         var importedProfIds = _workspace.Courses
             .Where(c => !string.IsNullOrWhiteSpace(c.Department))
             .Select(c => c.ProfessorId)
@@ -857,7 +865,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             {
                 Professor = prof,
                 HeaderUnavailableSlots = FormatUnavailableSlots(prof.UnavailableSlots),
-                HeaderUnavailableRooms = FormatNames(prof.UnavailableRooms, roomNames),
                 IsImportedFromExcel = importedProfIds.Contains(prof.Id),
             });
         }
@@ -1153,7 +1160,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     private static string FormatUnavailableSlots(IReadOnlyList<TimeSlot> slots)
     {
-        if (slots.Count == 0) return "-";
+        if (slots.Count == 0) return "없음";
         return string.Join(", ", slots
             .OrderBy(s => s.Day)
             .ThenBy(s => s.Period)

@@ -74,21 +74,18 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
-    public void ProfessorUnavailableRooms_HidesEmptyRoomMetadata()
+    public void CourseFixedRooms_HidesEmptyRoomMetadata()
     {
         _workspace.AddRoom(new Room { Id = "R1", Name = "D330" });
         _workspace.AddRoom(new Room { Id = "R2", Name = "LAB1", IsLab = true });
         _workspace.AddRoom(new Room { Id = "R3", Name = "D331", Capacity = 40 });
-        _workspace.AddProfessor(new Professor
-        {
-            Id = "P1",
-            Name = "교수1",
-            UnavailableRooms = new List<string> { "R1", "R2", "R3" },
-        });
+        var course = MakeCourse("GA1005-01", 1);
+        course.FixedRooms = new List<string> { "R1", "R2", "R3" };
+        _workspace.AddCourse(course);
 
         var vm = MakeVm();
 
-        Assert.Equal("D330, LAB1 (실습실), D331 (40명)", vm.ProfessorItems.Single().HeaderUnavailableRooms);
+        Assert.Equal("D330, LAB1, D331", vm.CourseGroups.Single().HeaderFixedRooms);
     }
 
     [Fact]
@@ -110,6 +107,20 @@ public class CourseGroupsTests : IDisposable
         vm.SaveProfessorCommand.Execute(item);
 
         Assert.False(item.IsEditing);
+    }
+
+    [Fact]
+    public void Professor_UsesNoneSummaryWhenUnavailableSlotsAreEmpty()
+    {
+        _workspace.AddProfessor(new Professor
+        {
+            Id = "P1",
+            Name = "교수1",
+        });
+
+        var vm = MakeVm();
+
+        Assert.Equal("없음", vm.ProfessorItems.Single().HeaderUnavailableSlots);
     }
 
     [Fact]
@@ -311,9 +322,12 @@ public class CourseGroupsTests : IDisposable
 
         Assert.Equal(string.Empty, group.HeaderProfessor);
         Assert.Equal(string.Empty, group.HeaderUnavailableRooms);
+        Assert.Equal(string.Empty, group.HeaderFixedRooms);
         Assert.Equal(string.Empty, group.HeaderCoteachProfessors);
         Assert.Equal(string.Empty, group.HeaderFixedTimes);
+        Assert.Equal("없음", group.ReadOnlyProfessor);
         Assert.Equal("없음", group.ReadOnlyUnavailableRooms);
+        Assert.Equal("없음", group.ReadOnlyFixedRooms);
         Assert.Equal("없음", group.ReadOnlyCoteachProfessors);
         Assert.Equal("없음", group.ReadOnlyFixedTimes);
     }

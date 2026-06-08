@@ -64,14 +64,6 @@ public partial class DataInputView : UserControl
         if (sender is not Expander expander || expander.DataContext is not ProfessorItem item || Vm == null) return;
         var prof = item.Professor;
 
-        if (expander.FindName("UnavailableRoomsPicker") is CheckListPickerControl roomsPicker)
-        {
-            roomsPicker.DataContext = CheckListBinder.Bind(
-                Vm.Workspace.Rooms.ToList(),
-                r => r.Id,
-                r => RoomDisplayLabel(r),
-                prof.UnavailableRooms);
-        }
         if (expander.FindName("UnavailableSlotsPicker") is TimeSlotPickerControl slotPicker)
         {
             slotPicker.DataContext = new TimeSlotPickerViewModel(prof.UnavailableSlots);
@@ -83,12 +75,37 @@ public partial class DataInputView : UserControl
         if (sender is not Expander expander || expander.DataContext is not CourseGroupItem item || Vm == null) return;
         var course = item.Sections[0];
 
+        var rooms = Vm.Workspace.Rooms.ToList();
+        List<CheckListItem>? unavailableRoomItems = null;
+        List<CheckListItem>? fixedRoomItems = null;
+
         if (expander.FindName("GroupUnavailableRoomsPicker") is CheckListPickerControl roomsPicker)
         {
-            roomsPicker.DataContext = CheckListBinder.Bind(
-                Vm.Workspace.Rooms.ToList(),
+            unavailableRoomItems = CheckListBinder.Bind(
+                rooms,
                 r => r.Id, r => RoomDisplayLabel(r),
-                course.UnavailableRooms);
+                course.UnavailableRooms,
+                (id, isChecked) =>
+                {
+                    if (!isChecked) return;
+                    var fixedRoomItem = fixedRoomItems?.FirstOrDefault(item => item.Id == id);
+                    if (fixedRoomItem != null) fixedRoomItem.IsChecked = false;
+                });
+            roomsPicker.DataContext = unavailableRoomItems;
+        }
+        if (expander.FindName("GroupFixedRoomsPicker") is CheckListPickerControl fixedRoomsPicker)
+        {
+            fixedRoomItems = CheckListBinder.Bind(
+                rooms,
+                r => r.Id, r => RoomDisplayLabel(r),
+                course.FixedRooms,
+                (id, isChecked) =>
+                {
+                    if (!isChecked) return;
+                    var unavailableRoomItem = unavailableRoomItems?.FirstOrDefault(item => item.Id == id);
+                    if (unavailableRoomItem != null) unavailableRoomItem.IsChecked = false;
+                });
+            fixedRoomsPicker.DataContext = fixedRoomItems;
         }
         if (expander.FindName("GroupCoteachProfsPicker") is CheckListPickerControl coteachPicker)
         {
@@ -317,28 +334,13 @@ public partial class DataInputView : UserControl
     private void OnProfessorSaveClick(object sender, RoutedEventArgs e)
     {
         if (sender is not FrameworkElement el || el.DataContext is not ProfessorItem item || Vm == null) return;
-        if (Vm.Workspace.Rooms.Count > 0 && item.Professor.UnavailableRooms.Count >= Vm.Workspace.Rooms.Count)
-        {
-            MessageBox.Show(
-                "모든 강의실을 불가 강의실로 선택하면 시간표를 만들 수 없습니다. 최소 1개 강의실은 사용할 수 있게 남겨주세요.",
-                "저장 불가",
-                MessageBoxButton.OK,
-                MessageBoxImage.Warning);
-            var expander = FindAncestor<Expander>(el);
-            if (expander?.FindName("UnavailableRoomsPicker") is CheckListPickerControl picker
-                && picker.DataContext is IEnumerable<CheckListItem> rooms)
-            {
-                foreach (var room in rooms) room.IsChecked = false;
-            }
-            return;
-        }
         Vm.SaveProfessorCommand.Execute(item);
     }
 
-    private void OnProfessorAllRoomsClick(object sender, RoutedEventArgs e)
+    private void OnCourseUnavailableAllRoomsClick(object sender, RoutedEventArgs e)
     {
         var expander = sender is DependencyObject dep ? FindAncestor<Expander>(dep) : null;
-        if (expander?.FindName("UnavailableRoomsPicker") is not CheckListPickerControl picker) return;
+        if (expander?.FindName("GroupUnavailableRoomsPicker") is not CheckListPickerControl picker) return;
         if (picker.DataContext is IEnumerable<CheckListItem> items)
         {
             foreach (var item in items) item.IsChecked = true;

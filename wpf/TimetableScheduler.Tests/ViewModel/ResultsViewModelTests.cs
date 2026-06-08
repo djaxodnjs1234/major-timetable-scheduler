@@ -41,10 +41,15 @@ public class ResultsViewModelTests : IDisposable
                     HoursPerWeek = 1,
                     CourseType = "전필",
                     ProfessorId = "P1",
+                    CoteachProfs = new List<string> { "P2" },
                     BlockStructure = new List<int> { 1 },
                 },
             },
-            new List<Professor> { new() { Id = "P1", Name = "스냅교수" } },
+            new List<Professor>
+            {
+                new() { Id = "P1", Name = "스냅교수" },
+                new() { Id = "P2", Name = "팀티칭교수" },
+            },
             new List<Room> { new() { Id = "R1", Name = "스냅강의실" } },
             new List<CrossGroup>(),
             new List<RetakeScenario>());
@@ -74,5 +79,9 @@ public class ResultsViewModelTests : IDisposable
         Assert.Equal("전필", assignment.CourseType);
         Assert.Equal("스냅교수", assignment.ProfessorLabel);
         Assert.Equal("스냅강의실", assignment.RoomsLabel);
+
+        var coteacherView = vm.ProfessorViews.Single(v => v.Id == "P2");
+        var occupied = Assert.Single(coteacherView.Grid.Cells.Where(c => c.IsOccupied));
+        Assert.Equal("C-01", Assert.Single(occupied.Items).CourseId);
     }
 }

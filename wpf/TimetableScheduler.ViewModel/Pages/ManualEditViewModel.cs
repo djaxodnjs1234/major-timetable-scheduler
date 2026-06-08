@@ -1845,7 +1845,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         foreach (var p in professors)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(_working, courses, (c, _) => c.ProfessorId == p.Id, professors, rooms);
+            vm.Render(_working, courses, (c, _) => IsCourseTaughtBy(c, p.Id), professors, rooms);
             ProfessorViews.Add(new NamedGridViewModel(p.Id, p.Name, vm));
         }
     }

@@ -308,10 +308,10 @@ public partial class UnifiedTimetableControl : UserControl
             TextAlignment = TextAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
         });
-        if (!string.IsNullOrEmpty(a.ProfessorLabel))
+        if (!string.IsNullOrEmpty(a.ProfessorLine))
             panel.Children.Add(new TextBlock
             {
-                Text = a.ProfessorLabel,
+                Text = a.ProfessorLine,
                 FontSize = 8,
                 TextAlignment = TextAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,

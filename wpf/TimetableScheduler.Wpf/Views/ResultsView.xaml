@@ -44,12 +44,12 @@
 
         <!-- Top: 해 밀도 미리보기 카드 스트립 -->
         <Border Grid.Row="0" Background="#F8F9FA" BorderBrush="#DDD" BorderThickness="1"
-                Padding="8" Margin="0,0,0,8">
+                Padding="6" Margin="0,0,0,6">
             <DockPanel>
                 <Button DockPanel.Dock="Right" Content="선택한 해 수동 편집 →"
                         Command="{Binding EditSelectedCommand}"
                         VerticalAlignment="Center" Margin="8,0,0,0"
-                        Padding="14,10" FontWeight="Bold"
+                        Padding="12,6" FontWeight="Bold"
                         Background="#2E7D32" Foreground="White" />
                 <ScrollViewer HorizontalScrollBarVisibility="Auto" VerticalScrollBarVisibility="Disabled">
                 <ItemsControl ItemsSource="{Binding SolutionCards}">
@@ -60,7 +60,7 @@
                     </ItemsControl.ItemsPanel>
                     <ItemsControl.ItemTemplate>
                         <DataTemplate DataType="{x:Type vm:SolutionCardViewModel}">
-                            <Border Margin="4,2" Padding="8,6" CornerRadius="6"
+                            <Border Margin="3,1" Padding="6,4" CornerRadius="6"
                                     Background="White" Cursor="Hand"
                                     MouseLeftButtonDown="OnCardMouseDown">
                                 <Border.Style>
@@ -75,14 +75,14 @@
                                     </Style>
                                 </Border.Style>
                                 <StackPanel>
-                                     <Viewbox MaxHeight="120" Stretch="Uniform" Margin="0,0,0,6">
+                                     <Viewbox MaxHeight="84" Stretch="Uniform" Margin="0,0,0,4">
 <Grid>
                                          <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="28" />
-                                            <ColumnDefinition Width="28" />
-                                            <ColumnDefinition Width="28" />
-                                            <ColumnDefinition Width="28" />
-                                            <ColumnDefinition Width="28" />
+                                            <ColumnDefinition Width="24" />
+                                            <ColumnDefinition Width="24" />
+                                            <ColumnDefinition Width="24" />
+                                            <ColumnDefinition Width="24" />
+                                            <ColumnDefinition Width="24" />
                                          </Grid.ColumnDefinitions>
 
                                         <ItemsControl Grid.ColumnSpan="5" ItemsSource="{Binding PreviewRows}">
@@ -90,15 +90,15 @@
                                                 <DataTemplate DataType="{x:Type vm:MiniPreviewRow}">
                                                     <Grid Margin="0,1,0,0">
                                                         <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="28" />
-                                                            <ColumnDefinition Width="28" />
-                                                            <ColumnDefinition Width="28" />
-                                                            <ColumnDefinition Width="28" />
-                                                            <ColumnDefinition Width="28" />
+                                                            <ColumnDefinition Width="24" />
+                                                            <ColumnDefinition Width="24" />
+                                                            <ColumnDefinition Width="24" />
+                                                            <ColumnDefinition Width="24" />
+                                                            <ColumnDefinition Width="24" />
                                                         </Grid.ColumnDefinitions>
                                                         <Border Grid.Column="0"
                                                                 Grid.ColumnSpan="5"
-                                                                Height="16"
+                                                                Height="12"
                                                                 Margin="1,0"
                                                                 Background="White"
                                                                 BorderBrush="#E5E7EB"
@@ -116,7 +116,7 @@
                                                             <ItemsControl.ItemTemplate>
                                                                 <DataTemplate DataType="{x:Type vm:MiniPreviewCell}">
                                                                     <Border Margin="1,0"
-                                                                            Height="16"
+                                                                            Height="12"
                                                                              CornerRadius="2"
                                                                              BorderBrush="#D1D5DB"
                                                                              BorderThickness="1"
@@ -168,12 +168,10 @@
         </Border>
 
         <!-- Tabs -->
-        <TabControl Grid.Row="1" Margin="0,0,0,0">
+        <Grid Grid.Row="1">
+        <TabControl Margin="0,0,0,0">
             <TabItem Header="통합 시간표">
                 <DockPanel>
-                    <ctrl:GradeLegendControl DockPanel.Dock="Top"
-                                             HorizontalAlignment="Right"
-                                             Margin="0,6,12,4" />
                     <ctrl:UnifiedTimetableControl DataContext="{Binding Unified}" />
                 </DockPanel>
             </TabItem>
@@ -188,9 +186,6 @@
                     <TabControl.ContentTemplate>
                         <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
                             <DockPanel>
-                                <ctrl:GradeLegendControl DockPanel.Dock="Top"
-                                                         HorizontalAlignment="Right"
-                                                         Margin="0,6,12,4" />
                                 <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
                             </DockPanel>
                         </DataTemplate>
@@ -208,9 +203,6 @@
                     <TabControl.ContentTemplate>
                         <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
                             <DockPanel>
-                                <ctrl:GradeLegendControl DockPanel.Dock="Top"
-                                                         HorizontalAlignment="Right"
-                                                         Margin="0,6,12,4" />
                                 <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
                             </DockPanel>
                         </DataTemplate>
@@ -228,9 +220,6 @@
                     <TabControl.ContentTemplate>
                         <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
                             <DockPanel>
-                                <ctrl:GradeLegendControl DockPanel.Dock="Top"
-                                                         HorizontalAlignment="Right"
-                                                         Margin="0,6,12,4" />
                                 <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
                             </DockPanel>
                         </DataTemplate>
@@ -238,6 +227,10 @@
                 </TabControl>
             </TabItem>
         </TabControl>
+            <ctrl:GradeLegendControl HorizontalAlignment="Right"
+                                     VerticalAlignment="Top"
+                                     Margin="0,3,12,0" />
+        </Grid>
         </Grid>
     </Grid>
 </UserControl>

@@ -128,10 +128,12 @@ public class UnifiedTimetableViewModelTests
         var rooms = new List<Room>
         {
             new() { Id = "R1", Name = "공학관 101" },
+            new() { Id = "R2", Name = "공학관 102" },
         };
         var assignment = new List<SolutionAssignment>
         {
             new("X-01", 0, 1, "R1"),
+            new("X-01", 0, 1, "R2"),
         };
 
         vm.Render(assignment, courses, professors, rooms);
@@ -139,7 +141,8 @@ public class UnifiedTimetableViewModelTests
         var item = Assert.Single(vm.Cells).Assignment;
         Assert.Equal("김교수", item.ProfessorLabel);
         Assert.Equal(new[] { "박교수" }, item.CoteachProfLabels);
-        Assert.Equal("공학관 101", item.RoomsLabel);
+        Assert.Equal("김교수, 박교수", item.ProfessorLine);
+        Assert.Equal("공학관 101\n공학관 102", item.RoomsLabel);
     }
 
     [Fact]

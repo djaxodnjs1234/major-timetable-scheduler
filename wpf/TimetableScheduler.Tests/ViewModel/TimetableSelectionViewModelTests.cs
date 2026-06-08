@@ -28,6 +28,7 @@ public class TimetableSelectionViewModelTests : IDisposable
     {
         var workspace = new WorkspaceService(_repo);
         workspace.AddProfessor(new Professor { Id = "P1", Name = "스냅교수" });
+        workspace.AddProfessor(new Professor { Id = "P2", Name = "팀티칭교수" });
         workspace.AddRoom(new Room { Id = "R1", Name = "스냅강의실" });
         workspace.AddCourse(new Course
         {
@@ -36,6 +37,7 @@ public class TimetableSelectionViewModelTests : IDisposable
             Grade = 2,
             HoursPerWeek = 1,
             ProfessorId = "P1",
+            CoteachProfs = new List<string> { "P2" },
             BlockStructure = new List<int> { 1 },
         });
 
@@ -57,8 +59,11 @@ public class TimetableSelectionViewModelTests : IDisposable
         Assert.Equal("스냅강의실", previewCell.Assignment.RoomsLabel);
         Assert.Single(vm.RoomViews);
         Assert.Equal("스냅강의실", vm.RoomViews[0].Name);
-        Assert.Single(vm.ProfessorViews);
+        Assert.Equal(2, vm.ProfessorViews.Count);
         Assert.Equal("스냅교수", vm.ProfessorViews[0].Name);
+        var coteacherView = vm.ProfessorViews.Single(v => v.Id == "P2");
+        var occupied = Assert.Single(coteacherView.Grid.Cells.Where(c => c.IsOccupied));
+        Assert.Equal("C-01", Assert.Single(occupied.Items).CourseId);
     }
 
     [Fact]

@@ -2916,7 +2916,7 @@ public class ManualEditViewModelTests : IDisposable
             CoteachProfIds = new[] { "P1", "P2" },
         };
 
-        Assert.Equal("P1, P2", assignment.ProfessorLabel);
+        Assert.Equal("P1, P2", assignment.ProfessorLine);
     }
 
     [Fact]
@@ -2928,7 +2928,21 @@ public class ManualEditViewModelTests : IDisposable
             CoteachProfIds = new[] { "P3", "P2" },
         };
 
-        Assert.Equal("P1, P3, P2", assignment.ProfessorLabel);
+        Assert.Equal("P1, P3, P2", assignment.ProfessorLine);
+    }
+
+    [Fact]
+    public void ProfessorViews_IncludeCoteachingCourses()
+    {
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "공동" });
+        _ws.Courses.First(c => c.Id == "X-01").CoteachProfs.Add("P2");
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+
+        var coteacherView = vm.ProfessorViews.Single(v => v.Id == "P2");
+        var occupied = Assert.Single(coteacherView.Grid.Cells.Where(c => c.IsOccupied));
+        Assert.Equal("X-01", Assert.Single(occupied.Items).CourseId);
     }
 
     [Fact]
