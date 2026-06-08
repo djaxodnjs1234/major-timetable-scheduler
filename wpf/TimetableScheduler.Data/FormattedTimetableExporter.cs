@@ -29,13 +29,14 @@ public static class FormattedTimetableExporter
         IEnumerable<TimetableAssignmentRow> assignments,
         IReadOnlyList<Course> courses,
         IReadOnlyList<Professor> professors,
-        string path)
+        string path,
+        bool expandAllGrades = false)
     {
         var aList = assignments.ToList();
         var cMap  = courses.ToDictionary(c => c.Id);
         var pMap  = professors.ToDictionary(p => p.Id);
 
-        var dayLayouts = BuildDayLayouts(aList, cMap);
+        var dayLayouts = BuildDayLayouts(aList, cMap, expandAllGrades);
 
         // col 1 = A (period label), day columns, last col (period label)
         int[] dayStart = new int[5];
@@ -134,7 +135,8 @@ public static class FormattedTimetableExporter
 
     private static DayLayout[] BuildDayLayouts(
         List<TimetableAssignmentRow> aList,
-        Dictionary<string, Course> cMap)
+        Dictionary<string, Course> cMap,
+        bool expandAllGrades)
     {
         var layouts = new DayLayout[5];
         for (int d = 0; d < 5; d++)
@@ -157,7 +159,14 @@ public static class FormattedTimetableExporter
                     .OrderBy(b => b.StartPeriod)
                     .ToList();
 
-                if (gradeBlocks.Count == 0) continue;
+                if (gradeBlocks.Count == 0)
+                {
+                    if (!expandAllGrades) continue;
+
+                    gradeLayouts.Add(new GradeLayout(grade, globalOffset, 1, gradeBlocks));
+                    globalOffset += 1;
+                    continue;
+                }
 
                 // greedy interval coloring within this grade only
                 var endPeriods = new List<int>();

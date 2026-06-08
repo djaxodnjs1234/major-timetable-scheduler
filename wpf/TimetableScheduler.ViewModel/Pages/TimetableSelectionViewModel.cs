@@ -146,12 +146,17 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
     private void ExportXlsx(string path)
     {
         if (SelectedTimetable == null) return;
+        var snapshot = SavedTimetableSnapshotResolver.Resolve(SelectedTimetable.SnapshotJson);
+        IReadOnlyList<Course> courses = snapshot.Courses.Count > 0 ? snapshot.Courses : _workspace.ExpandedCourses;
+        IReadOnlyList<Professor> professors = snapshot.Professors.Count > 0 ? snapshot.Professors : _workspace.Professors;
+
         FormattedTimetableExporter.Export(
             SelectedTimetable.Name,
             SelectedTimetable.Assignments,
-            _workspace.ExpandedCourses,
-            _workspace.Professors,
-            path);
+            courses,
+            professors,
+            path,
+            expandAllGrades: true);
     }
 
     private bool CanExport() => SelectedTimetable != null;

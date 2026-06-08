@@ -1,3 +1,4 @@
+using ClosedXML.Excel;
 using TimetableScheduler.Data;
 using TimetableScheduler.Domain;
 using TimetableScheduler.Solver;
@@ -146,5 +147,68 @@ public class TimetableSelectionViewModelTests : IDisposable
 
         Assert.Empty(vm.Preview.Cells);
         Assert.All(vm.GradeViews, view => Assert.Empty(view.Grid.Cells.Where(c => c.IsOccupied)));
+    }
+
+    [Fact]
+    public void FirstScreenExport_UsesSnapshot_AndShowsAllGradeHeaders()
+    {
+        var workspace = new WorkspaceService(_repo);
+        workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor One" });
+        workspace.AddRoom(new Room { Id = "R1", Name = "Room One" });
+        workspace.AddCourse(new Course
+        {
+            Id = "G1-01",
+            Name = "Grade One Course",
+            Grade = 1,
+            Section = 1,
+            HoursPerWeek = 1,
+            CourseType = "Major",
+            ProfessorId = "P1",
+            BlockStructure = new List<int> { 1 },
+        });
+        workspace.AddCourse(new Course
+        {
+            Id = "G4-01",
+            Name = "Grade Four Course",
+            Grade = 4,
+            Section = 1,
+            HoursPerWeek = 1,
+            CourseType = "Major",
+            ProfessorId = "P1",
+            BlockStructure = new List<int> { 1 },
+        });
+
+        workspace.SaveTimetable(
+            "saved",
+            new[]
+            {
+                new SolutionAssignment("G1-01", 0, 1, "R1"),
+                new SolutionAssignment("G4-01", 0, 2, "R1"),
+            },
+            snapshot: workspace.Snapshot());
+
+        foreach (var course in workspace.Courses.ToList())
+            workspace.DeleteCourse(course);
+
+        var vm = new TimetableSelectionViewModel(workspace);
+        var path = Path.Combine(Path.GetTempPath(), $"first_screen_export_{Guid.NewGuid():N}.xlsx");
+
+        try
+        {
+            vm.ExportXlsxCommand.Execute(path);
+
+            using var workbook = new XLWorkbook(path);
+            var sheet = workbook.Worksheet(1);
+
+            Assert.Contains("1", sheet.Cell(5, 2).GetString());
+            Assert.Contains("2", sheet.Cell(5, 3).GetString());
+            Assert.Contains("3", sheet.Cell(5, 4).GetString());
+            Assert.Contains("4", sheet.Cell(5, 5).GetString());
+            Assert.Contains(sheet.CellsUsed(), cell => cell.GetString().Contains("Grade Four Course", StringComparison.Ordinal));
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
     }
 }
