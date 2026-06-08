@@ -14,6 +14,7 @@ public sealed record CellAssignment(
     bool IsFixed)
 {
     public IReadOnlyList<string> CoteachProfIds { get; init; } = Array.Empty<string>();
+    public string CourseType { get; init; } = "";
     public string ProfessorDisplayName { get; init; } = "";
     public IReadOnlyList<string> CoteachProfDisplayNames { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> RoomDisplayNames { get; init; } = Array.Empty<string>();
@@ -27,6 +28,29 @@ public sealed record CellAssignment(
         : CoteachProfDisplayNames;
 
     public string SectionLabel => Section >= 1 ? ((char)('A' + Section - 1)).ToString() : "";
+
+    public string TitleLabel
+    {
+        get
+        {
+            var title = string.IsNullOrEmpty(SectionLabel)
+                ? CourseName
+                : $"{CourseName}·{SectionLabel}";
+            return IsFixed ? $"★ {title}" : title;
+        }
+    }
+
+    public string ProfessorLine
+    {
+        get
+        {
+            var labels = new List<string>();
+            if (!string.IsNullOrWhiteSpace(ProfessorLabel))
+                labels.Add(ProfessorLabel);
+            labels.AddRange(CoteachProfLabels.Where(label => !string.IsNullOrWhiteSpace(label)));
+            return string.Join(", ", labels);
+        }
+    }
 
     public string RoomsLabel
     {
@@ -52,6 +76,7 @@ public sealed record CellAssignment(
             roomList, rowSpan,
             course.HoursPerWeek, course.IsFixed)
         {
+            CourseType = course.CourseType,
             CoteachProfIds = course.CoteachProfs.ToList(),
             ProfessorDisplayName = DisplayName(professorNames, course.ProfessorId),
             CoteachProfDisplayNames = course.CoteachProfs.Select(id => DisplayName(professorNames, id)).ToList(),

@@ -107,13 +107,17 @@ public partial class DataInputView : UserControl
     private void OnCourseHoursChanged(object sender, SelectionChangedEventArgs e)
     {
         if (sender is not DependencyObject dep || Vm == null) return;
+        if (e.RemovedItems.Count == 0) return;
+        if (e.AddedItems.Count == 0 || e.AddedItems[0] is not int weeklyHours) return;
+
         var item = FindCourseGroupItem(dep);
         if (item == null) return;
         var expander = FindAncestor<Expander>(dep);
         if (expander == null) return;
 
-        Vm.HandleCourseHoursChanged(item);
+        Vm.HandleCourseHoursChanged(item, weeklyHours);
         RefreshCourseBlockStructureCombo(expander, item);
+        RefreshFixedTimeCheckBox(expander);
         RebuildFixedSlotEditor(expander, item);
     }
 
@@ -121,6 +125,10 @@ public partial class DataInputView : UserControl
     {
         if (sender is not DependencyObject dep || Vm == null) return;
         if (e.RemovedItems.Count == 0) return;
+        if (e.AddedItems.Count == 0 || e.AddedItems[0] is not string) return;
+
+        if (sender is ComboBox combo)
+            BindingOperations.GetBindingExpression(combo, ComboBox.SelectedItemProperty)?.UpdateSource();
 
         var item = FindCourseGroupItem(dep);
         if (item == null) return;
@@ -158,6 +166,13 @@ public partial class DataInputView : UserControl
     {
         if (expander.FindName("FixedSlotEditor") is FixedSlotEditorControl editor)
             editor.DataContext = FixedSlotEditorViewModel.Build(item, item.Sections[0].IsFixed);
+    }
+
+    private static void RefreshFixedTimeCheckBox(Expander expander)
+    {
+        if (expander.FindName("IsFixedCheckBox") is not CheckBox checkBox) return;
+
+        BindingOperations.GetBindingExpression(checkBox, CheckBox.IsCheckedProperty)?.UpdateTarget();
     }
 
     private static T? FindAncestor<T>(DependencyObject start) where T : DependencyObject
@@ -217,6 +232,33 @@ public partial class DataInputView : UserControl
         // Flush fixed slot editor values back to sections before save
         var expander = FindAncestor<Expander>(dep);
         var editorCtrl = expander != null ? FindDescendant<FixedSlotEditorControl>(expander) : null;
+        var candidateFixedSlots = editorCtrl?.DataContext is FixedSlotEditorViewModel pendingEditorVm
+            ? pendingEditorVm.SectionEditors
+                .Select(sectionEditor => (IReadOnlyList<TimeSlot>)sectionEditor.ToFixedSlots())
+                .ToList()
+            : null;
+        var overlap = Vm.FindFixedTimeOverlap(item, candidateFixedSlots);
+        if (overlap != null)
+        {
+            var dayName = overlap.Day switch
+            {
+                0 => "월",
+                1 => "화",
+                2 => "수",
+                3 => "목",
+                4 => "금",
+                _ => "?",
+            };
+            var sectionText = overlap.ExistingSection > 0 ? $" ({overlap.ExistingSection}분반)" : string.Empty;
+            MessageBox.Show(
+                $"선택한 고정 시간이 기존 고정 수업과 겹칩니다.\n" +
+                $"겹치는 시간: {dayName}요일 {overlap.Period}교시\n" +
+                $"기존 수업: {overlap.ExistingCourseName}{sectionText}",
+                "저장 불가",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
         if (editorCtrl?.DataContext is FixedSlotEditorViewModel editorVm)
         {
             editorVm.ApplyTo(item);

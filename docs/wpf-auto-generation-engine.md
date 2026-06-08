@@ -1,0 +1,404 @@
+# WPF 시간표 자동생성 엔진 전체 로직
+
+이 문서는 WPF 앱에서 사용자가 **시간표 자동 생성**을 눌렀을 때부터 결과 화면에 해가 표시되고, `INFEASIBLE` 같은 실패 상태가 사용자 메시지로 바뀌기까지의 전체 흐름을 코드 기준으로 정리한 자료입니다.
+
+대상 범위는 `wpf/` 아래 현재 본 제품 구현입니다.
+
+## 1. 전체 흐름 한눈에 보기
+
+자동생성 엔진의 실행 순서는 크게 다음과 같습니다.
+
+1. 사용자가 **정보 입력 화면**에서 솔버 옵션을 정한다.
+2. `DataInputViewModel.SolveAsync()`가 상태 메시지, 진행 수치, 취소 토큰을 준비한다.
+3. `SolverService.SolveAsync()`가 현재 `WorkspaceService` 상태를 스냅샷으로 복사한다.
+4. `DiverseSolver.Solve()`가 OR-Tools CP-SAT 모델을 단계적으로 풀어 해 후보를 만든다.
+5. `SolverService.Rank()`가 생성된 해를 SC 점수로 정렬한다.
+6. `DataInputViewModel`이 최종 상태 메시지를 만든다.
+7. 해가 하나 이상 있으면 `SolveCompleted` 이벤트를 올리고, `MainWindowViewModel`이 `ResultsViewModel`로 넘긴다.
+8. `ResultsViewModel`이 결과 카드, 통합 시간표, 학년별/강의실별/교수별 뷰를 만든다.
+
+이 흐름에서 중요한 점은 다음 두 가지입니다.
+
+- 솔버는 DB를 직접 수정하지 않습니다.
+- 솔버가 받는 입력은 항상 `WorkspaceService.Snapshot()`으로 복사된 값입니다.
+
+즉, 화면이 들고 있는 편집 상태와 솔버 계산 상태를 분리하는 구조입니다.
+
+## 2. 시작점: 정보 입력 화면에서 자동생성 버튼 클릭
+
+자동생성 시작점은 `DataInputViewModel.SolveAsync()`입니다.
+
+- 파일: `wpf/TimetableScheduler.ViewModel/Pages/DataInputViewModel.cs`
+- 메서드: `SolveAsync()`
+
+이 메서드는 먼저 UI 상태를 초기화합니다.
+
+| 초기화 항목 | 의미 |
+|---|---|
+| `IsSolving = true` | 자동생성 중임을 표시하고 버튼 상태를 바꿈 |
+| `IsSolveComplete = false` | 이전 결과의 “미리보기로 이동 가능” 상태를 해제 |
+| `StatusMessage = "솔버 시작"` | 진행 상황 텍스트 초기화 |
+| `ProgressCurrent = 0` | 현재 시도 횟수 초기화 |
+| `ProgressTotal = TotalSolutions` | 목표 해 개수 표시 |
+| `UniqueSolutionsFound = 0` | 중복 제거 후 고유 해 개수 초기화 |
+
+이후 `CancellationTokenSource`를 만들고, `Progress<SolverProgress>`를 연결합니다.
+
+이 progress 콜백은 다음 데이터를 화면으로 보냅니다.
+
+- `StatusMessage`
+- `ProgressCurrent`
+- `ProgressTotal`
+- `UniqueSolutionsFound`
+
+즉, 진행 상황 영역에 보이는 문구와 숫자는 `SolverProgress`를 UI용 문자열로 바꾼 결과입니다.
+
+## 3. Workspace 스냅샷과 비동기 실행
+
+실제 솔버 호출은 `SolverService`가 담당합니다.
+
+- 파일: `wpf/TimetableScheduler.ViewModel/SolverService.cs`
+- 메서드: `SolveAsync()`
+
+`SolverService.SolveAsync()`는 먼저 아래 데이터를 묶은 스냅샷을 만듭니다.
+
+- `Courses`
+- `Professors`
+- `Rooms`
+- `CrossGroups`
+- `RetakeScenarios`
+
+이 스냅샷은 `WorkspaceService.Snapshot()`에서 만들어집니다. 따라서 솔버는 계산 도중 화면의 실시간 수정에 영향을 받지 않습니다.
+
+그 다음 `Task.Run(...)`으로 백그라운드에서 `DiverseSolver.Solve(...)`를 실행합니다.
+
+이 설계의 목적은 다음과 같습니다.
+
+- WPF UI 스레드를 막지 않기 위해
+- 취소 토큰을 전달하기 위해
+- 진행 상황을 `IProgress<SolverProgress>`로 보고하기 위해
+
+## 4. 솔버 입력 데이터와 분반 확장
+
+솔버가 받는 핵심 입력은 도메인 모델입니다.
+
+| 입력 모델 | 의미 |
+|---|---|
+| `Course` | 과목명, 학년, 시수, 분반, 교수, 고정 시간, 고정 강의실, 블록 구조 |
+| `Professor` | 교수 불가 시간, 허용/불가 강의실 |
+| `Room` | 강의실 정보 |
+| `CrossGroup` | 교차수강 묶음 |
+| `RetakeScenario` | 재수강자가 안전하게 들을 수 있어야 하는 과목 조건 |
+
+현재 Workspace는 이미 솔버에 넣을 수 있는 형태를 들고 있지만, 실제 계산은 `DomainHelpers` 기반의 분반 단위 확장 구조를 전제로 합니다.
+
+예를 들어 과목 하나가 여러 분반이면, 솔버 내부에서는 시간표를 잡는 최소 단위가 “분반”입니다.
+
+## 5. 모델 생성: `ModelBuilder.Build()`
+
+실제 CP-SAT 모델은 `ModelBuilder.Build()`에서 만들어집니다.
+
+- 파일: `wpf/TimetableScheduler.Solver/ModelBuilder.cs`
+
+### 5.1 결정 변수
+
+`ModelBuilder`는 다음 핵심 변수를 만듭니다.
+
+| 변수 | 의미 |
+|---|---|
+| `x[(courseId, day, period, roomId)]` | 특정 과목이 특정 요일/교시/강의실에 있으면 1 |
+| `y[(courseId, day, period)]` | 특정 과목이 특정 시간 슬롯을 점유하면 1 |
+| `start[(courseId, blockIdx, day, startPeriod)]` | 특정 블록이 어디서 시작하는지 |
+| `dayVarsByCourse` | 각 블록이 배치된 요일 |
+
+`x`는 강의실 차원까지 포함하고, `y`는 시간 점유만 나타냅니다.
+
+이 둘은 아래 관계로 묶입니다.
+
+```text
+Σ room x = K × y
+```
+
+여기서 `K`는 동시에 점유해야 하는 방 개수입니다.
+
+- 일반 과목: `K = 1`
+- 여러 고정 강의실을 동시에 쓰는 과목: `K = FixedRooms.Count`
+
+이 구조 덕분에
+
+- 강의실 중복은 `x`로 처리하고
+- 교수/학년/분반 시간 충돌은 `y`로 간단하게 처리할 수 있습니다.
+
+### 5.2 하드 제약 등록 순서
+
+`ModelBuilder.Build()`는 다음 하드 제약(HC)을 등록합니다.
+
+| HC | 구현 위치 | 의미 |
+|---|---|---|
+| HC-01 | `BasicHcs.AddHc01_RoomSingle` | 같은 방 동시 사용 금지 |
+| HC-02 | `BasicHcs.AddHc02_ProfSingle` | 같은 교수 동시 수업 금지 |
+| HC-03 | `BasicHcs.AddHc03_ProfUnavailable` | 교수 불가 시간 배치 금지 |
+| HC-04 | `BasicHcs.AddHc04_Hours` | 시수 충족 |
+| HC-06 | `BlockHcs.AddHc06_BlockSplit` | 블록 구조대로 연속 배치 |
+| HC-08 | `BasicHcs.AddHc08_SectionNoOverlap` | 같은 과목 분반끼리 중복 금지 |
+| HC-11 | `BasicHcs.AddHc11_GradeNoOverlap` | 같은 학년 과목 중복 금지 |
+| HC-12 | `BasicHcs.AddHc12_Lunch` | 점심 5교시 금지 |
+| HC-13 | `BasicHcs.AddHc13_Fixed` | 고정 수업 시간 강제 |
+| HC-14 | `BlockHcs.AddHc14_FixedRooms`, `AddHc14_UnavailableRooms` | 고정/불가 강의실 조건 |
+| HC-15 | `BlockHcs.AddHc15_SectionBackToBack` | 같은 교수 2분반 인접 |
+| HC-16 | `GroupingHcs.AddHc16_Cross` | Cross cyclic shift |
+| HC-17 | `GroupingHcs.AddHc17_Retake` | 재수강 안전 분반 |
+| HC-18 | `BlockHcs.AddHc18_BlockDayGap` | 블록 요일 차 최대 2 |
+| HC-19 | `BlockHcs.AddHc19_Len2StartPeriods` | 2시간 블록 시작 교시 제한 |
+| HC-20 | `BlockHcs.AddHc20_BlockDaysDistinct` | 같은 과목 블록 다른 요일 |
+| HC-21 | `BlockHcs.AddHc21_ProfRoomConsistent` | 교수 자동 배정 방 일관성 |
+
+## 6. 소프트 제약과 4단계 lex 솔브
+
+실제 솔브 엔진은 `DiverseSolver.Solve()`입니다.
+
+- 파일: `wpf/TimetableScheduler.Solver/DiverseSolver.cs`
+
+이 솔버는 한 번에 모든 점수를 섞어 최적화하지 않고, 4단계로 나눕니다.
+
+### Phase 1A
+
+- SC-01(월요일 오전/금요일 오후 회피) 최적값 측정
+- 결과를 `sc01Bound`로 잠금
+
+### Phase 1B
+
+- SC-01 bound 유지
+- SC-02(교수 요일 집중도) 최적값 측정
+- 결과를 `sc02Bound`로 잠금
+
+### Phase 1C
+
+- SC-01, SC-02 bound 유지
+- SC-03(블록 간격) 최적값 측정
+- 결과를 `sc03Bound`로 잠금
+
+### Phase 2
+
+- 위 세 bound를 모두 hard 제약처럼 추가
+- `random_seed`를 바꿔가며 여러 번 시도
+- 중복 key는 제거하고 새로운 해만 채택
+
+즉, “좋은 시간표의 우선순위”를 단계적으로 고정한 다음, 그 범위 안에서 다양한 후보를 찾는 구조입니다.
+
+### 6.1 소프트 제약 정의
+
+소프트 제약 구현은 `SoftConstraints.cs`에 있습니다.
+
+| SC | 의미 | 핵심 구현 |
+|---|---|---|
+| SC-01 | 월오전/금오후 회피 | `PenalizedSlots`, `Sc01PenaltyTerm()` |
+| SC-02 | 교수 요일 3일 이하 집중 | `Sc02PenaltyTerm()` |
+| SC-03 | 같은 과목 블록 간격 확보 | `Sc03PenaltyTerm()` |
+
+각 SC는 phase별로 objective나 bound로 사용됩니다.
+
+## 7. 진행 상황 메시지는 어떻게 만들어지나
+
+솔버는 `SolverProgress`를 UI로 보고합니다.
+
+- 파일: `wpf/TimetableScheduler.Solver/DiverseSolver.cs`
+- 타입: `SolverProgress(Phase, Message, CurrentAttempt, TotalAttempts, UniqueSolutions)`
+
+예를 들어 현재 구현에는 아래 메시지들이 나옵니다.
+
+- `SC-01 측정 중`
+- `SC-02 측정 중`
+- `SC-03 측정 중`
+- `Phase 2 모델 빌드`
+- `#n: OPTIMAL +신규`
+- `#n: FEASIBLE =중복`
+- `#n: INFEASIBLE 실패`
+
+이 원문은 다시 `DataInputViewModel.ToUserProgressMessage()`에서 사용자 친화적인 문구로 바뀝니다.
+
+예:
+
+- `SC-01` → `월/금 시간 선호`
+- `SC-02` → `교수 요일 선호`
+- `SC-03` → `수업 간격 선호`
+- `Phase 1A/1B/1C` → `선호 조건 확인`
+- `Phase 2` → `시간표 후보 탐색`
+
+즉, 진행 상황 텍스트는 **솔버가 직접 최종 한국어 문장을 주는 구조가 아니라**, ViewModel이 중간 메시지를 UI용으로 치환하는 구조입니다.
+
+## 8. 솔버 결과와 상태 처리
+
+`DiverseSolver.Solve()`의 최종 반환값은 `DiverseSolverResult`입니다.
+
+| 필드 | 의미 |
+|---|---|
+| `Status` | 마지막 솔버 상태 문자열 (`OPTIMAL`, `FEASIBLE`, `INFEASIBLE`, `MODEL_INVALID`, `UNKNOWN`) |
+| `Solutions` | 생성된 해 목록 |
+| `Sc01Bound`, `Sc02Bound`, `Sc03Bound` | phase에서 잠근 bound 값 |
+| `Attempts` | 실제 시도 횟수 |
+
+`DataInputViewModel.SolveAsync()`는 이 결과를 받아 다음 순서로 처리합니다.
+
+1. `SolverService.Rank()`로 결과를 점수화/정렬
+2. `RankedResults`를 채움
+3. `StatusMessage`를 최종 상태별 문구로 바꿈
+4. 랭킹 결과가 하나 이상이면 `IsSolveComplete = true`
+5. 해가 있으면 `SolveCompleted` 이벤트 발생
+
+## 9. 랭킹과 결과 화면 연결
+
+점수화는 `SolutionScoring.Rank()`에서 수행합니다.
+
+- 파일: `wpf/TimetableScheduler.Scoring/SolutionScoring.cs`
+
+구조는 단순합니다.
+
+1. 해 하나마다 `Score(...)` 계산
+2. `RankedSolution(Assignment, Score)` 생성
+3. `Score.Total` 내림차순 정렬
+4. 상위 `Top-M`만 반환
+
+`MainWindowViewModel`은 `DataInputViewModel.SolveCompleted` 이벤트를 받아 `ResultsViewModel.SetSolutions(...)`를 호출합니다.
+
+- 파일: `wpf/TimetableScheduler.ViewModel/Pages/MainWindowViewModel.cs`
+
+그 후 `ResultsViewModel`은 다음 데이터를 만듭니다.
+
+- 카드 스트립용 `SolutionCards`
+- 통합 시간표 `Unified`
+- 학년별 `GradeViews`
+- 강의실별 `RoomViews`
+- 교수별 `ProfessorViews`
+
+즉, 결과 화면은 솔버가 직접 그리는 것이 아니라, `RankedSolution`을 다시 UI 전용 구조로 변환해 렌더링합니다.
+
+## 10. 현재 INFEASIBLE 처리는 어떻게 동작하나
+
+`INFEASIBLE` 처리는 이미 구현돼 있지만, 중요한 특징이 있습니다.
+
+> **OR-Tools가 직접 “왜 infeasible인지”를 구조화해서 반환하는 것이 아니라, WPF 앱이 현재 입력 상태를 다시 검사해서 사람이 읽을 수 있는 이유를 추정하는 방식입니다.**
+
+관련 메서드:
+
+- 파일: `wpf/TimetableScheduler.ViewModel/Pages/DataInputViewModel.cs`
+- 메서드: `InfeasibleMessage()`
+
+`SolveAsync()`는 최종 상태가 `INFEASIBLE`일 때 아래처럼 메시지를 정합니다.
+
+```csharp
+StatusMessage = result.Status switch
+{
+    "INFEASIBLE" => InfeasibleMessage(),
+    ...
+}
+```
+
+### 10.1 현재 자동으로 안내하는 INFEASIBLE 이유
+
+현재 구현은 다음 같은 원인을 문자열로 보여줍니다.
+
+| 현재 안내하는 이유 | 예시 |
+|---|---|
+| 고정 과목인데 고정 시간 비어 있음 | `fixed time conflict` |
+| 고정 과목이 점심 5교시에 박혀 있음 | `fixed time conflict` |
+| 블록 구조 합이 시수와 다름 | `insufficient available time slots` |
+| 과목 기준 사용 가능한 강의실이 없음 | `room ... conflict` |
+| 고정 시간과 교수 불가 시간이 충돌 | `professor unavailable time conflict` |
+| 과목 조건 + 교수 조건을 동시에 만족하는 강의실이 없음 | `room ... conflict` |
+| 비고정 과목인데 교수 가용 시간이 부족 | `insufficient available time slots` |
+| 교수의 사용 가능 강의실이 0개 | `room ... conflict` |
+| 과목의 사용 가능 강의실이 0개 | `room ... conflict` |
+| Cross 그룹이 과목 2개가 아님 | `cross constraint conflict` |
+| Cross 대상 과목이 없음 | `cross constraint conflict` |
+| Cross 묶인 과목들의 분반 수가 다름 | `cross constraint conflict` |
+| Cross 묶인 과목들의 총 시수가 다름 | `cross constraint conflict` |
+
+아무것도 잡지 못하면 아래 문구가 나옵니다.
+
+```text
+INFEASIBLE: detailed reason unavailable
+```
+
+### 10.2 현재 구현의 한계
+
+현재 `InfeasibleMessage()`는 **휴리스틱 검사**입니다. 즉, 현재 솔버 제약 전체를 완전하게 역추적하는 구조는 아닙니다.
+
+따라서 다음 같은 경우는 아직 자동 설명이 부족합니다.
+
+- 같은 base 과목 분반끼리의 직접 충돌 (`HC-08`)
+- 같은 학년 수업끼리의 직접 충돌 (`HC-11`)
+- 팀티칭 보조 교수(coteach) 쪽 불가 시간/중복 충돌 (`HC-02`, `HC-03` 관련)
+- 블록은 합이 맞지만 시작 교시/요일 제약 때문에 실제 배치가 불가능한 경우 (`HC-06`, `HC-18`, `HC-19`, `HC-20`)
+- 같은 교수 2분반 인접 배치 실패 (`HC-15`)
+- Cross의 실제 시간 정렬 실패 (`HC-16`, `HC-19`)
+- 재수강 안전 분반 확보 실패 (`HC-17`)
+- 여러 자동배정 과목을 같은 방 후보 안에서 일관되게 묶지 못하는 경우 (`HC-21`)
+- 개별 과목은 가능해 보여도 전체 자원 경쟁 때문에 동시에 불가능한 집합적 실패
+
+즉, **현재 INFEASIBLE 메시지는 “설명 가능한 대표 원인”은 보여주지만, 모든 하드 제약 위반 원인을 완전하게 커버하지는 않습니다.**
+
+## 11. UNKNOWN, 취소, 일반 실패는 어떻게 보이나
+
+`INFEASIBLE` 외에도 현재 상태 메시지는 다음처럼 나뉩니다.
+
+### UNKNOWN + 랭킹 결과 0개
+
+```text
+시간 초과(UNKNOWN): 제한 시간 안에 해를 찾거나 불가능함을 확정하지 못했습니다. 제한 시간을 늘려 다시 시도해 보세요.
+```
+
+즉, “불가능”이 아니라 “시간이 모자라서 결론을 못 냄”으로 취급합니다.
+
+### 상태는 있으나 랭킹 결과 0개
+
+```text
+해를 찾지 못했습니다({status}). 불가 시간, 불가 강의실, 시간 고정, Cross 설정을 줄이거나 제한 시간을 늘려보세요.
+```
+
+### 취소
+
+```text
+취소됨
+```
+
+### 예외
+
+```text
+오류: {ex.Message}
+```
+
+## 12. 결과 화면 이후의 흐름
+
+결과 화면에서 사용자는 다음 행동을 할 수 있습니다.
+
+- 후보 카드 선택
+- 선택한 해를 수동 편집으로 넘기기
+- 후보를 보관(저장)하기
+
+이때 `ResultsViewModel`은 현재 세션 스냅샷이 있으면 그 스냅샷도 함께 유지합니다. 그래서 기존 시간표 수정 모드나 세션 기반 자동생성에서도, 결과를 다시 수동 편집으로 넘길 때 원래 제약 설정을 잃지 않습니다.
+
+## 13. 핵심 요약
+
+현재 WPF 자동생성 엔진은 아래 구조로 동작합니다.
+
+| 단계 | 담당 |
+|---|---|
+| 입력 편집과 옵션 수집 | `DataInputViewModel` |
+| 현재 데이터 고정 | `WorkspaceService.Snapshot()` |
+| 비동기 솔브 실행 | `SolverService.SolveAsync()` |
+| HC 모델 생성 | `ModelBuilder` + `BasicHcs` + `BlockHcs` + `GroupingHcs` |
+| SC 단계별 최적화와 다양한 해 생성 | `DiverseSolver.Solve()` |
+| 점수 계산과 랭킹 | `SolutionScoring.Rank()` |
+| 결과 화면 전송 | `MainWindowViewModel` |
+| 결과 카드/시간표 렌더링 | `ResultsViewModel` |
+| 실패 상태 사용자 메시지 | `DataInputViewModel.StatusMessage` |
+
+그리고 `INFEASIBLE` 처리는 다음 성격을 가집니다.
+
+- 이미 구현되어 있음
+- 진행 상황 영역(`StatusMessage`)에 표시됨
+- 현재는 **추정 원인 문자열 생성 방식**임
+- 대표적인 원인은 잘 잡지만, 하드 제약 전체를 완전히 설명하지는 못함
+
+따라서 이 문서를 기준으로 보면, 현재 엔진은 **“실행 흐름 자체는 잘 분리되어 있고, 실패 상태 표시는 이미 연결되어 있지만, INFEASIBLE 원인 설명은 아직 부분적으로만 자동화된 상태”**라고 정리할 수 있습니다.

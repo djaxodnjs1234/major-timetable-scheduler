@@ -75,46 +75,39 @@
                                     </Style>
                                 </Border.Style>
                                 <StackPanel>
-                                    <Viewbox MaxHeight="120" Stretch="Uniform" Margin="0,0,0,6">
+                                     <Viewbox MaxHeight="120" Stretch="Uniform" Margin="0,0,0,6">
 <Grid>
-                                        <Grid.RowDefinitions>
-                                            <RowDefinition Height="Auto" />
-                                            <RowDefinition Height="*" />
-                                        </Grid.RowDefinitions>
-                                        <Grid.ColumnDefinitions>
-                                            <ColumnDefinition Width="18" />
+                                         <Grid.ColumnDefinitions>
                                             <ColumnDefinition Width="28" />
                                             <ColumnDefinition Width="28" />
                                             <ColumnDefinition Width="28" />
                                             <ColumnDefinition Width="28" />
                                             <ColumnDefinition Width="28" />
-                                        </Grid.ColumnDefinitions>
+                                         </Grid.ColumnDefinitions>
 
-                                        <TextBlock Grid.Row="0" Grid.Column="1" Text="월" FontSize="8" HorizontalAlignment="Center" />
-                                        <TextBlock Grid.Row="0" Grid.Column="2" Text="화" FontSize="8" HorizontalAlignment="Center" />
-                                        <TextBlock Grid.Row="0" Grid.Column="3" Text="수" FontSize="8" HorizontalAlignment="Center" />
-                                        <TextBlock Grid.Row="0" Grid.Column="4" Text="목" FontSize="8" HorizontalAlignment="Center" />
-                                        <TextBlock Grid.Row="0" Grid.Column="5" Text="금" FontSize="8" HorizontalAlignment="Center" />
-
-                                        <ItemsControl Grid.Row="1" Grid.ColumnSpan="6" ItemsSource="{Binding PreviewRows}">
+                                        <ItemsControl Grid.ColumnSpan="5" ItemsSource="{Binding PreviewRows}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate DataType="{x:Type vm:MiniPreviewRow}">
                                                     <Grid Margin="0,1,0,0">
                                                         <Grid.ColumnDefinitions>
-                                                            <ColumnDefinition Width="18" />
                                                             <ColumnDefinition Width="28" />
                                                             <ColumnDefinition Width="28" />
                                                             <ColumnDefinition Width="28" />
                                                             <ColumnDefinition Width="28" />
                                                             <ColumnDefinition Width="28" />
                                                         </Grid.ColumnDefinitions>
-                                                        <TextBlock Grid.Column="0"
-                                                                   Text="{Binding Period}"
-                                                                   FontSize="7"
-                                                                   Foreground="#666"
-                                                                   VerticalAlignment="Center"
-                                                                   HorizontalAlignment="Center" />
-                                                        <ItemsControl Grid.Column="1" Grid.ColumnSpan="5" ItemsSource="{Binding Cells}">
+                                                        <Border Grid.Column="0"
+                                                                Grid.ColumnSpan="5"
+                                                                Height="16"
+                                                                Margin="1,0"
+                                                                Background="White"
+                                                                BorderBrush="#E5E7EB"
+                                                                BorderThickness="1"
+                                                                Visibility="{Binding IsLunch, Converter={StaticResource BoolToVisibility}}" />
+                                                        <ItemsControl Grid.Column="0"
+                                                                      Grid.ColumnSpan="5"
+                                                                      ItemsSource="{Binding Cells}"
+                                                                      Visibility="{Binding IsLunch, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
                                                             <ItemsControl.ItemsPanel>
                                                                 <ItemsPanelTemplate>
                                                                     <UniformGrid Columns="5" />
@@ -124,27 +117,19 @@
                                                                 <DataTemplate DataType="{x:Type vm:MiniPreviewCell}">
                                                                     <Border Margin="1,0"
                                                                             Height="16"
-                                                                            CornerRadius="2"
-                                                                            BorderBrush="#D1D5DB"
-                                                                            BorderThickness="1"
-                                                                            Background="{Binding Grade, Converter={StaticResource GradeToBrush}}">
+                                                                             CornerRadius="2"
+                                                                             BorderBrush="#D1D5DB"
+                                                                             BorderThickness="1"
+                                                                             Background="{Binding Density, Converter={StaticResource DensityToBrush}}">
                                                                         <Border.Style>
                                                                             <Style TargetType="Border">
                                                                                 <Style.Triggers>
-                                                                                    <DataTrigger Binding="{Binding IsLunch}" Value="True">
-                                                                                        <Setter Property="Background" Value="#F3F4F6" />
-                                                                                    </DataTrigger>
                                                                                     <DataTrigger Binding="{Binding IsOccupied}" Value="False">
                                                                                         <Setter Property="Background" Value="White" />
                                                                                     </DataTrigger>
                                                                                 </Style.Triggers>
                                                                             </Style>
                                                                         </Border.Style>
-                                                                        <TextBlock Text="{Binding Text}"
-                                                                                   FontSize="7"
-                                                                                   HorizontalAlignment="Center"
-                                                                                   VerticalAlignment="Center"
-                                                                                   TextTrimming="CharacterEllipsis" />
                                                                     </Border>
                                                                 </DataTemplate>
                                                             </ItemsControl.ItemTemplate>
@@ -156,26 +141,22 @@
                                     </Grid>
                                     </Viewbox>
                                     <DockPanel LastChildFill="False">
-                                        <Button DockPanel.Dock="Right"
-                                                Content="보관"
-                                                Padding="8,2"
-                                                FontSize="10"
-                                                Command="{Binding DataContext.KeepSolutionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                CommandParameter="{Binding}" />
-                                        <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
-                                            <TextBlock Text="{Binding Rank, StringFormat={}해 {0}}"
-                                                       FontSize="10" Foreground="#666"
-                                                       VerticalAlignment="Center" />
-                                            <TextBlock Text="{Binding NormalizedScore, StringFormat={}{0:F1}점}"
-                                                       FontSize="11" FontWeight="Bold"
-                                                       Foreground="#1E40AF"
-                                                       VerticalAlignment="Center" Margin="8,0,0,0" />
-                                            <TextBlock Text="보관됨"
-                                                       Margin="8,0,0,0"
-                                                       FontSize="10"
-                                                       Foreground="#2E7D32"
-                                                       Visibility="{Binding IsKept, Converter={StaticResource BoolToVisibility}}" />
-                                        </StackPanel>
+                                         <Button DockPanel.Dock="Right"
+                                                 Content="보관"
+                                                 Padding="8,2"
+                                                 FontSize="10"
+                                                 Command="{Binding DataContext.KeepSolutionCommand, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                 CommandParameter="{Binding}"
+                                                 Visibility="{Binding IsKept, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}" />
+                                         <StackPanel Orientation="Horizontal" HorizontalAlignment="Center">
+                                             <TextBlock Text="{Binding Rank, StringFormat={}해 {0}}"
+                                                        FontSize="10" Foreground="#666"
+                                                        VerticalAlignment="Center" />
+                                             <TextBlock Text="{Binding NormalizedScore, StringFormat={}{0:F1}점}"
+                                                        FontSize="11" FontWeight="Bold"
+                                                        Foreground="#1E40AF"
+                                                        VerticalAlignment="Center" Margin="8,0,0,0" />
+                                         </StackPanel>
                                     </DockPanel>
                                 </StackPanel>
                             </Border>

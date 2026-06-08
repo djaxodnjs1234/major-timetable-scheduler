@@ -256,9 +256,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     public void LoadFromSaved(SavedTimetableRecord record)
     {
-        _sessionData = record.SnapshotJson is { Length: > 0 } json
-            ? System.Text.Json.JsonSerializer.Deserialize<AppData>(json)
-            : null;
+        _sessionData = SavedTimetableSnapshotResolver.Resolve(record.SnapshotJson);
         var assignments = record.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
             .ToList();
@@ -321,6 +319,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     public void LoadFromSavedTimetable(SavedTimetableRecord timetable)
     {
+        _sessionData = SavedTimetableSnapshotResolver.Resolve(timetable.SnapshotJson);
         var assignments = timetable.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
             .ToList();
@@ -334,7 +333,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         {
             BaseSolution = new RankedSolution(assignments, new SolutionScore(0, 0, 0, 0));
             _working = assignments;
-            _workingCrossGroups = _workspace.CrossGroups
+            _workingCrossGroups = SessionCrossGroups
                 .Select(g => new CrossGroup { Id = g.Id, BaseIds = g.BaseIds.ToList() })
                 .ToList();
             _undoStack.Clear();

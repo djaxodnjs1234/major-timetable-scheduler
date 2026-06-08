@@ -30,6 +30,8 @@ public sealed partial class ResultsViewModel : PageViewModelBase
     /// <summary>The snapshot behind the current solutions, for handing to manual editing.</summary>
     public AppData? SessionSnapshot => _sessionData;
 
+    public AppData CurrentSnapshot => _sessionData ?? _workspace.Snapshot();
+
     public override string Title => "해 미리보기";
 
     public ObservableCollection<RankedSolution> Solutions { get; } = new();
@@ -70,7 +72,7 @@ public sealed partial class ResultsViewModel : PageViewModelBase
         _workspace.SaveTimetable(
             name,
             card.Solution.Assignment,
-            snapshot: _sessionData ?? _workspace.Snapshot());
+            snapshot: CurrentSnapshot);
         card.IsKept = true;
     }
 
@@ -113,8 +115,16 @@ public sealed partial class ResultsViewModel : PageViewModelBase
             .DefaultIfEmpty(1).Max();
         if (globalMax == 0) globalMax = 1;
 
+        var globalMaxSlotCount = Solutions
+            .SelectMany(s => s.Assignment
+                .Where(a => a.Period != 5)
+                .GroupBy(a => (a.Day, a.Period))
+                .Select(g => g.Select(a => a.CourseId).Distinct().Count()))
+            .DefaultIfEmpty(1)
+            .Max();
+        if (globalMaxSlotCount == 0) globalMaxSlotCount = 1;
+
         int rank = 1;
-        var courses = SessionCourses.ToDictionary(c => c.Id);
         foreach (var s in Solutions)
         {
             var days = Enumerable.Range(0, 5).Select(d => new DayDensityItem(
@@ -123,7 +133,7 @@ public sealed partial class ResultsViewModel : PageViewModelBase
                     .Select(a => a.CourseId).Distinct().Count() / globalMax
             )).ToList();
 
-            var previewRows = BuildPreviewRows(s.Assignment, courses);
+            var previewRows = BuildPreviewRows(s.Assignment, globalMaxSlotCount);
 
             var normalized = Math.Round(s.Score.Total / maxScore * 100, 1);
             SolutionCards.Add(new SolutionCardViewModel(s, rank++, normalized, days, previewRows));
@@ -132,7 +142,7 @@ public sealed partial class ResultsViewModel : PageViewModelBase
 
     private static IReadOnlyList<MiniPreviewRow> BuildPreviewRows(
         IReadOnlyList<SolutionAssignment> assignments,
-        IReadOnlyDictionary<string, Course> courses)
+        int maxSlotCount)
     {
         var rows = new List<MiniPreviewRow>();
         for (var period = 1; period <= 9; period++)
@@ -142,48 +152,29 @@ public sealed partial class ResultsViewModel : PageViewModelBase
             {
                 if (period == 5)
                 {
-                    cells.Add(new MiniPreviewCell("점", false, true, null));
+                    cells.Add(new MiniPreviewCell(false, true, 0, 0));
                     continue;
                 }
 
-                var slotCourses = assignments
+                var courseCount = assignments
                     .Where(a => a.Day == day && a.Period == period)
                     .Select(a => a.CourseId)
                     .Distinct()
-                    .Select(id => courses.TryGetValue(id, out var course) ? course : null)
-                    .Where(course => course is not null)
-                    .Cast<Course>()
-                    .OrderBy(course => course.Grade)
-                    .ThenBy(course => course.Name, StringComparer.Ordinal)
-                    .ToList();
+                    .Count();
 
-                if (slotCourses.Count == 0)
+                if (courseCount == 0)
                 {
-                    cells.Add(new MiniPreviewCell(string.Empty, false, false, null));
+                    cells.Add(new MiniPreviewCell(false, false, 0, 0));
                     continue;
                 }
 
-                var first = slotCourses[0];
-                var label = $"{first.Grade}{ShortName(first.Name)}";
-                if (slotCourses.Count > 1)
-                    label += $"+{slotCourses.Count - 1}";
-
-                cells.Add(new MiniPreviewCell(label, true, false, first.Grade));
+                cells.Add(new MiniPreviewCell(true, false, courseCount, (double)courseCount / maxSlotCount));
             }
 
-            rows.Add(new MiniPreviewRow(period, cells));
+            rows.Add(new MiniPreviewRow(period, period == 5, cells));
         }
 
         return rows;
-    }
-
-    private static string ShortName(string name)
-    {
-        if (string.IsNullOrWhiteSpace(name))
-            return "?";
-
-        var compact = name.Replace(" ", string.Empty);
-        return compact.Length <= 3 ? compact : compact[..3];
     }
 
     private void RenderCurrent()

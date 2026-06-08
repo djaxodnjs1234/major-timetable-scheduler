@@ -137,7 +137,7 @@ public class TimetableGridViewModelTests
         var vm = new TimetableGridViewModel();
         var courses = new List<Course>
         {
-            new() { Id = "X-01", Name = "캡스톤", Grade = 4, ProfessorId = "P1" },
+            new() { Id = "X-01", Name = "캡스톤", Grade = 4, CourseType = "전필", ProfessorId = "P1" },
         };
         var professors = new List<Professor>
         {
@@ -155,10 +155,54 @@ public class TimetableGridViewModelTests
         vm.Render(assignment, courses, professors: professors, rooms: rooms);
 
         var item = Assert.Single(vm.CellAt(0, 1).Items);
+        Assert.Equal("전필", item.CourseType);
         Assert.Equal("김교수", item.ProfessorLabel);
         Assert.Equal("공학관 101", item.RoomsLabel);
         Assert.Equal("P1", item.ProfessorId);
         Assert.Equal(new[] { "R1" }, item.Rooms);
+    }
+
+    [Fact]
+    public void Render_BuildsUnifiedDisplayLabels_WithFixedMarkerSectionAndCoteachers()
+    {
+        var vm = new TimetableGridViewModel();
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "X-01",
+                Name = "캡스톤",
+                Grade = 4,
+                Section = 2,
+                CourseType = "전필",
+                ProfessorId = "P1",
+                CoteachProfs = new List<string> { "P2" },
+                IsFixed = true,
+            },
+        };
+        var professors = new List<Professor>
+        {
+            new() { Id = "P1", Name = "김교수" },
+            new() { Id = "P2", Name = "박교수" },
+        };
+        var rooms = new List<Room>
+        {
+            new() { Id = "R1", Name = "공학관 101" },
+            new() { Id = "R2", Name = "공학관 102" },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("X-01", 0, 1, "R1"),
+            new("X-01", 0, 1, "R2"),
+        };
+
+        vm.Render(assignment, courses, professors: professors, rooms: rooms);
+
+        var item = Assert.Single(vm.CellAt(0, 1).Items);
+        Assert.Equal("★ 캡스톤·B", item.TitleLabel);
+        Assert.Equal("김교수, 박교수", item.ProfessorLine);
+        Assert.Equal(new[] { "박교수" }, item.CoteachProfLabels);
+        Assert.Equal("공학관 101\n공학관 102", item.RoomsLabel);
     }
 
     [Fact]

@@ -86,6 +86,7 @@ public sealed partial class CourseGroupItem : ObservableObject
     public string DisplayLabel { get; init; } = "";
     public string HeaderCode { get; init; } = "";
     public string HeaderName { get; init; } = "";
+    public string HeaderCourseType { get; init; } = "";
     public string HeaderGrade { get; init; } = "";
     public string HeaderHours { get; init; } = "";
     public string HeaderSectionInfo { get; init; } = "";
@@ -108,6 +109,13 @@ public sealed partial class CourseGroupItem : ObservableObject
     [ObservableProperty]
     private bool isEditing;
 }
+
+public sealed record FixedTimeOverlapInfo(
+    string ExistingCourseId,
+    string ExistingCourseName,
+    int ExistingSection,
+    int Day,
+    int Period);
 
 public sealed partial class DataInputViewModel : PageViewModelBase
 {
@@ -552,6 +560,14 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     public AppData CurrentSnapshot() => _workspace.Snapshot();
 
+    public override void OnNavigatedTo()
+    {
+        RebuildProfessorItems();
+        RebuildCourseGroups();
+        RebuildRoomItems();
+        RebuildCrossManager();
+    }
+
     public DataInputViewModel(WorkspaceService workspace, SolverService solver)
     {
         _globalWorkspace = workspace;
@@ -606,9 +622,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     /// </summary>
     public void LoadForExistingTimetable(SavedTimetableRecord record)
     {
-        var snapshot = record.SnapshotJson is { Length: > 0 } json
-            ? System.Text.Json.JsonSerializer.Deserialize<AppData>(json) ?? AppData.Empty()
-            : AppData.Empty();
+        var snapshot = SavedTimetableSnapshotResolver.Resolve(record.SnapshotJson);
         SwitchWorkspace(WorkspaceService.CreateSession(snapshot));
         IsExistingMode = true;
         SelectedCategory = InputCategory.Course;
@@ -632,6 +646,70 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private static string SectionLetter(int section) =>
         section >= 1 && section <= SectionLetters.Length
             ? SectionLetters[section - 1] : section.ToString();
+
+    public FixedTimeOverlapInfo? FindFixedTimeOverlap(
+        CourseGroupItem item,
+        IReadOnlyList<IReadOnlyList<TimeSlot>>? candidateFixedSlots = null)
+    {
+        if (item.Sections.Count == 0 || !item.Sections[0].IsFixed)
+            return null;
+
+        var candidateSections = item.Sections
+            .Select((section, index) => new
+            {
+                Section = section,
+                Slots = candidateFixedSlots != null && index < candidateFixedSlots.Count
+                    ? candidateFixedSlots[index].ToList()
+                    : section.FixedSlots.ToList(),
+            })
+            .ToList();
+
+        static (string Id, int Section) KeyOf(Course course) => (course.Id, course.Section);
+
+        foreach (var current in candidateSections)
+        {
+            foreach (var other in _workspace.Courses)
+            {
+                if (KeyOf(other) == KeyOf(current.Section))
+                    continue;
+                if (!other.IsFixed || other.FixedSlots.Count == 0)
+                    continue;
+
+                var overlap = current.Slots
+                    .FirstOrDefault(slot => other.FixedSlots.Contains(slot));
+                if (current.Slots.Contains(overlap))
+                {
+                    return new FixedTimeOverlapInfo(
+                        other.Id,
+                        other.Name,
+                        other.Section,
+                        overlap.Day,
+                        overlap.Period);
+                }
+            }
+        }
+
+        for (int i = 0; i < candidateSections.Count; i++)
+        {
+            for (int j = i + 1; j < candidateSections.Count; j++)
+            {
+                var overlap = candidateSections[i].Slots
+                    .FirstOrDefault(slot => candidateSections[j].Slots.Contains(slot));
+                if (candidateSections[i].Slots.Contains(overlap))
+                {
+                    var other = candidateSections[j].Section;
+                    return new FixedTimeOverlapInfo(
+                        other.Id,
+                        other.Name,
+                        other.Section,
+                        overlap.Day,
+                        overlap.Period);
+                }
+            }
+        }
+
+        return null;
+    }
 
     private void RebuildCourseGroups()
     {
@@ -660,6 +738,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 DisplayLabel = label,
                 HeaderCode = g.Key,
                 HeaderName = rep.Name,
+                HeaderCourseType = rep.CourseType,
                 HeaderGrade = $"{rep.Grade}학년",
                 HeaderHours = $"{rep.HoursPerWeek}시간",
                 HeaderSectionInfo = $"{sections.Count}개",
@@ -893,17 +972,23 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public static List<int> DefaultBlockStructureForHours(int weeklyHours) =>
         ParseBlockStructure(GenerateBlockStructureOptions(weeklyHours).First());
 
-    public bool HandleCourseHoursChanged(CourseGroupItem item)
+    public bool HandleCourseHoursChanged(CourseGroupItem item, int weeklyHours)
     {
         if (item.Sections.Count == 0) return false;
         var rep = item.Sections[0];
-        if (IsValidBlockStructure(rep.BlockStructure, rep.HoursPerWeek)) return false;
 
-        var previous = EffectiveBlocks(rep);
-        var next = DefaultBlockStructureForHours(rep.HoursPerWeek);
-        rep.BlockStructure = next;
+        var hoursChanged = rep.HoursPerWeek != weeklyHours;
+        var previousBlocks = EffectiveBlocks(rep);
+        var nextBlocks = DefaultBlockStructureForHours(weeklyHours);
+        var shouldResetFixedTime = item.Sections.Any(sec => sec.IsFixed || sec.FixedSlots.Count > 0);
 
-        if (!previous.SequenceEqual(next))
+        foreach (var sec in item.Sections)
+        {
+            sec.HoursPerWeek = weeklyHours;
+            sec.BlockStructure = new List<int>(nextBlocks);
+        }
+
+        if (hoursChanged || shouldResetFixedTime || !previousBlocks.SequenceEqual(nextBlocks))
         {
             ResetFixedTime(item);
             return true;

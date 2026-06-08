@@ -94,4 +94,52 @@ public class TimetableSelectionViewModelTests : IDisposable
         Assert.Equal("저장교수", previewCell.Assignment.ProfessorLabel);
         Assert.Equal("저장강의실", previewCell.Assignment.RoomsLabel);
     }
+
+    [Fact]
+    public void SavedPreview_InvalidSnapshotWithBlankProfessorAndCourseType_ShowsNoCells()
+    {
+        var workspace = new WorkspaceService(_repo);
+        workspace.AddProfessor(new Professor { Id = "P1", Name = "라이브교수" });
+        workspace.AddRoom(new Room { Id = "R1", Name = "라이브강의실" });
+        workspace.AddCourse(new Course
+        {
+            Id = "C-01",
+            Name = "라이브과목",
+            Grade = 2,
+            Section = 1,
+            HoursPerWeek = 1,
+            CourseType = "전필",
+            ProfessorId = "P1",
+            BlockStructure = new List<int> { 1 },
+        });
+
+        var incompleteSnapshot = new AppData(
+            new List<Course>
+            {
+                new()
+                {
+                    Id = "C-01",
+                    Name = "라이브과목",
+                    Grade = 2,
+                    Section = 1,
+                    HoursPerWeek = 1,
+                    CourseType = "",
+                    ProfessorId = "",
+                },
+            },
+            new List<Professor>(),
+            new List<Room>(),
+            new List<CrossGroup>(),
+            new List<RetakeScenario>());
+
+        workspace.SaveTimetable(
+            "saved",
+            new[] { new SolutionAssignment("C-01", 0, 1, "R1") },
+            snapshot: incompleteSnapshot);
+
+        var vm = new TimetableSelectionViewModel(workspace);
+
+        Assert.Empty(vm.Preview.Cells);
+        Assert.All(vm.GradeViews, view => Assert.Empty(view.Grid.Cells.Where(c => c.IsOccupied)));
+    }
 }

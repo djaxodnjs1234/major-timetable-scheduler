@@ -6,4 +6,5 @@
   <Project Path="TimetableScheduler.Tests/TimetableScheduler.Tests.csproj" />
   <Project Path="TimetableScheduler.ViewModel/TimetableScheduler.ViewModel.csproj" />
   <Project Path="TimetableScheduler.Wpf/TimetableScheduler.Wpf.csproj" />
+  <Project Path="TimetableScheduler.Wpf.Tests/TimetableScheduler.Wpf.Tests.csproj" />
 </Solution>

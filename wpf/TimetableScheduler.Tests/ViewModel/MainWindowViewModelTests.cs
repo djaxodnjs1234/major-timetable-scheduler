@@ -1,4 +1,7 @@
 using Microsoft.Extensions.DependencyInjection;
+using TimetableScheduler.Data;
+using TimetableScheduler.Domain;
+using TimetableScheduler.Scoring;
 using TimetableScheduler.Solver;
 using TimetableScheduler.ViewModel;
 using TimetableScheduler.ViewModel.Pages;
@@ -165,5 +168,117 @@ public class MainWindowViewModelTests : IDisposable
 
         Assert.IsType<TimetableSelectionViewModel>(main.CurrentPage);
         Assert.Equal("시간표 선택", main.CurrentPage.Title);
+    }
+
+    [Fact]
+    public void ResultsEditSelected_LiveWorkspace_PreservesProfessorInfoInManualEdit()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var workspace = _sp.GetRequiredService<WorkspaceService>();
+        workspace.AddProfessor(new Professor { Id = "P1", Name = "김교수" });
+        workspace.AddProfessor(new Professor { Id = "P2", Name = "박교수" });
+        workspace.AddRoom(new Room { Id = "R1", Name = "공학관 101" });
+        workspace.AddCourse(new Course
+        {
+            Id = "C-01",
+            Name = "알고리즘",
+            Grade = 2,
+            HoursPerWeek = 1,
+            CourseType = "전필",
+            ProfessorId = "P1",
+            CoteachProfs = new List<string> { "P2" },
+            BlockStructure = new List<int> { 1 },
+        });
+
+        main.Results.SetSolutions(new[]
+        {
+            new RankedSolution(
+                new[] { new SolutionAssignment("C-01", 0, 1, "R1") },
+                new SolutionScore(0, 0, 0, 0)),
+        });
+
+        main.Results.EditSelectedCommand.Execute(null);
+
+        var assignment = Assert.Single(main.Manual.Grid.Cells).Assignment;
+        Assert.Equal("김교수, 박교수", assignment.ProfessorLine);
+    }
+
+    [Fact]
+    public void ResultsEditSelected_SessionSnapshot_PreservesProfessorInfoInManualEdit()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var snapshot = new AppData(
+            new List<Course>
+            {
+                new()
+                {
+                    Id = "C-01",
+                    Name = "알고리즘",
+                    Grade = 2,
+                    HoursPerWeek = 1,
+                    CourseType = "전필",
+                    ProfessorId = "P1",
+                    CoteachProfs = new List<string> { "P2" },
+                    BlockStructure = new List<int> { 1 },
+                },
+            },
+            new List<Professor>
+            {
+                new() { Id = "P1", Name = "김교수" },
+                new() { Id = "P2", Name = "박교수" },
+            },
+            new List<Room> { new() { Id = "R1", Name = "공학관 101" } },
+            new List<CrossGroup>(),
+            new List<RetakeScenario>());
+
+        main.Results.SetSolutions(new[]
+        {
+            new RankedSolution(
+                new[] { new SolutionAssignment("C-01", 0, 1, "R1") },
+                new SolutionScore(0, 0, 0, 0)),
+        }, snapshot);
+
+        main.Results.EditSelectedCommand.Execute(null);
+
+        var assignment = Assert.Single(main.Manual.Grid.Cells).Assignment;
+        Assert.Equal("김교수, 박교수", assignment.ProfessorLine);
+    }
+
+    [Fact]
+    public void ResultsBackToInput_SessionWorkspace_PreservesCourseProfessorIdsAndProfessorList()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+
+        main.Selection.CreateNewCommand.Execute(null);
+        main.Input.Workspace.AddProfessor(new Professor { Id = "P1", Name = "김교수" });
+        main.Input.Workspace.AddRoom(new Room { Id = "R1", Name = "공학관 101" });
+        main.Input.Workspace.AddCourse(new Course
+        {
+            Id = "C-01",
+            Name = "알고리즘",
+            Grade = 2,
+            HoursPerWeek = 1,
+            CourseType = "전필",
+            ProfessorId = "P1",
+            BlockStructure = new List<int> { 1 },
+        });
+
+        main.Results.SetSolutions(new[]
+        {
+            new RankedSolution(
+                new[] { new SolutionAssignment("C-01", 0, 1, "R1") },
+                new SolutionScore(0, 0, 0, 0)),
+        }, main.Input.CurrentSnapshot());
+
+        var beforeGroup = main.Input.CourseGroups.Single();
+
+        main.Results.BackCommand.Execute(null);
+
+        Assert.NotSame(beforeGroup, main.Input.CourseGroups.Single());
+        Assert.Equal("P1", main.Input.Workspace.Courses.Single().ProfessorId);
+        Assert.Equal("김교수", main.Input.CourseGroups.Single().HeaderProfessor);
+        Assert.Equal("P1", main.Input.CourseGroups.Single().Sections[0].ProfessorId);
+        Assert.Single(main.Input.Workspace.Professors);
+        Assert.Equal("P1", main.Input.Workspace.Professors.Single().Id);
     }
 }

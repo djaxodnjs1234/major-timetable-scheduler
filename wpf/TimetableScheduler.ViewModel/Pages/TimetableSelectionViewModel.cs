@@ -1,6 +1,5 @@
 using System.Collections.ObjectModel;
 using System.Collections.Specialized;
-using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TimetableScheduler.Data;
@@ -90,12 +89,12 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         var assignments = value.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
             .ToList();
-        var snapshot = DeserializeSnapshot(value.SnapshotJson);
+        var snapshot = SavedTimetableSnapshotResolver.Resolve(value.SnapshotJson);
         RenderViews(
             assignments,
-            snapshot?.Courses ?? _workspace.ExpandedCourses,
-            (IReadOnlyList<Professor>?)snapshot?.Professors ?? _workspace.Professors,
-            (IReadOnlyList<Room>?)snapshot?.Rooms ?? _workspace.Rooms);
+            snapshot.Courses,
+            snapshot.Professors,
+            snapshot.Rooms);
     }
 
     private void RenderViews(
@@ -128,21 +127,6 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
             var vm = new TimetableGridViewModel();
             vm.Render(assignments, courses, (c, _) => c.ProfessorId == p.Id, professors, rooms);
             ProfessorViews.Add(new NamedGridViewModel(p.Id, p.Name, vm));
-        }
-    }
-
-    private static AppData? DeserializeSnapshot(string? snapshotJson)
-    {
-        if (string.IsNullOrWhiteSpace(snapshotJson))
-            return null;
-
-        try
-        {
-            return JsonSerializer.Deserialize<AppData>(snapshotJson);
-        }
-        catch (JsonException)
-        {
-            return null;
         }
     }
 

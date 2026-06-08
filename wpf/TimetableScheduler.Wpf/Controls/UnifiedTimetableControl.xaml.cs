@@ -269,24 +269,18 @@ public partial class UnifiedTimetableControl : UserControl
     private static Border MakeChipBorder(CellAssignment a, Brush bg, string? crossLabel)
     {
         var panel = new StackPanel { Margin = new Thickness(1) };
-        var nameText = string.IsNullOrEmpty(a.SectionLabel)
-            ? a.CourseName
-            : $"{a.CourseName}·{a.SectionLabel}";
         panel.Children.Add(new TextBlock
         {
-            Text = nameText,
+            Text = a.TitleLabel,
             FontSize = 9,
             FontWeight = FontWeights.Bold,
             TextAlignment = TextAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
         });
-        var allProfs = new List<string>();
-        if (!string.IsNullOrEmpty(a.ProfessorLabel)) allProfs.Add(a.ProfessorLabel);
-        allProfs.AddRange(a.CoteachProfLabels);
-        if (allProfs.Count > 0)
+        if (!string.IsNullOrWhiteSpace(a.ProfessorLine))
             panel.Children.Add(new TextBlock
             {
-                Text = string.Join(", ", allProfs),
+                Text = a.ProfessorLine,
                 FontSize = 8,
                 TextAlignment = TextAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,

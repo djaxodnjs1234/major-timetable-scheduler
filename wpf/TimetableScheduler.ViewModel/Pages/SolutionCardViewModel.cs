@@ -5,9 +5,9 @@ namespace TimetableScheduler.ViewModel.Pages;
 
 public sealed record DayDensityItem(string DayName, double Density);
 
-public sealed record MiniPreviewCell(string Text, bool IsOccupied, bool IsLunch, int? Grade);
+public sealed record MiniPreviewCell(bool IsOccupied, bool IsLunch, int CourseCount, double Density);
 
-public sealed record MiniPreviewRow(int Period, IReadOnlyList<MiniPreviewCell> Cells);
+public sealed record MiniPreviewRow(int Period, bool IsLunch, IReadOnlyList<MiniPreviewCell> Cells);
 
 public sealed partial class SolutionCardViewModel : ObservableObject
 {
