@@ -4,6 +4,7 @@ using CommunityToolkit.Mvvm.Input;
 using TimetableScheduler.Data;
 using TimetableScheduler.Domain;
 using TimetableScheduler.Scoring;
+using TimetableScheduler.Solver;
 using TimetableScheduler.ViewModel.Grid;
 
 namespace TimetableScheduler.ViewModel.Pages;
@@ -28,6 +29,8 @@ public sealed partial class ResultsViewModel : PageViewModelBase
 
     /// <summary>The snapshot behind the current solutions, for handing to manual editing.</summary>
     public AppData? SessionSnapshot => _sessionData;
+
+    public AppData CurrentSnapshot => _sessionData ?? _workspace.Snapshot();
 
     public override string Title => "해 미리보기";
 
@@ -58,6 +61,20 @@ public sealed partial class ResultsViewModel : PageViewModelBase
     private void EditSelected() => EditSelectedRequested?.Invoke(this, EventArgs.Empty);
 
     private bool CanEditSelected() => SelectedSolution != null;
+
+    [RelayCommand]
+    private void KeepSolution(SolutionCardViewModel? card)
+    {
+        if (card is null)
+            return;
+
+        var name = $"Kept Solution {DateTime.Now:yyyy-MM-dd HH:mm:ss}";
+        _workspace.SaveTimetable(
+            name,
+            card.Solution.Assignment,
+            snapshot: CurrentSnapshot);
+        card.IsKept = true;
+    }
 
     public void SetSolutions(IEnumerable<RankedSolution> ranked, AppData? sessionData = null)
     {
@@ -98,6 +115,15 @@ public sealed partial class ResultsViewModel : PageViewModelBase
             .DefaultIfEmpty(1).Max();
         if (globalMax == 0) globalMax = 1;
 
+        var globalMaxSlotCount = Solutions
+            .SelectMany(s => s.Assignment
+                .Where(a => a.Period != 5)
+                .GroupBy(a => (a.Day, a.Period))
+                .Select(g => g.Select(a => a.CourseId).Distinct().Count()))
+            .DefaultIfEmpty(1)
+            .Max();
+        if (globalMaxSlotCount == 0) globalMaxSlotCount = 1;
+
         int rank = 1;
         foreach (var s in Solutions)
         {
@@ -107,43 +133,81 @@ public sealed partial class ResultsViewModel : PageViewModelBase
                     .Select(a => a.CourseId).Distinct().Count() / globalMax
             )).ToList();
 
+            var previewRows = BuildPreviewRows(s.Assignment, globalMaxSlotCount);
+
             var normalized = Math.Round(s.Score.Total / maxScore * 100, 1);
-            SolutionCards.Add(new SolutionCardViewModel(s, rank++, normalized, days));
+            SolutionCards.Add(new SolutionCardViewModel(s, rank++, normalized, days, previewRows));
         }
+    }
+
+    private static IReadOnlyList<MiniPreviewRow> BuildPreviewRows(
+        IReadOnlyList<SolutionAssignment> assignments,
+        int maxSlotCount)
+    {
+        var rows = new List<MiniPreviewRow>();
+        for (var period = 1; period <= 9; period++)
+        {
+            var cells = new List<MiniPreviewCell>();
+            for (var day = 0; day < 5; day++)
+            {
+                if (period == 5)
+                {
+                    cells.Add(new MiniPreviewCell(false, true, 0, 0));
+                    continue;
+                }
+
+                var courseCount = assignments
+                    .Where(a => a.Day == day && a.Period == period)
+                    .Select(a => a.CourseId)
+                    .Distinct()
+                    .Count();
+
+                if (courseCount == 0)
+                {
+                    cells.Add(new MiniPreviewCell(false, false, 0, 0));
+                    continue;
+                }
+
+                cells.Add(new MiniPreviewCell(true, false, courseCount, (double)courseCount / maxSlotCount));
+            }
+
+            rows.Add(new MiniPreviewRow(period, period == 5, cells));
+        }
+
+        return rows;
     }
 
     private void RenderCurrent()
     {
         var assignment = SelectedSolution?.Assignment ?? Array.Empty<Solver.SolutionAssignment>();
         var courses = SessionCourses;
+        var professors = SessionProfessors;
+        var rooms = SessionRooms;
 
-        Unified.Render(assignment, courses);
+        Unified.Render(assignment, courses, professors, rooms);
 
         GradeViews.Clear();
         foreach (var g in new[] { 1, 2, 3, 4 })
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignment, courses, (c, _) => c.Grade == g);
+            vm.Render(assignment, courses, (c, _) => c.Grade == g, professors, rooms);
             GradeViews.Add(new NamedGridViewModel(g.ToString(), $"{g}학년", vm));
         }
 
         RoomViews.Clear();
-        foreach (var r in SessionRooms)
+        foreach (var r in rooms)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignment, courses, (_, rid) => rid == r.Id);
+            vm.Render(assignment, courses, (_, rid) => rid == r.Id, professors, rooms);
             RoomViews.Add(new NamedGridViewModel(r.Id, r.Name, vm));
         }
 
         ProfessorViews.Clear();
-        foreach (var p in SessionProfessors)
+        foreach (var p in professors)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignment, courses, (c, _) => IsCourseTaughtBy(c, p.Id));
+            vm.Render(assignment, courses, (c, _) => c.ProfessorId == p.Id, professors, rooms);
             ProfessorViews.Add(new NamedGridViewModel(p.Id, p.Name, vm));
         }
     }
-
-    private static bool IsCourseTaughtBy(Course course, string professorId) =>
-        course.ProfessorId == professorId || course.CoteachProfs.Contains(professorId);
 }

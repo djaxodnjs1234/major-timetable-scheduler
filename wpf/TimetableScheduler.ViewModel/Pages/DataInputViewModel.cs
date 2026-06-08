@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TimetableScheduler.Data;
@@ -17,7 +18,38 @@ public sealed record ManualEditHandoff(
 
 public sealed record CrossGroupListItem(string Id, string Display);
 
-public sealed record CrossCandidateGradeGroup(string Header, ObservableCollection<CheckListItem> Items);
+public sealed partial class CrossCandidateItemViewModel : ObservableObject
+{
+    public CheckListItem BaseItem { get; }
+    public string Id => BaseItem.Id;
+    public string Display => BaseItem.Display;
+
+    public bool IsChecked
+    {
+        get => BaseItem.IsChecked;
+        set => BaseItem.IsChecked = value;
+    }
+
+    [ObservableProperty]
+    private bool isEnabled = true;
+
+    public CrossCandidateItemViewModel(CheckListItem baseItem)
+    {
+        BaseItem = baseItem;
+        if (baseItem is System.ComponentModel.INotifyPropertyChanged inpc)
+        {
+            inpc.PropertyChanged += (s, e) =>
+            {
+                if (e.PropertyName == nameof(CheckListItem.IsChecked) || e.PropertyName == "IsChecked")
+                {
+                    OnPropertyChanged(nameof(IsChecked));
+                }
+            };
+        }
+    }
+}
+
+public sealed record CrossCandidateGradeGroup(string Header, ObservableCollection<CrossCandidateItemViewModel> Items);
 
 public sealed partial class ProfessorItem : ObservableObject
 {
@@ -55,6 +87,7 @@ public sealed partial class CourseGroupItem : ObservableObject
     public string DisplayLabel { get; init; } = "";
     public string HeaderCode { get; init; } = "";
     public string HeaderName { get; init; } = "";
+    public string HeaderCourseType { get; init; } = "";
     public string HeaderGrade { get; init; } = "";
     public string HeaderHours { get; init; } = "";
     public string HeaderSectionInfo { get; init; } = "";
@@ -68,10 +101,22 @@ public sealed partial class CourseGroupItem : ObservableObject
     /// <summary>All sections in this group (N>1 for grouped, 1 for individual fixed).</summary>
     public List<Course> Sections { get; init; } = new();
     public bool IsFixedIndividual => Sections.Count == 1 && Sections[0].IsFixed;
+    public string ReadOnlyProfessor => HeaderProfessor;
+    public string ReadOnlyBlockStructure => HeaderBlockStructure;
+    public string ReadOnlyUnavailableRooms => string.IsNullOrWhiteSpace(HeaderUnavailableRooms) ? "없음" : HeaderUnavailableRooms;
+    public string ReadOnlyCoteachProfessors => string.IsNullOrWhiteSpace(HeaderCoteachProfessors) ? "없음" : HeaderCoteachProfessors;
+    public string ReadOnlyFixedTimes => string.IsNullOrWhiteSpace(HeaderFixedTimes) ? "없음" : HeaderFixedTimes;
 
     [ObservableProperty]
     private bool isEditing;
 }
+
+public sealed record FixedTimeOverlapInfo(
+    string ExistingCourseId,
+    string ExistingCourseName,
+    int ExistingSection,
+    int Day,
+    int Period);
 
 public sealed partial class DataInputViewModel : PageViewModelBase
 {
@@ -80,6 +125,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private readonly SolverService _solver;
     private CancellationTokenSource? _cts;
     private EventHandler? _workspaceChangedHandler;
+    private List<string> _selectedCrossCandidateIds = new();
 
     public override string Title => "정보 입력";
 
@@ -97,13 +143,15 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public ObservableCollection<RoomItem> RoomItems { get; } = new();
 
     public ObservableCollection<CrossGroupListItem> CrossGroupItems { get; } = new();
-    public ObservableCollection<CheckListItem> CrossCandidateItems { get; } = new();
+    public ObservableCollection<CrossCandidateItemViewModel> CrossCandidateItems { get; } = new();
     public ObservableCollection<CrossCandidateGradeGroup> CrossCandidateGradeGroups { get; } = new();
+
+    public string LastCourseGroupWarning { get; private set; } = "";
 
     public int[] GradeOptions { get; } = { 1, 2, 3, 4 };
     public int[] HourOptions { get; } = { 1, 2, 3, 4 };
     public string[] CourseTypeOptions { get; } = { "전필", "전선", "교양" };
-    public string[] BlockStructureOptions { get; } = { "1", "2", "2,1", "1,1", "3", "2,2", "2,1,1" };
+    public string[] BlockStructureOptions { get; } = GenerateBlockStructureOptions(3).ToArray();
 
     [ObservableProperty]
     private InputCategory selectedCategory = InputCategory.Course;
@@ -164,7 +212,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 {
                     Id = NextCourseBaseId(), Name = NewName.Trim(),
                     Grade = 1, HoursPerWeek = 3,
-                    BlockStructure = new List<int> { 2, 1 },
+                    BlockStructure = DefaultBlockStructureForHours(3),
                     CourseType = "전선",
                     UnavailableRooms = new List<string>(),
                 });
@@ -181,15 +229,12 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     [RelayCommand]
     private void AddCross()
     {
-        var chosen = CrossCandidateItems
-            .Where(item => item.IsChecked)
-            .Select(item => item.Id)
-            .ToList();
-        if (chosen.Count != 2)
+        if (_selectedCrossCandidateIds.Count != 2)
         {
             CrossStatusMessage = "Cross는 과목 2개만 선택할 수 있습니다.";
             return;
         }
+        var chosen = _selectedCrossCandidateIds.ToList();
 
         var groups = CourseBaseGroups();
         var sectionCounts = chosen.Select(id => groups[id].Count).Distinct().ToList();
@@ -354,6 +399,11 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void SaveGroup(CourseGroupItem item)
     {
         if (item is null || item.Sections.Count == 0) return;
+        TraceProfessorSections("Before SaveGroup", item.BaseId, item.Sections);
+        LastCourseGroupWarning = "";
+        OnPropertyChanged(nameof(LastCourseGroupWarning));
+        PromoteMissingSharedValues(item.Sections);
+        DetectProfessorConflict("SaveGroup", item.BaseId, item.Sections);
         var rep = item.Sections[0];
         foreach (var sec in item.Sections)
         {
@@ -375,6 +425,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             _workspace.UpdateCourse(sec);
         }
         item.IsEditing = false;
+        TraceProfessorSections("After SaveGroup", item.BaseId, item.Sections);
     }
 
     /// <summary>Delete all sections in the group.</summary>
@@ -497,7 +548,11 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void Back() => BackRequested?.Invoke(this, EventArgs.Empty);
 
     [RelayCommand(CanExecute = nameof(CanGoToSelection))]
-    private void GoToSelection() => GoToSelectionRequested?.Invoke(this, EventArgs.Empty);
+    private void GoToSelection()
+    {
+        TraceWorkspaceProfessors("Before navigating to preview");
+        GoToSelectionRequested?.Invoke(this, EventArgs.Empty);
+    }
     private bool CanGoToSelection() => IsSolveComplete;
 
     /// <summary>
@@ -505,18 +560,32 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     /// manual editing. Only valid in existing-timetable mode (a base layout exists).
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanGoToManual))]
-    private void GoToManual() => GoToManualRequested?.Invoke(this, EventArgs.Empty);
+    private void GoToManual()
+    {
+        TraceWorkspaceProfessors("Before navigating to manual edit");
+        GoToManualRequested?.Invoke(this, EventArgs.Empty);
+    }
     private bool CanGoToManual() => IsExistingMode;
 
     /// <summary>The base assignments + saved manual cross links for handing off to manual editing.</summary>
     public ManualEditHandoff? BuildEditHandoff()
     {
         if (_editBaseAssignments == null) return null;
+        TraceWorkspaceProfessors("Before manual edit handoff");
         var solution = new RankedSolution(_editBaseAssignments, new SolutionScore(0, 0, 0, 0));
         return new ManualEditHandoff(solution, _editBaseManualCrossLinks);
     }
 
     public AppData CurrentSnapshot() => _workspace.Snapshot();
+
+    public override void OnNavigatedTo()
+    {
+        TraceWorkspaceProfessors("After returning to data input");
+        RebuildProfessorItems();
+        RebuildCourseGroups();
+        RebuildRoomItems();
+        RebuildCrossManager();
+    }
 
     public DataInputViewModel(WorkspaceService workspace, SolverService solver)
     {
@@ -559,6 +628,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public void LoadForNewTimetable()
     {
         SwitchWorkspace(WorkspaceService.CreateSession(AppData.Empty()));
+        TraceWorkspaceProfessors("After loading new timetable session");
         IsExistingMode = false;
         _editBaseAssignments = null;
         _editBaseManualCrossLinks = Array.Empty<SavedManualCrossLinkRow>();
@@ -572,10 +642,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     /// </summary>
     public void LoadForExistingTimetable(SavedTimetableRecord record)
     {
-        var snapshot = record.SnapshotJson is { Length: > 0 } json
-            ? System.Text.Json.JsonSerializer.Deserialize<AppData>(json) ?? AppData.Empty()
-            : AppData.Empty();
+        var snapshot = SavedTimetableSnapshotResolver.Resolve(record.SnapshotJson);
         SwitchWorkspace(WorkspaceService.CreateSession(snapshot));
+        TraceWorkspaceProfessors("After loading existing timetable session");
         IsExistingMode = true;
         SelectedCategory = InputCategory.Course;
         _editBaseAssignments = record.Assignments
@@ -599,8 +668,73 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         section >= 1 && section <= SectionLetters.Length
             ? SectionLetters[section - 1] : section.ToString();
 
+    public FixedTimeOverlapInfo? FindFixedTimeOverlap(
+        CourseGroupItem item,
+        IReadOnlyList<IReadOnlyList<TimeSlot>>? candidateFixedSlots = null)
+    {
+        if (item.Sections.Count == 0 || !item.Sections[0].IsFixed)
+            return null;
+
+        var candidateSections = item.Sections
+            .Select((section, index) => new
+            {
+                Section = section,
+                Slots = candidateFixedSlots != null && index < candidateFixedSlots.Count
+                    ? candidateFixedSlots[index].ToList()
+                    : section.FixedSlots.ToList(),
+            })
+            .ToList();
+
+        static (string Id, int Section) KeyOf(Course course) => (course.Id, course.Section);
+
+        foreach (var current in candidateSections)
+        {
+            foreach (var other in _workspace.Courses)
+            {
+                if (KeyOf(other) == KeyOf(current.Section))
+                    continue;
+                if (!other.IsFixed || other.FixedSlots.Count == 0)
+                    continue;
+
+                var overlap = current.Slots
+                    .FirstOrDefault(slot => other.FixedSlots.Contains(slot));
+                if (current.Slots.Contains(overlap))
+                {
+                    return new FixedTimeOverlapInfo(
+                        other.Id,
+                        other.Name,
+                        other.Section,
+                        overlap.Day,
+                        overlap.Period);
+                }
+            }
+        }
+
+        for (int i = 0; i < candidateSections.Count; i++)
+        {
+            for (int j = i + 1; j < candidateSections.Count; j++)
+            {
+                var overlap = candidateSections[i].Slots
+                    .FirstOrDefault(slot => candidateSections[j].Slots.Contains(slot));
+                if (candidateSections[i].Slots.Contains(overlap))
+                {
+                    var other = candidateSections[j].Section;
+                    return new FixedTimeOverlapInfo(
+                        other.Id,
+                        other.Name,
+                        other.Section,
+                        overlap.Day,
+                        overlap.Period);
+                }
+            }
+        }
+
+        return null;
+    }
+
     private void RebuildCourseGroups()
     {
+        TraceWorkspaceProfessors("Before RebuildCourseGroups");
         CourseGroups.Clear();
         var profNames = _workspace.Professors.ToDictionary(p => p.Id, p => p.Name);
         var roomNames = _workspace.Rooms.ToDictionary(r => r.Id, r => r.Name);
@@ -613,61 +747,99 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         {
             var sections = g.OrderBy(c => c.Section).ToList();
 
-            if (sections.Any(c => c.IsFixed))
+            PromoteMissingSharedValues(sections);
+            DetectProfessorConflict("RebuildCourseGroups", g.Key, sections);
+            var rep = sections[0];
+            var fixedAny = sections.Any(c => c.IsFixed);
+            var secPart = sections.Count > 1
+                ? $"  ({string.Join("·", sections.Select(s => SectionLetter(s.Section)))}분반)"
+                : "";
+            var fixedPart = fixedAny ? "  ★" : "";
+            var label = $"{g.Key}  {rep.Name}  {rep.Grade}학년  {rep.HoursPerWeek}h{secPart}{fixedPart}";
+            CourseGroups.Add(new CourseGroupItem
             {
-                // Fixed: one row per section
-                foreach (var sec in sections)
-                {
-                    var label = $"{sec.Id}  {sec.Name}  {sec.Grade}학년  ★";
-                    CourseGroups.Add(new CourseGroupItem
-                    {
-                        BaseId = g.Key,
-                        DisplayLabel = label,
-                        HeaderCode = sec.Id,
-                        HeaderName = sec.Name,
-                        HeaderGrade = $"{sec.Grade}학년",
-                        HeaderHours = $"{sec.HoursPerWeek}시간",
-                        HeaderSectionInfo = "1개",
-                        HeaderProfessor = DisplayName(sec.ProfessorId, profNames),
-                        HeaderBlockStructure = FormatBlocks(sec),
-                        HeaderUnavailableRooms = FormatNames(sec.UnavailableRooms, roomNames),
-                        HeaderCoteachProfessors = FormatNames(sec.CoteachProfs, profNames),
-                        HeaderFixedTimes = FormatFixedTimes(new[] { sec }),
-                        HeaderCrossGroups = FormatCrossGroups(g.Key),
-                        IsImportedFromExcel = !string.IsNullOrWhiteSpace(sec.Department),
-                        Sections = new List<Course> { sec },
-                    });
-                }
-            }
-            else
-            {
-                // Non-fixed: one row for the whole group
-                var rep = sections[0];
-                var secPart = sections.Count > 1
-                    ? $"  ({string.Join("·", sections.Select(s => SectionLetter(s.Section)))}분반)"
-                    : "";
-                var label = $"{g.Key}  {rep.Name}  {rep.Grade}학년  {rep.HoursPerWeek}h{secPart}";
-                CourseGroups.Add(new CourseGroupItem
-                {
-                    BaseId = g.Key,
-                    DisplayLabel = label,
-                    HeaderCode = g.Key,
-                    HeaderName = rep.Name,
-                    HeaderGrade = $"{rep.Grade}학년",
-                    HeaderHours = $"{rep.HoursPerWeek}시간",
-                    HeaderSectionInfo = $"{sections.Count}개",
-                    HeaderProfessor = DisplayName(rep.ProfessorId, profNames),
-                    HeaderBlockStructure = FormatBlocks(rep),
-                    HeaderUnavailableRooms = FormatNames(rep.UnavailableRooms, roomNames),
-                    HeaderCoteachProfessors = FormatNames(rep.CoteachProfs, profNames),
-                    HeaderFixedTimes = "-",
-                    HeaderCrossGroups = FormatCrossGroups(g.Key),
-                    IsImportedFromExcel = sections.Any(s => !string.IsNullOrWhiteSpace(s.Department)),
-                    Sections = sections,
-                });
-            }
+                BaseId = g.Key,
+                DisplayLabel = label,
+                HeaderCode = g.Key,
+                HeaderName = rep.Name,
+                HeaderCourseType = rep.CourseType,
+                HeaderGrade = $"{rep.Grade}학년",
+                HeaderHours = $"{rep.HoursPerWeek}시간",
+                HeaderSectionInfo = $"{sections.Count}개",
+                HeaderProfessor = CourseDisplayName(rep.ProfessorId, profNames),
+                HeaderBlockStructure = FormatBlocks(rep),
+                HeaderUnavailableRooms = FormatCourseNames(rep.UnavailableRooms, roomNames),
+                HeaderCoteachProfessors = FormatCourseNames(rep.CoteachProfs, profNames),
+                HeaderFixedTimes = FormatFixedTimes(sections),
+                HeaderCrossGroups = FormatCrossGroups(g.Key),
+                IsImportedFromExcel = sections.Any(s => !string.IsNullOrWhiteSpace(s.Department)),
+                Sections = sections,
+            });
+        }
+        foreach (var group in CourseGroups)
+            TraceProfessorSections("After RebuildCourseGroups", group.BaseId, group.Sections);
+    }
+
+    private void PromoteMissingSharedValues(IReadOnlyList<Course> sections)
+    {
+        if (sections.Count == 0) return;
+        var rep = sections[0];
+
+        var professorId = FirstNonEmpty(sections.Select(s => s.ProfessorId));
+        if (string.IsNullOrWhiteSpace(rep.ProfessorId) && professorId != null)
+            rep.ProfessorId = professorId;
+
+        var courseType = FirstNonEmpty(sections.Select(s => s.CourseType));
+        if (string.IsNullOrWhiteSpace(rep.CourseType) && courseType != null)
+            rep.CourseType = courseType;
+
+        if (rep.UnavailableRooms.Count == 0)
+        {
+            var unavailableRooms = sections.FirstOrDefault(s => s.UnavailableRooms.Count > 0)?.UnavailableRooms;
+            if (unavailableRooms != null)
+                rep.UnavailableRooms = new List<string>(unavailableRooms);
+        }
+
+        if (rep.CoteachProfs.Count == 0)
+        {
+            var coteachProfs = sections.FirstOrDefault(s => s.CoteachProfs.Count > 0)?.CoteachProfs;
+            if (coteachProfs != null)
+                rep.CoteachProfs = new List<string>(coteachProfs);
         }
     }
+
+    private void DetectProfessorConflict(string context, string baseId, IReadOnlyList<Course> sections)
+    {
+        var nonEmptyProfessorIds = sections
+            .Select(s => s.ProfessorId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (nonEmptyProfessorIds.Count <= 1) return;
+
+        LastCourseGroupWarning = $"Inconsistent ProfessorId values in {baseId}: {string.Join(", ", nonEmptyProfessorIds)}";
+        OnPropertyChanged(nameof(LastCourseGroupWarning));
+        Debug.WriteLine($"[ProfessorTrace][Conflict][{context}] CourseId={baseId}, ProfessorIds={string.Join(",", nonEmptyProfessorIds)}");
+    }
+
+    private void TraceWorkspaceProfessors(string label)
+    {
+        foreach (var group in _workspace.Courses
+            .GroupBy(c => DomainHelpers.BaseId(c.Id))
+            .OrderBy(g => SortNumericFirst(g.Key)))
+        {
+            TraceProfessorSections(label, group.Key, group.OrderBy(c => c.Section));
+        }
+    }
+
+    private static void TraceProfessorSections(string label, string baseId, IEnumerable<Course> sections)
+    {
+        foreach (var section in sections)
+            Debug.WriteLine($"[ProfessorTrace][{label}] CourseId={baseId}, Section={SectionLetter(section.Section)}, ProfessorId={section.ProfessorId}");
+    }
+
+    private static string? FirstNonEmpty(IEnumerable<string> values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
     private void RebuildProfessorItems()
     {
@@ -711,9 +883,11 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     private void RebuildCrossManager(bool clearCandidateSelection = false)
     {
-        var selected = clearCandidateSelection
-            ? new HashSet<string>()
-            : CrossCandidateItems.Where(item => item.IsChecked).Select(item => item.Id).ToHashSet();
+        _selectedCrossCandidateIds = clearCandidateSelection
+            ? new List<string>()
+            : CrossCandidateItems.Where(item => item.IsChecked).Select(item => item.Id).ToList();
+        if (_selectedCrossCandidateIds.Count > 2)
+            _selectedCrossCandidateIds = _selectedCrossCandidateIds.Take(2).ToList();
         var groups = CourseBaseGroups();
 
         CrossGroupItems.Clear();
@@ -734,18 +908,101 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             .ThenBy(g => SortNumericFirst(g.Key))
             .GroupBy(g => g.Value[0].Grade))
         {
-            var items = new ObservableCollection<CheckListItem>();
-            foreach (var (baseId, courses) in gradeGroup)
+            var items = CheckListBinder.Bind(
+                gradeGroup.ToList(),
+                entry => entry.Key,
+                entry => $"{entry.Value[0].Name} (분반 {entry.Value.Count}개, {entry.Value[0].HoursPerWeek}h)",
+                _selectedCrossCandidateIds,
+                (id, isChecked) =>
+                {
+                    _selectedCrossCandidateIds = CrossCandidateItems
+                        .Where(item => item.IsChecked)
+                        .Select(item => item.Id)
+                        .ToList();
+
+                    if (isChecked && _selectedCrossCandidateIds.Count > 2)
+                    {
+                        var itemToUncheck = CrossCandidateItems.FirstOrDefault(item => item.Id == id);
+                        if (itemToUncheck != null)
+                        {
+                            itemToUncheck.IsChecked = false;
+                            _selectedCrossCandidateIds.Remove(id);
+                        }
+                        CrossStatusMessage = "Cross는 최대 2개의 과목만 선택할 수 있습니다.";
+                    }
+                    else
+                    {
+                        CrossStatusMessage = "";
+                    }
+                    UpdateCrossCandidateEnabledState();
+                }
+            );
+            
+            var viewModels = items.Select(item => new CrossCandidateItemViewModel(item)).ToList();
+            foreach (var vm in viewModels)
             {
-                var rep = courses[0];
-                var item = new CheckListItem(
-                    baseId,
-                    $"{rep.Name} (분반 {courses.Count}개, {rep.HoursPerWeek}h)",
-                    selected.Contains(baseId));
-                CrossCandidateItems.Add(item);
-                items.Add(item);
+                CrossCandidateItems.Add(vm);
             }
-            CrossCandidateGradeGroups.Add(new CrossCandidateGradeGroup($"{gradeGroup.Key}학년", items));
+            CrossCandidateGradeGroups.Add(new CrossCandidateGradeGroup($"{gradeGroup.Key}학년", new ObservableCollection<CrossCandidateItemViewModel>(viewModels)));
+        }
+
+        UpdateCrossCandidateEnabledState();
+
+        if (_selectedCrossCandidateIds.Count == 2 && CrossStatusMessage == "Cross는 최대 2개의 과목만 선택할 수 있습니다.")
+            CrossStatusMessage = "";
+    }
+
+    private void UpdateCrossCandidateEnabledState()
+    {
+        var usedInOtherCrossGroups = _workspace.CrossGroups
+            .SelectMany(g => g.BaseIds)
+            .ToHashSet();
+
+        var groups = CourseBaseGroups();
+
+        int? selectedSectionCount = null;
+        int? selectedHours = null;
+        int? selectedGrade = null;
+
+        if (_selectedCrossCandidateIds.Count > 0)
+        {
+            var firstSelected = _selectedCrossCandidateIds.First();
+            if (groups.TryGetValue(firstSelected, out var selectedCourses) && selectedCourses.Count > 0)
+            {
+                selectedSectionCount = selectedCourses.Count;
+                selectedHours = selectedCourses[0].HoursPerWeek;
+                selectedGrade = selectedCourses[0].Grade;
+            }
+        }
+
+        foreach (var vm in CrossCandidateItems)
+        {
+            bool isUsed = usedInOtherCrossGroups.Contains(vm.Id);
+            bool isSelected = _selectedCrossCandidateIds.Contains(vm.Id);
+
+            if (isUsed && !isSelected)
+            {
+                vm.IsEnabled = false;
+            }
+            else if (selectedSectionCount.HasValue && selectedHours.HasValue && selectedGrade.HasValue && !isSelected)
+            {
+                if (groups.TryGetValue(vm.Id, out var courses) && courses.Count > 0)
+                {
+                    vm.IsEnabled = (courses.Count == selectedSectionCount.Value && courses[0].HoursPerWeek == selectedHours.Value && courses[0].Grade == selectedGrade.Value);
+                }
+                else
+                {
+                    vm.IsEnabled = false;
+                }
+            }
+            else if (_selectedCrossCandidateIds.Count >= 2 && !isSelected)
+            {
+                vm.IsEnabled = false;
+            }
+            else
+            {
+                vm.IsEnabled = true;
+            }
         }
     }
 
@@ -756,8 +1013,14 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private static string DisplayName(string id, IReadOnlyDictionary<string, string> names) =>
         string.IsNullOrWhiteSpace(id) ? "-" : names.TryGetValue(id, out var name) ? name : id;
 
+    private static string CourseDisplayName(string id, IReadOnlyDictionary<string, string> names) =>
+        string.IsNullOrWhiteSpace(id) ? "" : names.TryGetValue(id, out var name) ? name : id;
+
     private static string FormatNames(IReadOnlyList<string> ids, IReadOnlyDictionary<string, string> names) =>
         ids.Count == 0 ? "-" : string.Join(", ", ids.Select(id => DisplayName(id, names)));
+
+    private static string FormatCourseNames(IReadOnlyList<string> ids, IReadOnlyDictionary<string, string> names) =>
+        ids.Count == 0 ? "" : string.Join(", ", ids.Select(id => CourseDisplayName(id, names)));
 
     private static string RoomDisplayLabel(Room room)
     {
@@ -775,6 +1038,76 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         course.BlockStructure.Count > 0 ? course.BlockStructure.ToList() : new List<int> { course.HoursPerWeek };
 
     private static string FormatBlocks(Course course) => string.Join("+", EffectiveBlocks(course));
+
+    public static IReadOnlyList<string> GenerateBlockStructureOptions(int weeklyHours) => weeklyHours switch
+    {
+        <= 1 => new[] { "1" },
+        2 => new[] { "1+1", "2" },
+        3 => new[] { "1+2", "2+1", "3" },
+        4 => new[] { "2+2", "3+1", "1+3", "4" },
+        _ => new[] { weeklyHours.ToString() },
+    };
+
+    public static string FormatBlockStructure(IEnumerable<int> blocks) => string.Join("+", blocks);
+
+    public static bool IsValidBlockStructure(IReadOnlyList<int> blocks, int weeklyHours)
+    {
+        if (blocks.Count == 0) return false;
+        return GenerateBlockStructureOptions(weeklyHours).Contains(FormatBlockStructure(blocks));
+    }
+
+    public static List<int> DefaultBlockStructureForHours(int weeklyHours) =>
+        ParseBlockStructure(GenerateBlockStructureOptions(weeklyHours).First());
+
+    public bool HandleCourseHoursChanged(CourseGroupItem item, int weeklyHours)
+    {
+        if (item.Sections.Count == 0) return false;
+        var rep = item.Sections[0];
+
+        var hoursChanged = rep.HoursPerWeek != weeklyHours;
+        var previousBlocks = EffectiveBlocks(rep);
+        var nextBlocks = DefaultBlockStructureForHours(weeklyHours);
+        var shouldResetFixedTime = item.Sections.Any(sec => sec.IsFixed || sec.FixedSlots.Count > 0);
+
+        foreach (var sec in item.Sections)
+        {
+            sec.HoursPerWeek = weeklyHours;
+            sec.BlockStructure = new List<int>(nextBlocks);
+        }
+
+        if (hoursChanged || shouldResetFixedTime || !previousBlocks.SequenceEqual(nextBlocks))
+        {
+            ResetFixedTime(item);
+            return true;
+        }
+
+        return false;
+    }
+
+    public bool HandleCourseBlockStructureChanged(CourseGroupItem item)
+    {
+        if (item.Sections.Count == 0) return false;
+        var rep = item.Sections[0];
+        if (!IsValidBlockStructure(rep.BlockStructure, rep.HoursPerWeek))
+            rep.BlockStructure = DefaultBlockStructureForHours(rep.HoursPerWeek);
+
+        ResetFixedTime(item);
+        return true;
+    }
+
+    private static List<int> ParseBlockStructure(string text) =>
+        text.Split('+', StringSplitOptions.RemoveEmptyEntries)
+            .Select(part => int.Parse(part.Trim()))
+            .ToList();
+
+    private static void ResetFixedTime(CourseGroupItem item)
+    {
+        foreach (var sec in item.Sections)
+        {
+            sec.IsFixed = false;
+            sec.FixedSlots.Clear();
+        }
+    }
 
     private string FormatCrossGroups(string baseId)
     {
@@ -794,7 +1127,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             .Where(s => s.FixedSlots.Count > 0)
             .Select(s => $"{SectionLetter(s.Section)}분반 {FormatSlotRuns(s.FixedSlots)}")
             .ToList();
-        return labels.Count == 0 ? "-" : string.Join(" / ", labels);
+        return labels.Count == 0 ? "" : string.Join(" / ", labels);
     }
 
     private static string FormatSlotRuns(IReadOnlyList<TimeSlot> slots)
@@ -920,24 +1253,88 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private string InfeasibleMessage()
     {
         var reasons = new List<string>();
+        var professorsById = _workspace.Professors.ToDictionary(professor => professor.Id);
+
+        foreach (var course in _workspace.Courses)
+        {
+            if (course.IsFixed && course.FixedSlots.Count == 0)
+                reasons.Add($"fixed time conflict: {course.Name} 고정 시간이 비어 있습니다");
+
+            if (course.IsFixed && course.FixedSlots.Any(slot => slot.Period == 5))
+                reasons.Add($"fixed time conflict: {course.Name} 이 점심 시간에 고정되어 있습니다");
+
+            if (course.BlockStructure.Count > 0 && course.BlockStructure.Sum() != course.HoursPerWeek)
+                reasons.Add($"insufficient available time slots: {course.Name} 블록 합이 시수와 다릅니다");
+
+            var availableRoomCount = _workspace.Rooms.Count(room =>
+                !course.UnavailableRooms.Contains(room.Id) &&
+                (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)));
+            if (_workspace.Rooms.Count > 0 && availableRoomCount == 0)
+                reasons.Add($"room capacity/type conflict: {course.Name} 에 사용 가능한 강의실이 없습니다");
+
+            if (professorsById.TryGetValue(course.ProfessorId, out var professor))
+            {
+                if (course.IsFixed && course.FixedSlots.Any(slot => professor.UnavailableSlots.Any(p => p.Day == slot.Day && p.Period == slot.Period)))
+                    reasons.Add($"professor unavailable time conflict: {course.Name} / {professor.Name}");
+
+                var availableProfessorRooms = _workspace.Rooms.Count(room =>
+                    !course.UnavailableRooms.Contains(room.Id) &&
+                    !professor.UnavailableRooms.Contains(room.Id) &&
+                    (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)) &&
+                    (professor.AllowedRooms.Count == 0 || professor.AllowedRooms.Contains(room.Id) || course.FixedRooms.Contains(room.Id)));
+                if (_workspace.Rooms.Count > 0 && availableProfessorRooms == 0)
+                    reasons.Add($"room capacity/type conflict: {course.Name} / {professor.Name} 조건을 만족하는 강의실이 없습니다");
+
+                if (!course.IsFixed)
+                {
+                    var availableSlots = Constants.Periods
+                        .Where(period => period != 5)
+                        .SelectMany(period => Enumerable.Range(0, 5).Select(day => new TimeSlot(day, period)))
+                        .Count(slot => professor.UnavailableSlots.All(p => p.Day != slot.Day || p.Period != slot.Period));
+                    if (availableSlots < Math.Max(course.HoursPerWeek, course.BlockStructure.Sum()))
+                        reasons.Add($"insufficient available time slots: {course.Name} 과목에 대해 {professor.Name} 교수의 가용 시간이 부족합니다");
+                }
+            }
+        }
+
         foreach (var prof in _workspace.Professors)
             if (_workspace.Rooms.Count > 0 && prof.UnavailableRooms.Count >= _workspace.Rooms.Count)
-                reasons.Add($"{prof.Name} 교수의 불가 강의실이 전체 선택됨");
+                reasons.Add($"room capacity/type conflict: {prof.Name} 교수의 사용 가능 강의실이 없습니다");
         foreach (var course in _workspace.Courses)
             if (_workspace.Rooms.Count > 0 && course.UnavailableRooms.Count >= _workspace.Rooms.Count)
-                reasons.Add($"{course.Name} 과목의 불가 강의실이 전체 선택됨");
-        foreach (var course in _workspace.Courses)
-            if (course.BlockStructure.Count > 0 && course.BlockStructure.Sum() != course.HoursPerWeek)
-                reasons.Add($"{course.Name} 과목의 블록구조 합이 주당 수업시간과 다름");
+                reasons.Add($"room capacity/type conflict: {course.Name} 과목의 사용 가능 강의실이 없습니다");
+
+        foreach (var cross in _workspace.CrossGroups)
+        {
+            if (cross.BaseIds.Count != 2)
+            {
+                reasons.Add($"cross constraint conflict: {cross.Id} 는 과목 2개만 포함해야 합니다");
+                continue;
+            }
+
+            var groupedCourses = cross.BaseIds
+                .Select(id => new { Id = id, Courses = _workspace.Courses.Where(course => DomainHelpers.BaseId(course.Id) == id).ToList() })
+                .ToList();
+            if (groupedCourses.Any(group => group.Courses.Count == 0))
+            {
+                reasons.Add($"cross constraint conflict: {cross.Id} 대상 과목을 찾을 수 없습니다");
+                continue;
+            }
+
+            if (groupedCourses.Select(group => group.Courses.Count).Distinct().Count() > 1)
+                reasons.Add($"cross constraint conflict: {cross.Id} 분반 수가 다릅니다");
+
+            if (groupedCourses.Select(group => group.Courses[0].HoursPerWeek).Distinct().Count() > 1)
+                reasons.Add($"cross constraint conflict: {cross.Id} 총 시수가 다릅니다");
+        }
 
         return reasons.Count == 0
-            ? "해를 찾지 못했습니다. 불가 시간, 불가 강의실, 시간 고정, Cross 설정을 줄여보세요."
-            : $"해를 찾지 못했습니다. 원인: {string.Join(" / ", reasons.Take(3))}";
+            ? "INFEASIBLE: detailed reason unavailable"
+            : $"INFEASIBLE: {string.Join(" / ", reasons.Distinct())}";
     }
 
     private string UnknownMessage() =>
-        "시간 초과(UNKNOWN): 제한 시간 안에 해를 찾거나 불가능함을 확정하지 못했습니다. " +
-        "고급 설정의 '한 번 탐색 제한 시간'을 켜고 값을 늘려 다시 시도해 보세요.";
+        "시간 초과(UNKNOWN): 제한 시간 안에 해를 찾거나 불가능함을 확정하지 못했습니다. 제한 시간을 늘려 다시 시도해 보세요.";
 
     private string NoSolutionMessage(string status) =>
         $"해를 찾지 못했습니다({status}). 불가 시간, 불가 강의실, 시간 고정, Cross 설정을 줄이거나 제한 시간을 늘려보세요.";

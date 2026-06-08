@@ -158,24 +158,23 @@ public partial class TimetableGridControl : UserControl
     private static FrameworkElement MakeAssignmentChip(CellAssignment a)
     {
         var panel = new StackPanel { Margin = new Thickness(2) };
-        var nameText = string.IsNullOrEmpty(a.SectionLabel)
-            ? a.CourseName
-            : $"{a.CourseName}·{a.SectionLabel}";
         panel.Children.Add(new TextBlock
         {
-            Text = nameText,
+            Text = a.TitleLabel,
             FontSize = 10,
             FontWeight = FontWeights.Bold,
             TextAlignment = TextAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
         });
-        panel.Children.Add(new TextBlock
-        {
-            Text = a.ProfessorLabel,
-            FontSize = 9,
-            TextAlignment = TextAlignment.Center,
-            Foreground = Brushes.DimGray,
-        });
+        if (!string.IsNullOrWhiteSpace(a.ProfessorLine))
+            panel.Children.Add(new TextBlock
+            {
+                Text = a.ProfessorLine,
+                FontSize = 9,
+                TextAlignment = TextAlignment.Center,
+                Foreground = Brushes.DimGray,
+                TextWrapping = TextWrapping.Wrap,
+            });
         if (!string.IsNullOrEmpty(a.RoomsLabel))
             panel.Children.Add(new TextBlock
             {

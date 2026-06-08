@@ -324,9 +324,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     public void LoadFromSaved(SavedTimetableRecord record)
     {
-        _sessionData = record.SnapshotJson is { Length: > 0 } json
-            ? System.Text.Json.JsonSerializer.Deserialize<AppData>(json)
-            : null;
+        _sessionData = SavedTimetableSnapshotResolver.Resolve(record.SnapshotJson);
         var assignments = record.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
             .ToList();
@@ -389,6 +387,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     public void LoadFromSavedTimetable(SavedTimetableRecord timetable)
     {
+        _sessionData = SavedTimetableSnapshotResolver.Resolve(timetable.SnapshotJson);
         var assignments = timetable.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
             .ToList();
@@ -402,7 +401,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         {
             BaseSolution = new RankedSolution(assignments, new SolutionScore(0, 0, 0, 0));
             _working = assignments;
-            _workingCrossGroups = _workspace.CrossGroups
+            _workingCrossGroups = SessionCrossGroups
                 .Select(g => new CrossGroup { Id = g.Id, BaseIds = g.BaseIds.ToList() })
                 .ToList();
             _undoStack.Clear();
@@ -1807,7 +1806,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private void Rerender()
     {
         Grid.SetCrossParallelOrder(BuildCrossParallelOrder());
-        Grid.Render(_working, SessionCourses);
+        Grid.Render(_working, SessionCourses, SessionProfessors, SessionRooms);
         Grid.SetCrossLinkLabels(BuildCrossLinkLabels());
         RenderBreakdownViews();
         RefreshConflicts();
@@ -1823,28 +1822,30 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private void RenderBreakdownViews()
     {
         var courses = SessionCourses;
+        var professors = SessionProfessors;
+        var rooms = SessionRooms;
 
         GradeViews.Clear();
         foreach (var g in new[] { 1, 2, 3, 4 })
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(_working, courses, (c, _) => c.Grade == g);
+            vm.Render(_working, courses, (c, _) => c.Grade == g, professors, rooms);
             GradeViews.Add(new NamedGridViewModel(g.ToString(), $"{g}학년", vm));
         }
 
         RoomViews.Clear();
-        foreach (var roomId in BuildRoomViewIds())
+        foreach (var r in rooms)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(_working, courses, (_, rid) => rid == roomId);
-            RoomViews.Add(new NamedGridViewModel(roomId, RoomDisplayName(roomId), vm));
+            vm.Render(_working, courses, (_, rid) => rid == r.Id, professors, rooms);
+            RoomViews.Add(new NamedGridViewModel(r.Id, r.Name, vm));
         }
 
         ProfessorViews.Clear();
-        foreach (var p in SessionProfessors)
+        foreach (var p in professors)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(_working, courses, (c, _) => IsCourseTaughtBy(c, p.Id));
+            vm.Render(_working, courses, (c, _) => c.ProfessorId == p.Id, professors, rooms);
             ProfessorViews.Add(new NamedGridViewModel(p.Id, p.Name, vm));
         }
     }

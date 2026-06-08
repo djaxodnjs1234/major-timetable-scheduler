@@ -1,4 +1,8 @@
 using Microsoft.Extensions.DependencyInjection;
+using TimetableScheduler.Data;
+using TimetableScheduler.Domain;
+using TimetableScheduler.Scoring;
+using Microsoft.Extensions.DependencyInjection;
 using TimetableScheduler.Domain;
 using TimetableScheduler.Solver;
 using TimetableScheduler.ViewModel;
@@ -169,29 +173,114 @@ public class MainWindowViewModelTests : IDisposable
     }
 
     [Fact]
-    public void ProfessorViews_IncludeCoteachingCourse_ForEachProfessor()
+    public void ResultsEditSelected_LiveWorkspace_PreservesProfessorInfoInManualEdit()
     {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
         var workspace = _sp.GetRequiredService<WorkspaceService>();
-        workspace.AddProfessor(new Professor { Id = "P1", Name = "대표" });
-        workspace.AddProfessor(new Professor { Id = "P2", Name = "공동" });
-        workspace.AddProfessor(new Professor { Id = "P3", Name = "무관" });
-        workspace.AddRoom(new Room { Id = "R1", Name = "강의실" });
+        workspace.AddProfessor(new Professor { Id = "P1", Name = "김교수" });
+        workspace.AddProfessor(new Professor { Id = "P2", Name = "박교수" });
+        workspace.AddRoom(new Room { Id = "R1", Name = "공학관 101" });
         workspace.AddCourse(new Course
         {
-            Id = "T-01",
-            Name = "팀티칭",
-            Grade = 4,
+            Id = "C-01",
+            Name = "알고리즘",
+            Grade = 2,
             HoursPerWeek = 1,
+            CourseType = "전필",
             ProfessorId = "P1",
             CoteachProfs = new List<string> { "P2" },
+            BlockStructure = new List<int> { 1 },
         });
-        workspace.SaveTimetable("team", new[] { new SolutionAssignment("T-01", 0, 1, "R1") });
 
-        var vm = _sp.GetRequiredService<TimetableSelectionViewModel>();
-        vm.SelectedTimetable = workspace.SavedTimetables.Single(t => t.Name == "team");
+        main.Results.SetSolutions(new[]
+        {
+            new RankedSolution(
+                new[] { new SolutionAssignment("C-01", 0, 1, "R1") },
+                new SolutionScore(0, 0, 0, 0)),
+        });
 
-        Assert.True(vm.ProfessorViews.Single(v => v.Id == "P1").Grid.CellAt(0, 1).IsOccupied);
-        Assert.True(vm.ProfessorViews.Single(v => v.Id == "P2").Grid.CellAt(0, 1).IsOccupied);
-        Assert.False(vm.ProfessorViews.Single(v => v.Id == "P3").Grid.CellAt(0, 1).IsOccupied);
+        main.Results.EditSelectedCommand.Execute(null);
+
+        var assignment = Assert.Single(main.Manual.Grid.Cells).Assignment;
+        Assert.Equal("김교수, 박교수", assignment.ProfessorLine);
+    }
+
+    [Fact]
+    public void ResultsEditSelected_SessionSnapshot_PreservesProfessorInfoInManualEdit()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var snapshot = new AppData(
+            new List<Course>
+            {
+                new()
+                {
+                    Id = "C-01",
+                    Name = "알고리즘",
+                    Grade = 2,
+                    HoursPerWeek = 1,
+                    CourseType = "전필",
+                    ProfessorId = "P1",
+                    CoteachProfs = new List<string> { "P2" },
+                    BlockStructure = new List<int> { 1 },
+                },
+            },
+            new List<Professor>
+            {
+                new() { Id = "P1", Name = "김교수" },
+                new() { Id = "P2", Name = "박교수" },
+            },
+            new List<Room> { new() { Id = "R1", Name = "공학관 101" } },
+            new List<CrossGroup>(),
+            new List<RetakeScenario>());
+
+        main.Results.SetSolutions(new[]
+        {
+            new RankedSolution(
+                new[] { new SolutionAssignment("C-01", 0, 1, "R1") },
+                new SolutionScore(0, 0, 0, 0)),
+        }, snapshot);
+
+        main.Results.EditSelectedCommand.Execute(null);
+
+        var assignment = Assert.Single(main.Manual.Grid.Cells).Assignment;
+        Assert.Equal("김교수, 박교수", assignment.ProfessorLine);
+    }
+
+    [Fact]
+    public void ResultsBackToInput_SessionWorkspace_PreservesCourseProfessorIdsAndProfessorList()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+
+        main.Selection.CreateNewCommand.Execute(null);
+        main.Input.Workspace.AddProfessor(new Professor { Id = "P1", Name = "김교수" });
+        main.Input.Workspace.AddRoom(new Room { Id = "R1", Name = "공학관 101" });
+        main.Input.Workspace.AddCourse(new Course
+        {
+            Id = "C-01",
+            Name = "알고리즘",
+            Grade = 2,
+            HoursPerWeek = 1,
+            CourseType = "전필",
+            ProfessorId = "P1",
+            BlockStructure = new List<int> { 1 },
+        });
+
+        main.Results.SetSolutions(new[]
+        {
+            new RankedSolution(
+                new[] { new SolutionAssignment("C-01", 0, 1, "R1") },
+                new SolutionScore(0, 0, 0, 0)),
+        }, main.Input.CurrentSnapshot());
+
+        var beforeGroup = main.Input.CourseGroups.Single();
+
+        main.Results.BackCommand.Execute(null);
+
+        Assert.NotSame(beforeGroup, main.Input.CourseGroups.Single());
+        Assert.Equal("P1", main.Input.Workspace.Courses.Single().ProfessorId);
+        Assert.Equal("김교수", main.Input.CourseGroups.Single().HeaderProfessor);
+        Assert.Equal("P1", main.Input.CourseGroups.Single().Sections[0].ProfessorId);
+        Assert.Single(main.Input.Workspace.Professors);
+        Assert.Equal("P1", main.Input.Workspace.Professors.Single().Id);
     }
 }

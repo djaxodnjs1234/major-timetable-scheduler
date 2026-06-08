@@ -5,19 +5,39 @@
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d">
-    <ItemsControl ItemsSource="{Binding}">
-        <ItemsControl.ItemsPanel>
-            <ItemsPanelTemplate>
-                <WrapPanel Orientation="Horizontal" />
-            </ItemsPanelTemplate>
-        </ItemsControl.ItemsPanel>
-        <ItemsControl.ItemTemplate>
-            <DataTemplate DataType="{x:Type ed:CheckListItem}">
-                <Border Padding="4,2" Margin="0,0,4,4">
-                    <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}"
-                              Content="{Binding Display}" FontSize="11" />
-                </Border>
-            </DataTemplate>
-        </ItemsControl.ItemTemplate>
-    </ItemsControl>
+    <Grid>
+        <TextBlock Text="없음" FontSize="11" Foreground="#9CA3AF"
+                   VerticalAlignment="Center" Margin="4,2">
+            <TextBlock.Style>
+                <Style TargetType="TextBlock">
+                    <Setter Property="Visibility" Value="Collapsed"/>
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding Items.Count, ElementName=ItemsCtrl}" Value="0">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding Items.Count, ElementName=ItemsCtrl}" Value="{x:Null}">
+                            <Setter Property="Visibility" Value="Visible"/>
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </TextBlock.Style>
+        </TextBlock>
+
+        <ItemsControl x:Name="ItemsCtrl" ItemsSource="{Binding}">
+            <ItemsControl.ItemsPanel>
+                <ItemsPanelTemplate>
+                    <WrapPanel Orientation="Horizontal" />
+                </ItemsPanelTemplate>
+            </ItemsControl.ItemsPanel>
+            <ItemsControl.ItemTemplate>
+                <DataTemplate DataType="{x:Type ed:CheckListItem}">
+                    <Border Padding="4,2" Margin="0,0,4,4">
+                        <CheckBox IsChecked="{Binding IsChecked, Mode=TwoWay}"
+                                  IsEnabled="{Binding IsEnabled, FallbackValue=True}"
+                                  Content="{Binding Display}" FontSize="11" />
+                    </Border>
+                </DataTemplate>
+            </ItemsControl.ItemTemplate>
+        </ItemsControl>
+    </Grid>
 </UserControl>

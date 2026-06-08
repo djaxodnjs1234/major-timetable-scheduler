@@ -28,11 +28,15 @@ public sealed partial class TimetableGridViewModel : ObservableObject
     public void Render(
         IReadOnlyList<SolutionAssignment> assignment,
         IReadOnlyList<Course> courses,
-        Func<Course, string, bool>? accept = null)
+        Func<Course, string, bool>? accept = null,
+        IReadOnlyList<Professor>? professors = null,
+        IReadOnlyList<Room>? rooms = null)
     {
         foreach (var c in Cells) c.Clear();
 
         var courseMap = courses.ToDictionary(c => c.Id);
+        var professorNames = BuildNameMap(professors);
+        var roomNames = BuildNameMap(rooms);
         var runs = TimetableRuns.ComputeRuns(assignment);
 
         // group by (cid, day, period) → set of rooms (for multi-room courses)
@@ -49,13 +53,25 @@ public sealed partial class TimetableGridViewModel : ObservableObject
 
         // For each unique (cid, day, period) entry, place CellAssignment at the START of the run only.
         // Skip cells that are "inside" the run.
-        foreach (var ((cid, d, p), rooms) in roomsBySlot)
+        foreach (var ((cid, d, p), slotRooms) in roomsBySlot)
         {
             if (runs.Inside.Contains((cid, d, p))) continue;
             var c = courseMap[cid];
             int rs = runs.RunLen.TryGetValue((cid, d, p), out int n) ? n : 1;
             var cell = CellAt(d, p);
-            cell.Add(CellAssignment.FromCourse(c, rooms, rs));
+            cell.Add(CellAssignment.FromCourse(c, slotRooms, rs, professorNames, roomNames));
         }
+    }
+
+    private static Dictionary<string, string>? BuildNameMap<T>(IReadOnlyList<T>? items)
+    {
+        if (items == null) return null;
+
+        return items switch
+        {
+            IReadOnlyList<Professor> professors => professors.ToDictionary(p => p.Id, p => p.Name),
+            IReadOnlyList<Room> rooms => rooms.ToDictionary(r => r.Id, r => r.Name),
+            _ => null,
+        };
     }
 }

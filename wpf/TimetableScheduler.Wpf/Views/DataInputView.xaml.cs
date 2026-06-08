@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
 using Microsoft.Win32;
 using TimetableScheduler.Domain;
 using TimetableScheduler.ViewModel.Editors;
@@ -100,6 +101,58 @@ public partial class DataInputView : UserControl
         {
             editor.DataContext = FixedSlotEditorViewModel.Build(item, course.IsFixed);
         }
+        RefreshCourseBlockStructureCombo(expander, item);
+    }
+
+    private void OnCourseHoursChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not DependencyObject dep || Vm == null) return;
+        if (e.RemovedItems.Count == 0) return;
+        if (e.AddedItems.Count == 0 || e.AddedItems[0] is not int weeklyHours) return;
+
+        var item = FindCourseGroupItem(dep);
+        if (item == null) return;
+        var expander = FindAncestor<Expander>(dep);
+        if (expander == null) return;
+
+        Vm.HandleCourseHoursChanged(item, weeklyHours);
+        RefreshCourseBlockStructureCombo(expander, item);
+        RefreshFixedTimeCheckBox(expander);
+        RebuildFixedSlotEditor(expander, item);
+    }
+
+    private void OnCourseBlockStructureChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not DependencyObject dep || Vm == null) return;
+        if (e.RemovedItems.Count == 0) return;
+        if (e.AddedItems.Count == 0 || e.AddedItems[0] is not string) return;
+
+        if (sender is ComboBox combo)
+            BindingOperations.GetBindingExpression(combo, ComboBox.SelectedItemProperty)?.UpdateSource();
+
+        var item = FindCourseGroupItem(dep);
+        if (item == null) return;
+        var expander = FindAncestor<Expander>(dep);
+        if (expander == null) return;
+
+        Vm.HandleCourseBlockStructureChanged(item);
+        RefreshCourseBlockStructureCombo(expander, item);
+        RebuildFixedSlotEditor(expander, item);
+    }
+
+    private void OnCourseSharedSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ComboBox combo || e.AddedItems.Count == 0) return;
+        UpdateCourseSharedSelectionSource(combo);
+    }
+
+    private static void UpdateCourseSharedSelectionSource(ComboBox combo)
+    {
+        if (combo.SelectedItem == null) return;
+        var property = string.IsNullOrEmpty(combo.SelectedValuePath)
+            ? ComboBox.SelectedItemProperty
+            : ComboBox.SelectedValueProperty;
+        BindingOperations.GetBindingExpression(combo, property)?.UpdateSource();
     }
 
     private void OnIsFixedCheckChanged(object sender, RoutedEventArgs e)
@@ -112,6 +165,29 @@ public partial class DataInputView : UserControl
         var editor = FindDescendant<FixedSlotEditorControl>(expander);
         if (editor != null)
             editor.DataContext = FixedSlotEditorViewModel.Build(item, item.Sections[0].IsFixed);
+    }
+
+    private static void RefreshCourseBlockStructureCombo(Expander expander, CourseGroupItem item)
+    {
+        if (expander.FindName("BlockStructureComboBox") is not ComboBox combo) return;
+
+        combo.ItemsSource = DataInputViewModel.GenerateBlockStructureOptions(item.Sections[0].HoursPerWeek);
+        combo.SetCurrentValue(ComboBox.SelectedItemProperty,
+            DataInputViewModel.FormatBlockStructure(item.Sections[0].BlockStructure));
+        BindingOperations.GetBindingExpression(combo, ComboBox.SelectedItemProperty)?.UpdateTarget();
+    }
+
+    private static void RebuildFixedSlotEditor(Expander expander, CourseGroupItem item)
+    {
+        if (expander.FindName("FixedSlotEditor") is FixedSlotEditorControl editor)
+            editor.DataContext = FixedSlotEditorViewModel.Build(item, item.Sections[0].IsFixed);
+    }
+
+    private static void RefreshFixedTimeCheckBox(Expander expander)
+    {
+        if (expander.FindName("IsFixedCheckBox") is not CheckBox checkBox) return;
+
+        BindingOperations.GetBindingExpression(checkBox, CheckBox.IsCheckedProperty)?.UpdateTarget();
     }
 
     private static T? FindAncestor<T>(DependencyObject start) where T : DependencyObject
@@ -156,6 +232,12 @@ public partial class DataInputView : UserControl
         var item = FindCourseGroupItem(dep);
         if (item == null) return;
 
+        var expander = FindAncestor<Expander>(dep);
+        if (expander?.FindName("ProfessorComboBox") is ComboBox professorCombo)
+            UpdateCourseSharedSelectionSource(professorCombo);
+        if (expander?.FindName("CourseTypeComboBox") is ComboBox courseTypeCombo)
+            UpdateCourseSharedSelectionSource(courseTypeCombo);
+
         var rep = item.Sections[0];
         if (rep.BlockStructure.Count > 0 && rep.BlockStructure.Sum() != rep.HoursPerWeek)
         {
@@ -169,8 +251,34 @@ public partial class DataInputView : UserControl
         }
 
         // Flush fixed slot editor values back to sections before save
-        var expander = FindAncestor<Expander>(dep);
         var editorCtrl = expander != null ? FindDescendant<FixedSlotEditorControl>(expander) : null;
+        var candidateFixedSlots = editorCtrl?.DataContext is FixedSlotEditorViewModel pendingEditorVm
+            ? pendingEditorVm.SectionEditors
+                .Select(sectionEditor => (IReadOnlyList<TimeSlot>)sectionEditor.ToFixedSlots())
+                .ToList()
+            : null;
+        var overlap = Vm.FindFixedTimeOverlap(item, candidateFixedSlots);
+        if (overlap != null)
+        {
+            var dayName = overlap.Day switch
+            {
+                0 => "월",
+                1 => "화",
+                2 => "수",
+                3 => "목",
+                4 => "금",
+                _ => "?",
+            };
+            var sectionText = overlap.ExistingSection > 0 ? $" ({overlap.ExistingSection}분반)" : string.Empty;
+            MessageBox.Show(
+                $"선택한 고정 시간이 기존 고정 수업과 겹칩니다.\n" +
+                $"겹치는 시간: {dayName}요일 {overlap.Period}교시\n" +
+                $"기존 수업: {overlap.ExistingCourseName}{sectionText}",
+                "저장 불가",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            return;
+        }
         if (editorCtrl?.DataContext is FixedSlotEditorViewModel editorVm)
         {
             editorVm.ApplyTo(item);
@@ -205,57 +313,44 @@ public partial class DataInputView : UserControl
         var item = FindCourseGroupItem(dep);
         if (item != null) Vm.RemoveSectionCommand.Execute(item);
     }
-private void OnProfessorSaveClick(object sender, RoutedEventArgs e)
-{
-    if (sender is not FrameworkElement el || el.DataContext is not ProfessorItem item || Vm == null) return;
 
-    if (Vm.Workspace.Rooms.Count > 0 && item.Professor.UnavailableRooms.Count >= Vm.Workspace.Rooms.Count)
+    private void OnProfessorSaveClick(object sender, RoutedEventArgs e)
     {
-        MessageBox.Show(
-            "모든 강의실을 불가 강의실로 선택하면 시간표를 만들 수 없습니다. 최소 1개 강의실은 사용할 수 있게 남겨주세요.",
-            "저장 불가",
-            MessageBoxButton.OK,
-            MessageBoxImage.Warning);
-
-        var expander = FindAncestor<Expander>(el);
-        if (expander?.FindName("UnavailableRoomsPicker") is CheckListPickerControl picker
-            && picker.DataContext is IEnumerable<CheckListItem> rooms)
+        if (sender is not FrameworkElement el || el.DataContext is not ProfessorItem item || Vm == null) return;
+        if (Vm.Workspace.Rooms.Count > 0 && item.Professor.UnavailableRooms.Count >= Vm.Workspace.Rooms.Count)
         {
-            foreach (var room in rooms)
-                room.IsChecked = false;
+            MessageBox.Show(
+                "모든 강의실을 불가 강의실로 선택하면 시간표를 만들 수 없습니다. 최소 1개 강의실은 사용할 수 있게 남겨주세요.",
+                "저장 불가",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+            var expander = FindAncestor<Expander>(el);
+            if (expander?.FindName("UnavailableRoomsPicker") is CheckListPickerControl picker
+                && picker.DataContext is IEnumerable<CheckListItem> rooms)
+            {
+                foreach (var room in rooms) room.IsChecked = false;
+            }
+            return;
         }
-
-        return;
+        Vm.SaveProfessorCommand.Execute(item);
     }
 
-    Vm.SaveProfessorCommand.Execute(item);
-}
-
-private void OnProfessorAllRoomsClick(object sender, RoutedEventArgs e)
-{
-    var expander = sender is DependencyObject dep ? FindAncestor<Expander>(dep) : null;
-    if (expander?.FindName("UnavailableRoomsPicker") is not CheckListPickerControl picker) return;
-
-    if (picker.DataContext is IEnumerable<CheckListItem> items)
+    private void OnProfessorAllRoomsClick(object sender, RoutedEventArgs e)
     {
-        foreach (var item in items)
-            item.IsChecked = true;
+        var expander = sender is DependencyObject dep ? FindAncestor<Expander>(dep) : null;
+        if (expander?.FindName("UnavailableRoomsPicker") is not CheckListPickerControl picker) return;
+        if (picker.DataContext is IEnumerable<CheckListItem> items)
+        {
+            foreach (var item in items) item.IsChecked = true;
+        }
     }
-}
 
-private static string RoomDisplayLabel(Room room)
-{
-    var parts = new List<string>();
+    private static string RoomDisplayLabel(Room room)
+    {
+        var parts = new List<string>();
+        if (room.IsLab) parts.Add("실습실");
+        if (room.Capacity > 0) parts.Add($"{room.Capacity}명");
 
-    if (room.IsLab)
-        parts.Add("실습실");
-
-    if (room.Capacity > 0)
-        parts.Add($"{room.Capacity}명");
-
-    return parts.Count == 0
-        ? room.Name
-        : $"{room.Name} ({string.Join(", ", parts)})";
-}
+        return parts.Count == 0 ? room.Name : $"{room.Name} ({string.Join(", ", parts)})";
     }
 }

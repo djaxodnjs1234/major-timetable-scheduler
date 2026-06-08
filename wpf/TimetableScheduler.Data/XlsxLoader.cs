@@ -11,13 +11,38 @@ public sealed record XlsxLoadResult(
 
 public static class XlsxLoader
 {
+    private const string KoreanMonday = "\uC6D4";
+    private const string KoreanTuesday = "\uD654";
+    private const string KoreanWednesday = "\uC218";
+    private const string KoreanThursday = "\uBAA9";
+    private const string KoreanFriday = "\uAE08";
+    private const string RequiredType = "\uD544\uC218";
+    private const string MajorRequiredType = "\uC804\uD544";
+    private const string MajorElectiveType = "\uC804\uC120";
+    private const string CapstoneKeyword = "\uCEA1\uC2A4\uD1A4\uB514\uC790\uC778";
+    private const string CapstoneLeftKeyword = "\uCEA1\uC2A4\uD1A4";
+    private const string CapstoneRightKeyword = "\uB514\uC790\uC778";
+
+    private static readonly Regex ExplicitSectionRegex = new(@"^(?<base>.+)-(?<section>\d{2})$", RegexOptions.Compiled);
     private static readonly Dictionary<string, int> DayMap = new()
     {
-        ["월"] = 0, ["화"] = 1, ["수"] = 2, ["목"] = 3, ["금"] = 4,
+        [KoreanMonday] = 0,
+        [KoreanTuesday] = 1,
+        [KoreanWednesday] = 2,
+        [KoreanThursday] = 3,
+        [KoreanFriday] = 4,
     };
 
-    private static readonly Regex DayPeriodRegex = new(@"^([월화수목금])(\d+)$", RegexOptions.Compiled);
+    private static readonly Regex DayPeriodRegex =
+        new($"^([{KoreanMonday}{KoreanTuesday}{KoreanWednesday}{KoreanThursday}{KoreanFriday}])(\\d+)$", RegexOptions.Compiled);
     private static readonly Regex SplitRegex = new(@"[,\s]+", RegexOptions.Compiled);
+
+    private static List<int> DefaultBlockStructureForHours(int hours) => hours switch
+    {
+        3 => new List<int> { 1, 2 },
+        4 => new List<int> { 2, 2 },
+        _ => new List<int> { hours },
+    };
 
     public static XlsxLoadResult Load(string path)
     {
@@ -26,9 +51,20 @@ public static class XlsxLoader
 
         var profNames = new HashSet<string>();
         var roomIds = new HashSet<string>();
-        // (baseId, representative course) — first row per base wins
         var seen = new Dictionary<string, Course>();
+        var explicitCourses = new List<Course>();
         var counts = new Dictionary<string, int>();
+        var importedBaseIds = new Dictionary<string, string>();
+
+        string GetOrCreateImportedBaseId(string sourceBaseId)
+        {
+            if (importedBaseIds.TryGetValue(sourceBaseId, out var importedBaseId))
+                return importedBaseId;
+
+            importedBaseId = (importedBaseIds.Count + 1).ToString();
+            importedBaseIds[sourceBaseId] = importedBaseId;
+            return importedBaseId;
+        }
 
         foreach (var row in sheet.RowsUsed())
         {
@@ -37,74 +73,120 @@ public static class XlsxLoader
             var gradeRaw = Cell("E");
             var name = Cell("G");
             if (string.IsNullOrEmpty(gradeRaw) || string.IsNullOrEmpty(name)) continue;
+
             if (!int.TryParse(gradeRaw, out var grade))
             {
-                if (!double.TryParse(gradeRaw, out var gradeD)) continue;
-                grade = (int)gradeD;
+                if (!double.TryParse(gradeRaw, out var gradeDouble)) continue;
+                grade = (int)gradeDouble;
             }
 
             var typeRaw = Cell("F");
-            var courseType = typeRaw == "필수" ? "전필" : "전선";
+            var courseType = typeRaw == RequiredType ? MajorRequiredType : MajorElectiveType;
 
             var creditsRaw = Cell("H");
             if (!int.TryParse(creditsRaw, out var hours))
             {
-                if (!double.TryParse(creditsRaw, out var hoursD)) continue;
-                hours = (int)hoursD;
+                if (!double.TryParse(creditsRaw, out var hoursDouble)) continue;
+                hours = (int)hoursDouble;
             }
 
             var code = Cell("I");
-            var prof = Cell("Q");
-            var dept = Cell("R");
-            var schedStr = Cell("S");
+            var professorName = Cell("Q");
+            var department = Cell("R");
+            var scheduleText = Cell("S");
 
-            var sched = ParseSchedule(schedStr);
-            var fixedRoom = sched.Count > 0 ? sched[0].Room : null;
-            var xlsxBlocks = sched.Select(s => s.Periods.Count).ToList();
+            var schedule = ParseSchedule(scheduleText);
+            var fixedRoom = schedule.Count > 0 ? schedule[0].Room : null;
+            var xlsxBlocks = schedule.Select(entry => entry.Periods.Count).ToList();
 
             List<int> blockStructure;
-            if (hours == 3) blockStructure = new List<int> { 2, 1 };
-            else if (hours == 4) blockStructure = new List<int> { 2, 2 };
+            if (hours is 3 or 4) blockStructure = DefaultBlockStructureForHours(hours);
             else if (xlsxBlocks.Count > 0 && xlsxBlocks.Sum() == hours) blockStructure = xlsxBlocks;
-            else blockStructure = new List<int> { hours };
+            else blockStructure = DefaultBlockStructureForHours(hours);
 
-            var sourceBaseId = DomainHelpers.BaseId(code);
-            counts[sourceBaseId] = counts.GetValueOrDefault(sourceBaseId, 0) + 1;
+            var normalizedName = name.Replace(" ", "", StringComparison.Ordinal);
+            var isCapstoneDesign =
+                normalizedName.Contains(CapstoneKeyword, StringComparison.Ordinal) ||
+                (name.Contains(CapstoneLeftKeyword, StringComparison.Ordinal) &&
+                 name.Contains(CapstoneRightKeyword, StringComparison.Ordinal));
 
-            if (!seen.ContainsKey(sourceBaseId))
+            var explicitSectionMatch = ExplicitSectionRegex.Match(code);
+            var hasExplicitSectionId = explicitSectionMatch.Success;
+            var sourceBaseId = hasExplicitSectionId
+                ? explicitSectionMatch.Groups["base"].Value
+                : DomainHelpers.BaseId(code);
+            var isCapstoneCode = sourceBaseId.StartsWith("CP", StringComparison.OrdinalIgnoreCase);
+            var shouldCollapseCapstone = hasExplicitSectionId && (isCapstoneDesign || isCapstoneCode);
+
+            var importedBaseId = GetOrCreateImportedBaseId(sourceBaseId);
+
+            if (hasExplicitSectionId && !isCapstoneDesign && !isCapstoneCode)
             {
-                seen[sourceBaseId] = new Course
+                var explicitSection = int.Parse(explicitSectionMatch.Groups["section"].Value);
+                explicitCourses.Add(new Course
                 {
-                    Id = (seen.Count + 1).ToString(),
+                    Id = $"{importedBaseId}-{explicitSection:D2}",
                     Name = name,
                     Grade = grade,
                     HoursPerWeek = hours,
                     CourseType = courseType,
-                    ProfessorId = prof,
-                    Section = 1,   // updated below
-                    Department = dept,
+                    ProfessorId = professorName,
+                    Section = explicitSection,
+                    Department = department,
                     FixedRooms = fixedRoom != null ? new List<string> { fixedRoom } : new List<string>(),
                     UnavailableRooms = new List<string>(),
                     BlockStructure = blockStructure,
-                };
+                });
+            }
+            else
+            {
+                counts[sourceBaseId] = shouldCollapseCapstone
+                    ? 1
+                    : counts.GetValueOrDefault(sourceBaseId, 0) + 1;
+
+                if (!seen.ContainsKey(sourceBaseId))
+                {
+                    seen[sourceBaseId] = new Course
+                    {
+                        Id = importedBaseId,
+                        Name = name,
+                        Grade = grade,
+                        HoursPerWeek = hours,
+                        CourseType = courseType,
+                        ProfessorId = professorName,
+                        Section = 1,
+                        Department = department,
+                        FixedRooms = fixedRoom != null ? new List<string> { fixedRoom } : new List<string>(),
+                        UnavailableRooms = new List<string>(),
+                        BlockStructure = blockStructure,
+                    };
+                }
             }
 
-            if (!string.IsNullOrEmpty(prof)) profNames.Add(prof);
+            if (!string.IsNullOrEmpty(professorName)) profNames.Add(professorName);
             if (fixedRoom != null) roomIds.Add(fixedRoom);
         }
 
-        // Set Section = number of sections found per base
-        var courses = seen.Values.ToList();
-        var professorIds = profNames.OrderBy(n => n)
+        var courses = seen.Values.Concat(explicitCourses).ToList();
+        var professorIds = profNames.OrderBy(name => name)
             .Select((name, index) => (name, id: (index + 1).ToString()))
-            .ToDictionary(x => x.name, x => x.id);
-        var roomIdsByName = roomIds.OrderBy(r => r)
+            .ToDictionary(pair => pair.name, pair => pair.id);
+        var roomIdsByName = roomIds.OrderBy(name => name)
             .Select((name, index) => (name, id: (index + 1).ToString()))
-            .ToDictionary(x => x.name, x => x.id);
+            .ToDictionary(pair => pair.name, pair => pair.id);
 
         foreach (var (sourceBaseId, course) in seen)
         {
             course.Section = counts[sourceBaseId];
+            if (professorIds.TryGetValue(course.ProfessorId, out var professorId))
+                course.ProfessorId = professorId;
+            course.FixedRooms = course.FixedRooms
+                .Select(room => roomIdsByName.TryGetValue(room, out var roomId) ? roomId : room)
+                .ToList();
+        }
+
+        foreach (var course in explicitCourses)
+        {
             if (professorIds.TryGetValue(course.ProfessorId, out var professorId))
                 course.ProfessorId = professorId;
             course.FixedRooms = course.FixedRooms
@@ -126,25 +208,27 @@ public static class XlsxLoader
 
     private record ScheduleEntry(int Day, List<int> Periods, string Room);
 
-    private static List<ScheduleEntry> ParseSchedule(string s)
+    private static List<ScheduleEntry> ParseSchedule(string text)
     {
         var result = new List<ScheduleEntry>();
-        if (string.IsNullOrEmpty(s)) return result;
+        if (string.IsNullOrEmpty(text)) return result;
 
-        foreach (var part in SplitRegex.Split(s.Trim()))
+        foreach (var part in SplitRegex.Split(text.Trim()))
         {
             if (string.IsNullOrEmpty(part) || !part.Contains('/')) continue;
+
             var slash = part.IndexOf('/');
             var timePart = part[..slash];
             var room = part[(slash + 1)..].Trim();
 
-            var m = DayPeriodRegex.Match(timePart);
-            if (!m.Success) continue;
-            var day = DayMap[m.Groups[1].Value];
-            var digits = m.Groups[2].Value;
-            var periods = digits.Select(ch => ch - '0').ToList();
+            var match = DayPeriodRegex.Match(timePart);
+            if (!match.Success) continue;
+
+            var day = DayMap[match.Groups[1].Value];
+            var periods = match.Groups[2].Value.Select(ch => ch - '0').ToList();
             result.Add(new ScheduleEntry(day, periods, room));
         }
+
         return result;
     }
 }

@@ -87,13 +87,18 @@ public class DiverseSolverTests
             TimeLimitSec = 20,
             PerSolveTimeSec = 2,
         };
-        var progress = new Progress<SolverProgress>(p => reports.Add(p));
+        var progress = new SyncProgress<SolverProgress>(p => reports.Add(p));
         DiverseSolver.Solve(courses, profs, rooms, opts, progress: progress);
-
-        Thread.Sleep(50);  // let Progress<T> drain
 
         Assert.Contains(reports, r => r.Phase == "1A");
         Assert.Contains(reports, r => r.Phase == "2");
+    }
+
+    private class SyncProgress<T> : IProgress<T>
+    {
+        private readonly Action<T> _action;
+        public SyncProgress(Action<T> action) => _action = action;
+        public void Report(T value) => _action(value);
     }
 
     [Fact]

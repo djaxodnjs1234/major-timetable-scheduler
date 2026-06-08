@@ -92,6 +92,27 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void EditProfessor_AndSaveProfessor_TogglesEditingState()
+    {
+        _workspace.AddProfessor(new Professor
+        {
+            Id = "P1",
+            Name = "교수1",
+        });
+
+        var vm = MakeVm();
+        var item = vm.ProfessorItems.Single();
+
+        vm.EditProfessorCommand.Execute(item);
+
+        Assert.True(item.IsEditing);
+
+        vm.SaveProfessorCommand.Execute(item);
+
+        Assert.False(item.IsEditing);
+    }
+
+    [Fact]
     public void RoomRows_MarkFixedRoomsAsImportedEvenWhenDepartmentIsBlank()
     {
         _workspace.AddRoom(new Room { Id = "R1", Name = "D330" });
@@ -107,6 +128,23 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void EditRoom_AndSaveRoom_TogglesEditingState()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "강의실1" });
+
+        var vm = MakeVm();
+        var item = vm.RoomItems.Single();
+
+        vm.EditRoomCommand.Execute(item);
+
+        Assert.True(item.IsEditing);
+
+        vm.SaveRoomCommand.Execute(item);
+
+        Assert.False(item.IsEditing);
+    }
+
+    [Fact]
     public void NonFixed_OneSection_ProducesOneGroupRow()
     {
         _workspace.AddCourse(MakeCourse("GA1005-01", 1));
@@ -118,32 +156,30 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
-    public void Fixed_TwoSections_ProducesTwoIndividualRows()
+    public void Fixed_TwoSections_RemainsOneGroupRow()
     {
         _workspace.AddCourse(MakeCourse("GA1005-01", 1, isFixed: true));
         _workspace.AddCourse(MakeCourse("GA1005-02", 2, isFixed: true));
 
         var vm = MakeVm();
 
-        Assert.Equal(2, vm.CourseGroups.Count);
-        Assert.True(vm.CourseGroups[0].IsFixedIndividual);
-        Assert.True(vm.CourseGroups[1].IsFixedIndividual);
-        Assert.Single(vm.CourseGroups[0].Sections);
-        Assert.Single(vm.CourseGroups[1].Sections);
+        Assert.Single(vm.CourseGroups);
+        Assert.Equal(2, vm.CourseGroups[0].Sections.Count);
+        Assert.False(vm.CourseGroups[0].IsFixedIndividual);
+        Assert.Contains("★", vm.CourseGroups[0].DisplayLabel);
     }
 
     [Fact]
-    public void Mixed_FixedAndNonFixed_SplitsCorrectly()
+    public void Mixed_FixedAndNonFixed_StaysGroupedByBaseCourse()
     {
         _workspace.AddCourse(MakeCourse("GA1004-01", 1));           // non-fixed group
         _workspace.AddCourse(MakeCourse("GA1004-02", 2));
-        _workspace.AddCourse(MakeCourse("GA1005-01", 1, isFixed: true));  // fixed individual
+        _workspace.AddCourse(MakeCourse("GA1005-01", 1, isFixed: true));
         _workspace.AddCourse(MakeCourse("GA1005-02", 2, isFixed: true));
 
         var vm = MakeVm();
 
-        // GA1004 group (1 row) + GA1005-01 + GA1005-02 = 3 rows total
-        Assert.Equal(3, vm.CourseGroups.Count);
+        Assert.Equal(2, vm.CourseGroups.Count);
     }
 
     [Fact]
@@ -176,6 +212,245 @@ public class CourseGroupsTests : IDisposable
         var vm = MakeVm();
 
         Assert.Contains("★", vm.CourseGroups[0].DisplayLabel);
+    }
+
+    [Fact]
+    public void CourseGroup_FormatsBlockStructureWithPlus()
+    {
+        _workspace.AddCourse(MakeCourse("GA1005-01", 1));
+
+        var vm = MakeVm();
+
+        Assert.Equal("2+1", vm.CourseGroups[0].HeaderBlockStructure);
+        Assert.Equal("2+1", vm.CourseGroups[0].ReadOnlyBlockStructure);
+    }
+
+    [Fact]
+    public void GenerateBlockStructureOptions_UsesWeeklyHoursExamples()
+    {
+        Assert.Equal(new[] { "1+1", "2" }, DataInputViewModel.GenerateBlockStructureOptions(2));
+        Assert.Equal(new[] { "1+2", "2+1", "3" }, DataInputViewModel.GenerateBlockStructureOptions(3));
+        Assert.Equal(new[] { "2+2", "3+1", "1+3", "4" }, DataInputViewModel.GenerateBlockStructureOptions(4));
+    }
+
+    [Fact]
+    public void HandleCourseHoursChanged_ResetsDefaultBlocksAndClearsFixedTime()
+    {
+        var course = MakeCourse("GA1005-01", 1);
+        course.HoursPerWeek = 4;
+        course.BlockStructure = new List<int> { 3, 1 };
+        course.IsFixed = true;
+        course.FixedSlots = new List<TimeSlot> { new(0, 1), new(0, 2), new(1, 1) };
+        _workspace.AddCourse(course);
+
+        var vm = MakeVm();
+        var item = vm.CourseGroups[0];
+
+        var changed = vm.HandleCourseHoursChanged(item, 3);
+
+        Assert.True(changed);
+        Assert.Equal(3, item.Sections[0].HoursPerWeek);
+        Assert.Equal(new[] { 1, 2 }, item.Sections[0].BlockStructure);
+        Assert.False(item.Sections[0].IsFixed);
+        Assert.Empty(item.Sections[0].FixedSlots);
+    }
+
+    [Fact]
+    public void HandleCourseHoursChanged_UpdatesAllSectionsToNewDefaultBlocks()
+    {
+        var first = MakeCourse("GA1005-01", 1);
+        var second = MakeCourse("GA1005-02", 2);
+        first.HoursPerWeek = 3;
+        second.HoursPerWeek = 3;
+        first.BlockStructure = new List<int> { 2, 1 };
+        second.BlockStructure = new List<int> { 2, 1 };
+        first.IsFixed = true;
+        second.IsFixed = true;
+        first.FixedSlots = new List<TimeSlot> { new(0, 1), new(0, 2), new(1, 1) };
+        second.FixedSlots = new List<TimeSlot> { new(2, 1), new(2, 2), new(3, 1) };
+        _workspace.AddCourse(first);
+        _workspace.AddCourse(second);
+
+        var vm = MakeVm();
+        var item = vm.CourseGroups[0];
+
+        var changed = vm.HandleCourseHoursChanged(item, 4);
+
+        Assert.True(changed);
+        Assert.All(item.Sections, section => Assert.Equal(4, section.HoursPerWeek));
+        Assert.All(item.Sections, section => Assert.Equal(new[] { 2, 2 }, section.BlockStructure));
+        Assert.All(item.Sections, section => Assert.False(section.IsFixed));
+        Assert.All(item.Sections, section => Assert.Empty(section.FixedSlots));
+    }
+
+    [Fact]
+    public void HandleCourseBlockStructureChanged_ClearsFixedTime()
+    {
+        var course = MakeCourse("GA1005-01", 1);
+        course.IsFixed = true;
+        course.FixedSlots = new List<TimeSlot> { new(0, 1), new(0, 2), new(1, 1) };
+        _workspace.AddCourse(course);
+
+        var vm = MakeVm();
+        var item = vm.CourseGroups[0];
+        item.Sections[0].BlockStructure = new List<int> { 3 };
+
+        vm.HandleCourseBlockStructureChanged(item);
+
+        Assert.False(item.Sections[0].IsFixed);
+        Assert.Empty(item.Sections[0].FixedSlots);
+    }
+
+    [Fact]
+    public void CourseGroup_UsesBlankSummaryValuesWhenOptionalFieldsAreEmpty()
+    {
+        _workspace.AddCourse(MakeCourse("GA1005-01", 1));
+
+        var vm = MakeVm();
+        var group = vm.CourseGroups[0];
+
+        Assert.Equal(string.Empty, group.HeaderProfessor);
+        Assert.Equal(string.Empty, group.HeaderUnavailableRooms);
+        Assert.Equal(string.Empty, group.HeaderCoteachProfessors);
+        Assert.Equal(string.Empty, group.HeaderFixedTimes);
+        Assert.Equal("없음", group.ReadOnlyUnavailableRooms);
+        Assert.Equal("없음", group.ReadOnlyCoteachProfessors);
+        Assert.Equal("없음", group.ReadOnlyFixedTimes);
+    }
+
+    [Fact]
+    public void CourseGroup_UsesNonEmptyProfessorFromAnySection()
+    {
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Prof One" });
+        var sectionA = MakeCourse("GA1005-01", 1);
+        var sectionB = MakeCourse("GA1005-02", 2);
+        sectionA.ProfessorId = "";
+        sectionB.ProfessorId = "P1";
+        _workspace.AddCourse(sectionA);
+        _workspace.AddCourse(sectionB);
+
+        var vm = MakeVm();
+
+        var group = Assert.Single(vm.CourseGroups);
+        Assert.Equal("Prof One", group.HeaderProfessor);
+        Assert.Equal("P1", group.Sections[0].ProfessorId);
+        Assert.Equal("P1", group.Sections[1].ProfessorId);
+    }
+
+    [Fact]
+    public void SaveGroup_DoesNotPropagateEmptyProfessorOverValidSection()
+    {
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Prof One" });
+        var sectionA = MakeCourse("GA1005-01", 1);
+        var sectionB = MakeCourse("GA1005-02", 2);
+        sectionA.ProfessorId = "";
+        sectionB.ProfessorId = "P1";
+        _workspace.AddCourse(sectionA);
+        _workspace.AddCourse(sectionB);
+
+        var vm = MakeVm();
+        var group = Assert.Single(vm.CourseGroups);
+        group.Sections[0].ProfessorId = "";
+        group.Sections[1].ProfessorId = "P1";
+
+        vm.SaveGroupCommand.Execute(group);
+
+        Assert.All(_workspace.Courses, course => Assert.Equal("P1", course.ProfessorId));
+    }
+
+    [Fact]
+    public void SaveGroup_DetectsInconsistentNonEmptyProfessors()
+    {
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Prof One" });
+        _workspace.AddProfessor(new Professor { Id = "P2", Name = "Prof Two" });
+        var sectionA = MakeCourse("GA1005-01", 1);
+        var sectionB = MakeCourse("GA1005-02", 2);
+        sectionA.ProfessorId = "P1";
+        sectionB.ProfessorId = "P2";
+        _workspace.AddCourse(sectionA);
+        _workspace.AddCourse(sectionB);
+
+        var vm = MakeVm();
+        var group = Assert.Single(vm.CourseGroups);
+
+        vm.SaveGroupCommand.Execute(group);
+
+        Assert.Contains("Inconsistent ProfessorId values", vm.LastCourseGroupWarning);
+        Assert.Contains("P1", vm.LastCourseGroupWarning);
+        Assert.Contains("P2", vm.LastCourseGroupWarning);
+    }
+
+    [Fact]
+    public void FindFixedTimeOverlap_ReturnsExistingFixedCourseConflict()
+    {
+        var fixedCourse = MakeCourse("GA1005-01", 1, isFixed: true);
+        fixedCourse.Name = "기존고정";
+        fixedCourse.FixedSlots = new List<TimeSlot> { new(1, 2), new(1, 3), new(2, 1) };
+        _workspace.AddCourse(fixedCourse);
+
+        _workspace.AddCourse(MakeCourse("GA1006-01", 1));
+        var vm = MakeVm();
+        var group = vm.CourseGroups.Single(g => g.BaseId == "GA1006");
+        group.Sections[0].IsFixed = true;
+
+        var overlap = vm.FindFixedTimeOverlap(
+            group,
+            new List<IReadOnlyList<TimeSlot>>
+            {
+                new List<TimeSlot> { new(1, 2), new(1, 3), new(3, 1) }
+            });
+
+        Assert.NotNull(overlap);
+        Assert.Equal("GA1005-01", overlap!.ExistingCourseId);
+        Assert.Equal("기존고정", overlap.ExistingCourseName);
+        Assert.Equal(1, overlap.ExistingSection);
+        Assert.Equal(1, overlap.Day);
+        Assert.Equal(2, overlap.Period);
+    }
+
+    [Fact]
+    public void FindFixedTimeOverlap_ReturnsNull_WhenNoOverlapExists()
+    {
+        var fixedCourse = MakeCourse("GA1005-01", 1, isFixed: true);
+        fixedCourse.FixedSlots = new List<TimeSlot> { new(1, 2), new(1, 3), new(2, 1) };
+        _workspace.AddCourse(fixedCourse);
+
+        _workspace.AddCourse(MakeCourse("GA1006-01", 1));
+        var vm = MakeVm();
+        var group = vm.CourseGroups.Single(g => g.BaseId == "GA1006");
+        group.Sections[0].IsFixed = true;
+
+        var overlap = vm.FindFixedTimeOverlap(
+            group,
+            new List<IReadOnlyList<TimeSlot>>
+            {
+                new List<TimeSlot> { new(0, 1), new(0, 2), new(3, 1) }
+            });
+
+        Assert.Null(overlap);
+    }
+
+    [Fact]
+    public void FindFixedTimeOverlap_ReturnsConflict_WhenCandidateSectionsOverlapEachOther()
+    {
+        _workspace.AddCourse(MakeCourse("GA1004-01", 1));
+        _workspace.AddCourse(MakeCourse("GA1004-02", 2));
+        var vm = MakeVm();
+        var group = vm.CourseGroups.Single(g => g.BaseId == "GA1004");
+        group.Sections[0].IsFixed = true;
+
+        var overlap = vm.FindFixedTimeOverlap(
+            group,
+            new List<IReadOnlyList<TimeSlot>>
+            {
+                new List<TimeSlot> { new(0, 1), new(0, 2), new(1, 1) },
+                new List<TimeSlot> { new(0, 1), new(0, 2), new(2, 1) },
+            });
+
+        Assert.NotNull(overlap);
+        Assert.Equal("GA1004-02", overlap!.ExistingCourseId);
+        Assert.Equal(0, overlap.Day);
+        Assert.Equal(1, overlap.Period);
     }
 
     [Fact]
@@ -237,7 +512,7 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
-    public void SaveGroup_PropagatesIsFixed_ToAllSections()
+    public void SaveGroup_PropagatesIsFixed_ToAllSections_WithoutSplittingTheGroup()
     {
         _workspace.AddCourse(MakeCourse("GA1004-01", 1));
         _workspace.AddCourse(MakeCourse("GA1004-02", 2));
@@ -250,6 +525,8 @@ public class CourseGroupsTests : IDisposable
         var courses = _workspace.Courses.OrderBy(c => c.Id).ToList();
         Assert.True(courses[0].IsFixed);
         Assert.True(courses[1].IsFixed);
+        Assert.Single(vm.CourseGroups);
+        Assert.Equal(2, vm.CourseGroups[0].Sections.Count);
     }
 
     [Fact]
@@ -271,6 +548,93 @@ public class CourseGroupsTests : IDisposable
         Assert.Equal(new[] { "R2" }, courses[0].UnavailableRooms);
         Assert.Equal(new[] { "R2" }, courses[1].UnavailableRooms);
         Assert.False(item.IsEditing);
+    }
+
+    [Fact]
+    public void LoadForExistingTimetable_UsesSavedSnapshotForProfessorAndCourseType()
+    {
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "스냅교수" });
+        _workspace.AddCourse(new Course
+        {
+            Id = "GA1005-01",
+            Name = "저장과목",
+            Grade = 2,
+            HoursPerWeek = 3,
+            Section = 1,
+            CourseType = "전필",
+            ProfessorId = "P1",
+            BlockStructure = new List<int> { 1, 2 },
+        });
+
+        _workspace.SaveTimetable(
+            "saved",
+            new[] { new TimetableScheduler.Solver.SolutionAssignment("GA1005-01", 0, 1, "R1") },
+            snapshot: _workspace.Snapshot());
+
+        _workspace.DeleteCourse(_workspace.Courses.Single());
+        _workspace.DeleteProfessor("P1");
+
+        var vm = MakeVm();
+        var saved = _workspace.SavedTimetables.Single(t => t.Name == "saved");
+
+        vm.LoadForExistingTimetable(saved);
+
+        var group = Assert.Single(vm.CourseGroups);
+        Assert.Equal("스냅교수", group.HeaderProfessor);
+        Assert.Equal("전필", group.HeaderCourseType);
+        Assert.Equal("전필", group.Sections[0].CourseType);
+    }
+
+    [Fact]
+    public void LoadForExistingTimetable_InvalidSnapshotWithBlankProfessorAndCourseType_ShowsNoCourses()
+    {
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "라이브교수" });
+        _workspace.AddCourse(new Course
+        {
+            Id = "GA1005-01",
+            Name = "저장과목",
+            Grade = 2,
+            HoursPerWeek = 3,
+            Section = 1,
+            CourseType = "전필",
+            ProfessorId = "P1",
+            BlockStructure = new List<int> { 1, 2 },
+        });
+
+        var incompleteSnapshot = new AppData(
+            new List<Course>
+            {
+                new()
+                {
+                    Id = "GA1005-01",
+                    Name = "저장과목",
+                    Grade = 2,
+                    HoursPerWeek = 3,
+                    Section = 1,
+                    CourseType = "",
+                    ProfessorId = "",
+                    BlockStructure = new List<int> { 1, 2 },
+                },
+            },
+            new List<Professor>(),
+            new List<Room>(),
+            new List<CrossGroup>(),
+            new List<RetakeScenario>());
+
+        var saved = new SavedTimetableRecord(
+            "saved-merge",
+            "saved",
+            DateTime.Now,
+            new[] { new TimetableScheduler.Solver.SolutionAssignment("GA1005-01", 0, 1, "R1") }
+                .Select(a => new TimetableAssignmentRow(a.CourseId, a.Day, a.Period, a.RoomId))
+                .ToList(),
+            SnapshotJson: System.Text.Json.JsonSerializer.Serialize(incompleteSnapshot));
+
+        var vm = MakeVm();
+
+        vm.LoadForExistingTimetable(saved);
+
+        Assert.Empty(vm.CourseGroups);
     }
 
     [Fact]
@@ -385,7 +749,7 @@ public class CourseGroupsTests : IDisposable
         Assert.False(vm.IsSolveComplete);
         Assert.Empty(vm.RankedResults);
         Assert.Equal(0, completedCount);
-        Assert.Contains("원인", vm.StatusMessage);
+        Assert.Contains("INFEASIBLE", vm.StatusMessage);
         Assert.DoesNotContain("top", vm.StatusMessage);
     }
 }

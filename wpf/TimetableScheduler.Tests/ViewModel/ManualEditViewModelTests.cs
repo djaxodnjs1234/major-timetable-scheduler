@@ -1316,7 +1316,8 @@ public class ManualEditViewModelTests : IDisposable
                     "X-01", 2, "1", 1, 3, "R1",
                     "Y-01", 2, "1", 0, 1, "R2",
                     "HC11_ONLY_EXCEPTION"),
-            });
+            },
+            System.Text.Json.JsonSerializer.Serialize(_ws.Snapshot()));
 
         vm.LoadFromSavedTimetable(saved);
 
@@ -1348,7 +1349,8 @@ public class ManualEditViewModelTests : IDisposable
                     "X-01", 2, "1", 0, 1, "R1",
                     "Y-01", 2, "1", 0, 1, "R2",
                     "HC11_ONLY_EXCEPTION"),
-            });
+            },
+            System.Text.Json.JsonSerializer.Serialize(_ws.Snapshot()));
 
         vm.LoadFromSavedTimetable(saved);
 
@@ -1379,7 +1381,8 @@ public class ManualEditViewModelTests : IDisposable
                     "X-01", 2, "1", 1, 3, "R1",
                     "Y-01", 2, "1", 2, 4, "R2",
                     "STALE_POLICY_NAME"),
-            });
+            },
+            System.Text.Json.JsonSerializer.Serialize(_ws.Snapshot()));
         vm.LoadFromSavedTimetable(saved);
         var selected = vm.Grid.Cells.First(c => c.Assignment.CourseId == "X-01");
 
@@ -1410,7 +1413,8 @@ public class ManualEditViewModelTests : IDisposable
                     "X-01", 2, "1", 0, 1, "R1",
                     "Y-01", 2, "1", 0, 1, "R2",
                     "HC11_ONLY_EXCEPTION"),
-            });
+            },
+            System.Text.Json.JsonSerializer.Serialize(_ws.Snapshot()));
 
         vm.LoadFromSavedTimetable(saved);
 
@@ -1462,7 +1466,8 @@ public class ManualEditViewModelTests : IDisposable
                     "X-01", 2, "1", 0, 1, "R1",
                     "Y-01", 2, "1", 0, 1, "R2",
                     "UNKNOWN"),
-            });
+            },
+            System.Text.Json.JsonSerializer.Serialize(_ws.Snapshot()));
 
         vm.LoadFromSavedTimetable(saved);
 
@@ -1495,7 +1500,8 @@ public class ManualEditViewModelTests : IDisposable
                     "X-01", 2, "1", 0, 1, "R1",
                     "Y-01", 2, "1", 0, 1, "R2",
                     "HC11_ONLY_EXCEPTION"),
-            });
+            },
+            System.Text.Json.JsonSerializer.Serialize(_ws.Snapshot()));
 
         vm.LoadFromSavedTimetable(saved);
 
@@ -1525,7 +1531,8 @@ public class ManualEditViewModelTests : IDisposable
                     "X-01", 2, "1", 0, 1, "R1",
                     "Y-01", 2, "1", 0, 1, "R2",
                     "HC11_ONLY_EXCEPTION"),
-            });
+            },
+            System.Text.Json.JsonSerializer.Serialize(_ws.Snapshot()));
 
         vm.LoadFromSavedTimetable(saved);
         vm.SaveName = "크로스재저장";
@@ -1535,6 +1542,89 @@ public class ManualEditViewModelTests : IDisposable
         Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.GradeConflict);
         Assert.Contains("저장 완료", vm.StatusMessage);
         Assert.Contains(_ws.SavedTimetables, t => t.Name == "크로스재저장");
+    }
+
+    [Fact]
+    public void LoadFromSavedTimetable_ThenSave_PreservesSnapshotProfessorAndCourseType()
+    {
+        _ws.UpdateCourse(new Course
+        {
+            Id = "X-01",
+            Name = "테스트",
+            Grade = 2,
+            HoursPerWeek = 2,
+            ProfessorId = "P1",
+            CourseType = "전필",
+        });
+
+        var savedSnapshot = _ws.Snapshot();
+        var saved = new TimetableScheduler.Data.SavedTimetableRecord(
+            "saved-snapshot",
+            "원본저장본",
+            DateTime.Now,
+            new[] { new TimetableScheduler.Data.TimetableAssignmentRow("X-01", 0, 1, "R1") },
+            Array.Empty<TimetableScheduler.Data.SavedManualCrossLinkRow>(),
+            System.Text.Json.JsonSerializer.Serialize(savedSnapshot));
+
+        _ws.DeleteProfessor("P1");
+        _ws.UpdateCourse(new Course
+        {
+            Id = "X-01",
+            Name = "테스트",
+            Grade = 2,
+            HoursPerWeek = 2,
+            ProfessorId = "",
+            CourseType = "",
+        });
+
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSavedTimetable(saved);
+        vm.SaveName = "재저장본";
+
+        vm.SaveTimetableCommand.Execute(null);
+
+        var resaved = _ws.SavedTimetables.Single(t => t.Name == "재저장본");
+        var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(resaved.SnapshotJson!)!;
+
+        Assert.Equal("전필", snapshot.Courses.Single(c => c.Id == "X-01").CourseType);
+        Assert.Equal("P1", snapshot.Courses.Single(c => c.Id == "X-01").ProfessorId);
+        Assert.Equal("교수", snapshot.Professors.Single(p => p.Id == "P1").Name);
+    }
+
+    [Fact]
+    public void LoadFromSavedTimetable_InvalidSnapshotWithBlankProfessorAndCourseType_ShowsNoCells()
+    {
+        var incompleteSnapshot = new AppData(
+            new List<Course>
+            {
+                new()
+                {
+                    Id = "X-01",
+                    Name = "테스트",
+                    Grade = 2,
+                    HoursPerWeek = 2,
+                    ProfessorId = "",
+                    CourseType = "",
+                },
+            },
+            new List<Professor>(),
+            new List<Room>(),
+            new List<CrossGroup>(),
+            new List<RetakeScenario>());
+
+        var saved = new TimetableScheduler.Data.SavedTimetableRecord(
+            "saved-blank-snapshot",
+            "빈스냅샷저장본",
+            DateTime.Now,
+            new[] { new TimetableScheduler.Data.TimetableAssignmentRow("X-01", 0, 1, "R1") },
+            Array.Empty<TimetableScheduler.Data.SavedManualCrossLinkRow>(),
+            System.Text.Json.JsonSerializer.Serialize(incompleteSnapshot));
+
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+
+        vm.LoadFromSavedTimetable(saved);
+
+        Assert.Empty(vm.Grid.Cells);
     }
 
     [Fact]
@@ -1558,7 +1648,8 @@ public class ManualEditViewModelTests : IDisposable
                     "X-01", 2, "1", 0, 1, "R1",
                     "Y-01", 2, "1", 0, 1, "R1",
                     "HC11_ONLY_EXCEPTION"),
-            });
+            },
+            System.Text.Json.JsonSerializer.Serialize(_ws.Snapshot()));
 
         vm.LoadFromSavedTimetable(saved);
 
@@ -1589,7 +1680,8 @@ public class ManualEditViewModelTests : IDisposable
                     "X-01", 2, "1", 0, 1, "R1",
                     "Y-01", 2, "1", 0, 1, "R2",
                     "HC11_ONLY_EXCEPTION"),
-            });
+            },
+            System.Text.Json.JsonSerializer.Serialize(_ws.Snapshot()));
 
         vm.LoadFromSavedTimetable(saved);
 
@@ -1631,7 +1723,8 @@ public class ManualEditViewModelTests : IDisposable
                     "DS-A", 2, "1", 0, 1, "R1",
                     "Y-01", 2, "1", 0, 1, "R2",
                     "HC11_ONLY_EXCEPTION"),
-            });
+            },
+            System.Text.Json.JsonSerializer.Serialize(_ws.Snapshot()));
 
         vm.LoadFromSavedTimetable(saved);
 
@@ -1661,7 +1754,8 @@ public class ManualEditViewModelTests : IDisposable
                     "X-01", 2, "1", 0, 1, "R1",
                     "Y-01", 2, "1", 0, 1, "R2",
                     "HC11_ONLY_EXCEPTION"),
-            });
+            },
+            System.Text.Json.JsonSerializer.Serialize(_ws.Snapshot()));
         vm.LoadFromSavedTimetable(saved);
         var selected = vm.Grid.Cells.First(c => c.Assignment.CourseId == "X-01");
         vm.HandleCellClick(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);

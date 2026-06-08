@@ -65,13 +65,10 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _results.EditSelectedRequested += (_, _) =>
         {
             if (_results.SelectedSolution != null)
-            {
-                if (_results.SessionSnapshot != null)
-                    _manual.LoadFromSnapshot(
-                        _results.SessionSnapshot, _results.SelectedSolution, "");
-                else
-                    _manual.LoadFromSolution(_results.SelectedSolution);
-            }
+                _manual.LoadFromSnapshot(
+                    _results.CurrentSnapshot,
+                    _results.SelectedSolution,
+                    "");
             _manualBackTarget = _results;
             NavigateTo(_manual);
         };
