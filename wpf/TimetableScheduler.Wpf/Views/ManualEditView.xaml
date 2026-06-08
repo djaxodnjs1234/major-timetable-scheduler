@@ -147,8 +147,13 @@
             <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="1" Margin="0,8,0,0">
                 <TabControl>
                     <TabItem Header="통합 시간표">
-                        <ctrl:UnifiedTimetableControl x:Name="GridControl"
-                                                      DataContext="{Binding Grid}" />
+                        <DockPanel>
+                            <ctrl:GradeLegendControl DockPanel.Dock="Top"
+                                                     HorizontalAlignment="Right"
+                                                     Margin="0,6,12,4" />
+                            <ctrl:UnifiedTimetableControl x:Name="GridControl"
+                                                          DataContext="{Binding Grid}" />
+                        </DockPanel>
                     </TabItem>
                     <TabItem Header="학년별">
                         <TabControl ItemsSource="{Binding GradeViews}">
@@ -159,7 +164,12 @@
                             </TabControl.ItemTemplate>
                             <TabControl.ContentTemplate>
                                 <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
-                                    <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                    <DockPanel>
+                                        <ctrl:GradeLegendControl DockPanel.Dock="Top"
+                                                                 HorizontalAlignment="Right"
+                                                                 Margin="0,6,12,4" />
+                                        <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                    </DockPanel>
                                 </DataTemplate>
                             </TabControl.ContentTemplate>
                         </TabControl>
@@ -173,7 +183,12 @@
                             </TabControl.ItemTemplate>
                             <TabControl.ContentTemplate>
                                 <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
-                                    <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                    <DockPanel>
+                                        <ctrl:GradeLegendControl DockPanel.Dock="Top"
+                                                                 HorizontalAlignment="Right"
+                                                                 Margin="0,6,12,4" />
+                                        <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                    </DockPanel>
                                 </DataTemplate>
                             </TabControl.ContentTemplate>
                         </TabControl>
@@ -187,7 +202,12 @@
                             </TabControl.ItemTemplate>
                             <TabControl.ContentTemplate>
                                 <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
-                                    <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                    <DockPanel>
+                                        <ctrl:GradeLegendControl DockPanel.Dock="Top"
+                                                                 HorizontalAlignment="Right"
+                                                                 Margin="0,6,12,4" />
+                                        <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                    </DockPanel>
                                 </DataTemplate>
                             </TabControl.ContentTemplate>
                         </TabControl>
@@ -268,13 +288,17 @@
                                                FontWeight="Bold" Margin="0,0,0,4" />
                                     <TextBlock Text="{Binding SelectedMoveStateText}"
                                                FontSize="12" FontWeight="Bold" />
-                                    <TextBlock Text="{Binding SelectedBlockedReasonText, StringFormat=이동 불가 사유: {0}}"
-                                               FontSize="12" Foreground="#BA1A1A" TextWrapping="Wrap" />
-                                    <TextBlock Text="{Binding SelectedWarningReasonText, StringFormat=주의 사유: {0}}"
-                                               FontSize="12" Foreground="#A05A00" TextWrapping="Wrap"
-                                               Margin="0,0,0,6" />
-                                    <TextBlock Text="빨간 칸도 확인 팝업에서 승인하면 강제 이동할 수 있습니다. Error가 남으면 저장은 차단됩니다."
-                                               FontSize="11" Foreground="#666" TextWrapping="Wrap" />
+                                    <StackPanel Visibility="{Binding HasAnyConstraintReasons, Converter={StaticResource BoolToVisibility}}">
+                                        <TextBlock Text="{Binding SelectedBlockedReasonText, StringFormat=이동 불가 사유: {0}}"
+                                                   FontSize="12" Foreground="#BA1A1A" TextWrapping="Wrap"
+                                                   Visibility="{Binding HasBlockingReasons, Converter={StaticResource BoolToVisibility}}" />
+                                        <TextBlock Text="{Binding SelectedWarningReasonText, StringFormat=주의 사유: {0}}"
+                                                   FontSize="12" Foreground="#A05A00" TextWrapping="Wrap"
+                                                   Margin="0,0,0,6"
+                                                   Visibility="{Binding HasWarningReasons, Converter={StaticResource BoolToVisibility}}" />
+                                        <TextBlock Text="빨간 칸도 확인 팝업에서 승인하면 강제 이동할 수 있습니다. Error가 남으면 저장은 차단됩니다."
+                                                   FontSize="11" Foreground="#666" TextWrapping="Wrap" />
+                                    </StackPanel>
                                 </StackPanel>
 
                                 <StackPanel Margin="0,0,0,8">
@@ -292,14 +316,36 @@
                                     <StackPanel>
                                         <TextBlock Text="강의실 변경" FontSize="10" Foreground="#999"
                                                    FontWeight="Bold" Margin="0,0,0,4" />
+                                        <TextBlock Text="{Binding SelectedRoomsText}"
+                                                   FontSize="13"
+                                                   Margin="0,0,0,4"
+                                                   Visibility="{Binding HasSingleAssignedRoomDisplay, Converter={StaticResource BoolToVisibility}}" />
                                         <ComboBox ItemsSource="{Binding AvailableRoomIds}"
-                                                  SelectedItem="{Binding NewRoomId, Mode=TwoWay}"
-                                                  Margin="0,0,0,12" Padding="6,4" />
+                                                  SelectedItem="{Binding NewRoomId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                  IsEditable="False"
+                                                  Margin="0,0,0,12" Padding="6,4"
+                                                  Visibility="{Binding HasSingleAssignedRoomChangeUi, Converter={StaticResource BoolToVisibility}}" />
+
+                                        <StackPanel Visibility="{Binding HasMultipleAssignedRooms, Converter={StaticResource BoolToVisibility}}">
+                                            <TextBlock Text="교체할 강의실" FontSize="11" Foreground="#666"
+                                                       Margin="0,0,0,4" />
+                                            <ComboBox ItemsSource="{Binding AssignedRoomsForSelectedAssignment}"
+                                                      SelectedItem="{Binding SelectedOldRoomId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      IsEditable="False"
+                                                      Margin="0,0,0,8" Padding="6,4" />
+                                            <TextBlock Text="새 강의실" FontSize="11" Foreground="#666"
+                                                       Margin="0,0,0,4" />
+                                            <ComboBox ItemsSource="{Binding ReplacementRoomCandidates}"
+                                                      SelectedItem="{Binding SelectedReplacementRoomId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      IsEditable="False"
+                                                      Margin="0,0,0,12" Padding="6,4" />
+                                        </StackPanel>
 
                                         <Button Content="✓ Apply Changes"
                                                 Command="{Binding ApplyRoomChangeCommand}"
                                                 Height="34"
-                                                Padding="10,0" FontWeight="Bold">
+                                                Padding="10,0" FontWeight="Bold"
+                                                Visibility="{Binding HasRoomChangeApplyUi, Converter={StaticResource BoolToVisibility}}">
                                             <Button.Style>
                                                 <Style TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
                                                     <Setter Property="Background" Value="#005FB8" />
@@ -307,6 +353,12 @@
                                                 </Style>
                                             </Button.Style>
                                         </Button>
+                                        <TextBlock Text="{Binding RoomChangeStatusMessage}"
+                                                   FontSize="12"
+                                                   Foreground="#BA1A1A"
+                                                   TextWrapping="Wrap"
+                                                   Margin="0,8,0,0"
+                                                   Visibility="{Binding HasRoomChangeStatusMessage, Converter={StaticResource BoolToVisibility}}" />
                                     </StackPanel>
                                 </Border>
                             </StackPanel>

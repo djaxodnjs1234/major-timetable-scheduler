@@ -13,12 +13,16 @@ public partial class TimetableGridControl : UserControl
     private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
     private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
     private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC));
+    private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
+    private static readonly Brush CourseBlockBorder = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55));
 
     static TimetableGridControl()
     {
         LunchBg.Freeze();
         HeaderBg.Freeze();
         CellBorder.Freeze();
+        DayBoundaryBorder.Freeze();
+        CourseBlockBorder.Freeze();
     }
 
     public TimetableGridControl()
@@ -90,8 +94,8 @@ public partial class TimetableGridControl : UserControl
 
                 var border = new Border
                 {
-                    BorderBrush = CellBorder,
-                    BorderThickness = new Thickness(0.5),
+                    BorderBrush = CourseBlockBorder,
+                    BorderThickness = new Thickness(1.25),
                     Background = GradeToBrushConverter.BrushFor(cellVm.Items[0].Grade),
                     Child = stack,
                 };
@@ -104,6 +108,9 @@ public partial class TimetableGridControl : UserControl
                     covered.Add((row + k, col));
             }
         }
+
+        for (int col = 2; col <= 6; col++)
+            AddDayBoundary(col);
     }
 
     private static Border MakeLabel(string text, int row, int col, Brush bg)
@@ -177,5 +184,21 @@ public partial class TimetableGridControl : UserControl
                 Foreground = Brushes.DarkSlateGray,
             });
         return panel;
+    }
+
+    private void AddDayBoundary(int col)
+    {
+        var border = new Border
+        {
+            BorderBrush = DayBoundaryBorder,
+            BorderThickness = new Thickness(2, 0, 0, 0),
+            Background = Brushes.Transparent,
+            IsHitTestVisible = false,
+        };
+        Grid.SetRow(border, 0);
+        Grid.SetColumn(border, col);
+        Grid.SetRowSpan(border, BodyGrid.RowDefinitions.Count);
+        Panel.SetZIndex(border, 20);
+        BodyGrid.Children.Add(border);
     }
 }

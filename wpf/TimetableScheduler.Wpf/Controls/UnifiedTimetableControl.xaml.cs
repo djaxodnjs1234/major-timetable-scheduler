@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using System.Windows.Threading;
 using TimetableScheduler.ViewModel.Grid;
 using TimetableScheduler.Wpf.Converters;
 
@@ -13,17 +14,29 @@ public partial class UnifiedTimetableControl : UserControl
     private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
     private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
     private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC));
+    private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
+    private static readonly Brush CourseBlockBorder = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55));
     private static readonly Brush MoveAllowedBg = new SolidColorBrush(Color.FromRgb(0xE8, 0xF5, 0xE9));
     private static readonly Brush MoveWarningBg = new SolidColorBrush(Color.FromRgb(0xFF, 0xF8, 0xE1));
     private static readonly Brush MoveBlockedBg = new SolidColorBrush(Color.FromRgb(0xFD, 0xE7, 0xE9));
     private static readonly Brush MoveBlockedBorder = new SolidColorBrush(Color.FromRgb(0xBA, 0x1A, 0x1A));
     private static readonly Brush SelectedBorder = new SolidColorBrush(Color.FromRgb(0x00, 0x5F, 0xB8));
 
+    [Flags]
+    private enum HoverBadgeKind
+    {
+        None = 0,
+        Swap = 1,
+        Cross = 2,
+    }
+
     static UnifiedTimetableControl()
     {
         LunchBg.Freeze();
         HeaderBg.Freeze();
         CellBorder.Freeze();
+        DayBoundaryBorder.Freeze();
+        CourseBlockBorder.Freeze();
         MoveAllowedBg.Freeze();
         MoveWarningBg.Freeze();
         MoveBlockedBg.Freeze();
@@ -62,17 +75,29 @@ public partial class UnifiedTimetableControl : UserControl
     public event EventHandler<CellClickedEventArgs>? CellClicked;
     public event EventHandler<CellClickedEventArgs>? CrossAddRequested;
     public event EventHandler<CellClickedEventArgs>? SwapRequested;
+    public event EventHandler<CellDropMoveEventArgs>? CrossDropRequested;
+    public event EventHandler<CellDropMoveEventArgs>? SwapDropRequested;
     public event EventHandler<CellDropMoveEventArgs>? DropMoveRequested;
 
     public bool EnableCrossHover { get; set; }
     public Func<CellClickedEventArgs, CrossHoverState>? CrossHoverEvaluator { get; set; }
+    public Func<CellDropMoveEventArgs, CrossHoverState>? CrossDropHoverEvaluator { get; set; }
     public bool EnableSwapHover { get; set; }
     public Func<CellClickedEventArgs, SwapHoverState>? SwapHoverEvaluator { get; set; }
+    public Func<CellDropMoveEventArgs, SwapHoverState>? SwapDropHoverEvaluator { get; set; }
     public bool EnableDragDropMove { get; set; }
     public Func<CellDropMoveEventArgs, bool>? DropMoveEvaluator { get; set; }
 
     private Point? _dragStartPoint;
     private CellClickedEventArgs? _dragSource;
+    private bool _suppressNextClick;
+    private Border? _dragHoverBorder;
+    private CellClickedEventArgs? _dragHoverTarget;
+    private HoverBadgeKind _dragHoverBadgeKind;
+    private Border? _activeBadgeBorder;
+    private CellClickedEventArgs? _activeBadgeTarget;
+    private HoverBadgeKind _activeBadgeKind;
+    private bool _activeBadgeIsDrag;
 
     public UnifiedTimetableControl()
     {
@@ -98,6 +123,8 @@ public partial class UnifiedTimetableControl : UserControl
 
     private void Rebuild(UnifiedTimetableViewModel vm)
     {
+        ClearAllCrossSwapBadges();
+        ClearStaleDragState();
         RootGrid.Children.Clear();
         RootGrid.RowDefinitions.Clear();
         RootGrid.ColumnDefinitions.Clear();
@@ -139,6 +166,7 @@ public partial class UnifiedTimetableControl : UserControl
         {
             int startCol = dayColStart[dg.Day];
             AddBorder(DayName(dg.Day), 0, startCol, 1, dg.TotalWidth, HeaderBg, 12, FontWeights.Bold);
+            AddDayBoundary(startCol);
 
             int sub = startCol;
             foreach (var col in dg.Grades)
@@ -269,18 +297,21 @@ public partial class UnifiedTimetableControl : UserControl
     private static Border MakeChipBorder(CellAssignment a, Brush bg, string? crossLabel)
     {
         var panel = new StackPanel { Margin = new Thickness(1) };
+        var nameText = string.IsNullOrEmpty(a.SectionLabel)
+            ? a.CourseName
+            : $"{a.CourseName}·{a.SectionLabel}";
         panel.Children.Add(new TextBlock
         {
-            Text = a.TitleLabel,
+            Text = nameText,
             FontSize = 9,
             FontWeight = FontWeights.Bold,
             TextAlignment = TextAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
         });
-        if (!string.IsNullOrWhiteSpace(a.ProfessorLine))
+        if (!string.IsNullOrEmpty(a.ProfessorLabel))
             panel.Children.Add(new TextBlock
             {
-                Text = a.ProfessorLine,
+                Text = a.ProfessorLabel,
                 FontSize = 8,
                 TextAlignment = TextAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,
@@ -296,12 +327,28 @@ public partial class UnifiedTimetableControl : UserControl
             });
         return new Border
         {
-            BorderBrush = CellBorder,
-            BorderThickness = new Thickness(0.5),
+            BorderBrush = CourseBlockBorder,
+            BorderThickness = new Thickness(1.25),
             Background = bg,
             Child = panel,
             ToolTip = NullIfBlank(crossLabel) is { } label ? $"크로스: {label}" : null,
         };
+    }
+
+    private void AddDayBoundary(int col)
+    {
+        var border = new Border
+        {
+            BorderBrush = DayBoundaryBorder,
+            BorderThickness = new Thickness(2, 0, 0, 0),
+            Background = Brushes.Transparent,
+            IsHitTestVisible = false,
+        };
+        Grid.SetRow(border, 0);
+        Grid.SetColumn(border, col);
+        Grid.SetRowSpan(border, RootGrid.RowDefinitions.Count);
+        Panel.SetZIndex(border, 20);
+        RootGrid.Children.Add(border);
     }
 
     private Border MakeEmptyClickableBorder(UnifiedTimetableViewModel vm, int day, int period, int grade, int subColumnIdx)
@@ -341,7 +388,7 @@ public partial class UnifiedTimetableControl : UserControl
     private void OnDragSourceMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
         _dragStartPoint = e.GetPosition(this);
-        _dragSource = TryBuildArgs(sender);
+        _dragSource = TryBuildCurrentArgs(sender, allowEmpty: false);
     }
 
     private void OnDragSourceMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
@@ -350,7 +397,8 @@ public partial class UnifiedTimetableControl : UserControl
             || e.LeftButton != System.Windows.Input.MouseButtonState.Pressed
             || _dragStartPoint is not Point start
             || _dragSource == null
-            || _dragSource.Assignment == null)
+            || _dragSource.Assignment == null
+            || !IsCurrentCellArgs(_dragSource))
             return;
 
         var current = e.GetPosition(this);
@@ -360,8 +408,7 @@ public partial class UnifiedTimetableControl : UserControl
 
         var data = new DataObject(DragDataFormat, _dragSource);
         DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
-        _dragStartPoint = null;
-        _dragSource = null;
+        ClearDragState();
     }
 
     private void OnCellDragOver(object sender, DragEventArgs e)
@@ -370,26 +417,65 @@ public partial class UnifiedTimetableControl : UserControl
         if (EnableDragDropMove
             && e.Data.GetDataPresent(DragDataFormat)
             && e.Data.GetData(DragDataFormat) is CellClickedEventArgs source
-            && TryBuildArgs(sender) is { } target)
+            && IsCurrentCellArgs(source)
+            && TryBuildCurrentArgs(sender, allowEmpty: true) is { } target)
         {
-            var canDrop = DropMoveEvaluator?.Invoke(new CellDropMoveEventArgs(source, target)) ?? true;
-            e.Effects = canDrop ? DragDropEffects.Move : DragDropEffects.None;
+            var moveArgs = new CellDropMoveEventArgs(source, target);
+            var canDrop = DropMoveEvaluator?.Invoke(moveArgs) ?? true;
+            var crossState = source.Assignment != null && target.Assignment != null && !IsSameCellArgs(source, target)
+                ? CrossDropHoverEvaluator?.Invoke(moveArgs) ?? CrossHoverState.Hidden()
+                : CrossHoverState.Hidden();
+            var swapState = source.Assignment != null && target.Assignment != null && !IsSameCellArgs(source, target)
+                ? SwapDropHoverEvaluator?.Invoke(moveArgs) ?? SwapHoverState.Hidden()
+                : SwapHoverState.Hidden();
+
+            if (sender is Border border
+                && source.Assignment != null
+                && target.Assignment != null)
+            {
+                if (IsSameCellArgs(source, target))
+                    ClearActiveBadge();
+                else
+                    RefreshDragHoverBadges(border, target, crossState, swapState);
+            }
+            else
+            {
+                ClearActiveBadge();
+            }
+
+            e.Effects = canDrop || crossState.CanCreate || swapState.CanSwap
+                ? DragDropEffects.Move
+                : DragDropEffects.None;
+        }
+        else
+        {
+            ClearActiveBadge();
         }
         e.Handled = true;
     }
 
     private void OnCellDrop(object sender, DragEventArgs e)
     {
-        if (EnableDragDropMove
-            && e.Data.GetDataPresent(DragDataFormat)
-            && e.Data.GetData(DragDataFormat) is CellClickedEventArgs source
-            && TryBuildArgs(sender) is { } target)
+        try
         {
-            DropMoveRequested?.Invoke(this, new CellDropMoveEventArgs(source, target));
-            e.Handled = true;
+            if (EnableDragDropMove
+                && e.Data.GetDataPresent(DragDataFormat)
+                && e.Data.GetData(DragDataFormat) is CellClickedEventArgs source
+                && IsCurrentCellArgs(source)
+                && TryBuildCurrentArgs(sender, allowEmpty: true) is { } target)
+            {
+                DropMoveRequested?.Invoke(this, new CellDropMoveEventArgs(source, target));
+                _suppressNextClick = true;
+                Dispatcher.BeginInvoke(
+                    () => _suppressNextClick = false,
+                    DispatcherPriority.Background);
+                e.Handled = true;
+            }
         }
-        _dragStartPoint = null;
-        _dragSource = null;
+        finally
+        {
+            ClearDragState();
+        }
     }
 
     private static CellClickedEventArgs? TryBuildArgs(object sender)
@@ -399,21 +485,133 @@ public partial class UnifiedTimetableControl : UserControl
         return new CellClickedEventArgs(tup.Item1, tup.Item2, tup.Item3, tup.Item4, tup.Item5);
     }
 
+    private CellClickedEventArgs? TryBuildCurrentArgs(object sender, bool allowEmpty)
+    {
+        var args = TryBuildArgs(sender);
+        if (args == null) return null;
+        if (!allowEmpty && args.Assignment == null) return null;
+        return IsCurrentCellArgs(args) ? args : null;
+    }
+
+    private bool IsCurrentCellArgs(CellClickedEventArgs args)
+    {
+        if (DataContext is not UnifiedTimetableViewModel vm) return false;
+        var current = vm.Cells.FirstOrDefault(c =>
+            c.Day == args.Day
+            && c.Period == args.Period
+            && c.Grade == args.Grade
+            && c.SubColumnIdx == args.SubColumnIdx);
+
+        if (args.Assignment == null)
+            return current == null && IsRenderedEmptySlot(vm, args);
+        if (current == null) return false;
+
+        var assignment = current.Assignment;
+        return assignment.CourseId == args.Assignment.CourseId
+            && assignment.RowSpan == args.Assignment.RowSpan
+            && assignment.Rooms.SequenceEqual(args.Assignment.Rooms);
+    }
+
+    private static bool IsRenderedEmptySlot(UnifiedTimetableViewModel vm, CellClickedEventArgs args)
+    {
+        var dayGroup = vm.DayGroups.FirstOrDefault(dg => dg.Day == args.Day);
+        if (dayGroup == null) return false;
+        var gradeColumn = dayGroup.Grades.FirstOrDefault(g => g.Grade == args.Grade);
+        return gradeColumn != null
+            && args.SubColumnIdx >= 0
+            && args.SubColumnIdx < gradeColumn.Width;
+    }
+
+    private void ClearStaleDragState()
+    {
+        if (_dragSource != null && !IsCurrentCellArgs(_dragSource))
+            ClearDragState();
+    }
+
+    private void ClearDragState()
+    {
+        ClearActiveBadge();
+        _dragStartPoint = null;
+        _dragSource = null;
+    }
+
     private void OnCellClicked(object sender, System.Windows.Input.MouseButtonEventArgs e)
     {
-        if (sender is not Border b || b.Tag is not ValueTuple<int, int, int, int, CellAssignment?> tup) return;
-        CellClicked?.Invoke(this, new CellClickedEventArgs(tup.Item1, tup.Item2, tup.Item3, tup.Item4, tup.Item5));
+        if (_suppressNextClick)
+        {
+            _suppressNextClick = false;
+            e.Handled = true;
+            return;
+        }
+
+        var args = TryBuildCurrentArgs(sender, allowEmpty: true);
+        if (args == null) return;
+        CellClicked?.Invoke(this, args);
         e.Handled = true;
     }
 
     private void OnCourseMouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
     {
         if (sender is not Border border
-            || border.Tag is not ValueTuple<int, int, int, int, CellAssignment?> tup
-            || tup.Item5 == null)
+            || TryBuildCurrentArgs(sender, allowEmpty: false) is not { } args
+            || args.Assignment == null)
             return;
 
-        // Wrap StackPanel in a Grid for badge overlay if not already done
+        RefreshCrossSwapBadges(
+            border,
+            args,
+            EnableCrossHover ? CrossHoverEvaluator?.Invoke(args) ?? CrossHoverState.Hidden() : CrossHoverState.Hidden(),
+            EnableSwapHover ? SwapHoverEvaluator?.Invoke(args) ?? SwapHoverState.Hidden() : SwapHoverState.Hidden(),
+            isDrag: false);
+    }
+
+    private void RefreshDragHoverBadges(
+        Border border,
+        CellClickedEventArgs target,
+        CrossHoverState crossState,
+        SwapHoverState swapState)
+    {
+        var kind = BadgeKind(crossState, swapState);
+        if (kind == HoverBadgeKind.None)
+        {
+            ClearActiveBadge();
+            return;
+        }
+
+        if (IsSameActiveBadge(border, target, kind, isDrag: true))
+            return;
+
+        RefreshCrossSwapBadges(border, target, crossState, swapState, isDrag: true);
+    }
+
+    private static HoverBadgeKind BadgeKind(CrossHoverState crossState, SwapHoverState swapState)
+    {
+        var kind = HoverBadgeKind.None;
+        if (swapState.CanSwap) kind |= HoverBadgeKind.Swap;
+        if (crossState.CanCreate) kind |= HoverBadgeKind.Cross;
+        return kind;
+    }
+
+    private void RefreshCrossSwapBadges(
+        Border border,
+        CellClickedEventArgs args,
+        CrossHoverState crossState,
+        SwapHoverState swapState,
+        bool isDrag)
+    {
+        if (args.Assignment == null) return;
+        var kind = BadgeKind(crossState, swapState);
+        if (kind == HoverBadgeKind.None)
+        {
+            ClearActiveBadge();
+            return;
+        }
+
+        if (IsSameActiveBadge(border, args, kind, isDrag))
+            return;
+
+        ClearActiveBadge();
+
         Grid overlay;
         if (border.Child is Grid g)
         {
@@ -429,13 +627,6 @@ public partial class UnifiedTimetableControl : UserControl
         }
         else return;
 
-        var args = new CellClickedEventArgs(tup.Item1, tup.Item2, tup.Item3, tup.Item4, tup.Item5);
-        var crossState = EnableCrossHover
-            ? CrossHoverEvaluator?.Invoke(args) ?? CrossHoverState.Hidden()
-            : CrossHoverState.Hidden();
-        var swapState = EnableSwapHover
-            ? SwapHoverEvaluator?.Invoke(args) ?? SwapHoverState.Hidden()
-            : SwapHoverState.Hidden();
         border.ToolTip = NullIfBlank(crossState.CanCreate ? crossState.Reason : swapState.Reason ?? crossState.Reason);
 
         if (swapState.CanSwap)
@@ -456,9 +647,23 @@ public partial class UnifiedTimetableControl : UserControl
                 BorderThickness = new Thickness(0),
                 ToolTip = NullIfBlank(swapState.Reason),
                 Tag = args,
+                AllowDrop = true,
             };
+            swapBadge.DragOver += OnSwapBadgeDragOver;
+            swapBadge.Drop += OnSwapBadgeDrop;
             swapBadge.Click += OnSwapBadgeClick;
             overlay.Children.Add(swapBadge);
+        }
+
+        _activeBadgeBorder = border;
+        _activeBadgeTarget = args;
+        _activeBadgeKind = kind;
+        _activeBadgeIsDrag = isDrag;
+        if (isDrag)
+        {
+            _dragHoverBorder = border;
+            _dragHoverTarget = args;
+            _dragHoverBadgeKind = kind;
         }
 
         if (!crossState.CanCreate) return;
@@ -479,16 +684,49 @@ public partial class UnifiedTimetableControl : UserControl
             BorderThickness = new Thickness(0),
             ToolTip = NullIfBlank(crossState.Reason),
             Tag = args,
+            AllowDrop = true,
         };
+        badge.DragOver += OnCrossBadgeDragOver;
+        badge.Drop += OnCrossBadgeDrop;
         badge.Click += OnCrossBadgeClick;
         overlay.Children.Add(badge);
     }
 
-    private static void OnCourseMouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
+    private void OnCourseMouseLeave(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        if (sender is not Border border || border.Child is not Grid overlay) return;
+        if (_dragSource != null)
+            return;
+
+        ClearActiveBadge();
+    }
+
+    private bool IsSameActiveBadge(Border border, CellClickedEventArgs target, HoverBadgeKind kind, bool isDrag)
+    {
+        return ReferenceEquals(_activeBadgeBorder, border)
+            && _activeBadgeTarget != null
+            && IsSameCellArgs(_activeBadgeTarget, target)
+            && _activeBadgeKind == kind
+            && _activeBadgeIsDrag == isDrag;
+    }
+
+    private void ClearActiveBadge()
+    {
+        if (_activeBadgeBorder != null)
+            ClearCrossSwapBadges(_activeBadgeBorder);
+        ClearAllCrossSwapBadges();
+        _activeBadgeBorder = null;
+        _activeBadgeTarget = null;
+        _activeBadgeKind = HoverBadgeKind.None;
+        _activeBadgeIsDrag = false;
+        _dragHoverBorder = null;
+        _dragHoverTarget = null;
+        _dragHoverBadgeKind = HoverBadgeKind.None;
+    }
+
+    private static void ClearCrossSwapBadges(Border border)
+    {
+        if (border.Child is not Grid overlay) return;
         RemoveHoverBadges(overlay);
-        // Unwrap back to StackPanel when no badge remains
         if (overlay.Children.Count == 1 && overlay.Children[0] is StackPanel sp)
         {
             overlay.Children.Clear();
@@ -498,16 +736,139 @@ public partial class UnifiedTimetableControl : UserControl
 
     private void OnCrossBadgeClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button button || button.Tag is not CellClickedEventArgs args) return;
+        if (sender is not Button button
+            || !TryGetCurrentBadgeArgs(button, out var args))
+            return;
         CrossAddRequested?.Invoke(this, args);
         e.Handled = true;
     }
 
     private void OnSwapBadgeClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button button || button.Tag is not CellClickedEventArgs args) return;
+        if (sender is not Button button
+            || !TryGetCurrentBadgeArgs(button, out var args))
+            return;
         SwapRequested?.Invoke(this, args);
         e.Handled = true;
+    }
+
+    private void OnCrossBadgeDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = CanDropOnCrossBadge(sender, e) ? DragDropEffects.Move : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnCrossBadgeDrop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        try
+        {
+            if (CanDropOnCrossBadge(sender, e)
+                && TryGetCurrentDragSource(e, out var source)
+                && sender is Button button
+                && TryGetCurrentBadgeArgs(button, out var args))
+            {
+                CrossDropRequested?.Invoke(this, new CellDropMoveEventArgs(source, args));
+                SuppressNextClick();
+            }
+        }
+        finally
+        {
+            ClearDragState();
+        }
+    }
+
+    private void ClearAllCrossSwapBadges()
+    {
+        foreach (var border in RootGrid.Children.OfType<Border>().ToList())
+            ClearCrossSwapBadges(border);
+    }
+
+    private void OnSwapBadgeDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = CanDropOnSwapBadge(sender, e) ? DragDropEffects.Move : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnSwapBadgeDrop(object sender, DragEventArgs e)
+    {
+        e.Handled = true;
+        try
+        {
+            if (CanDropOnSwapBadge(sender, e)
+                && TryGetCurrentDragSource(e, out var source)
+                && sender is Button button
+                && TryGetCurrentBadgeArgs(button, out var args))
+            {
+                SwapDropRequested?.Invoke(this, new CellDropMoveEventArgs(source, args));
+                SuppressNextClick();
+            }
+        }
+        finally
+        {
+            ClearDragState();
+        }
+    }
+
+    private bool CanDropOnCrossBadge(object sender, DragEventArgs e)
+    {
+        return TryGetCurrentDragSource(e, out var source)
+            && sender is Button button
+            && TryGetCurrentBadgeArgs(button, out var args)
+            && !IsSameCellArgs(source, args);
+    }
+
+    private bool CanDropOnSwapBadge(object sender, DragEventArgs e)
+    {
+        return TryGetCurrentDragSource(e, out var source)
+            && sender is Button button
+            && TryGetCurrentBadgeArgs(button, out var args)
+            && !IsSameCellArgs(source, args);
+    }
+
+    private bool TryGetCurrentBadgeArgs(Button button, out CellClickedEventArgs args)
+    {
+        args = null!;
+        if (button.Tag is not CellClickedEventArgs current || !IsCurrentCellArgs(current))
+            return false;
+        args = current;
+        return true;
+    }
+
+    private bool TryGetCurrentDragSource(DragEventArgs e, out CellClickedEventArgs source)
+    {
+        source = null!;
+        if (!EnableDragDropMove
+            || _dragSource?.Assignment == null
+            || !IsCurrentCellArgs(_dragSource)
+            || !e.Data.GetDataPresent(DragDataFormat)
+            || e.Data.GetData(DragDataFormat) is not CellClickedEventArgs dragSource
+            || dragSource.Assignment == null
+            || !IsCurrentCellArgs(dragSource)
+            || !IsSameCellArgs(dragSource, _dragSource))
+        {
+            return false;
+        }
+
+        source = dragSource;
+        return true;
+    }
+
+    private static bool IsSameCellArgs(CellClickedEventArgs a, CellClickedEventArgs b)
+    {
+        return a.Day == b.Day
+            && a.Period == b.Period
+            && a.Grade == b.Grade
+            && a.SubColumnIdx == b.SubColumnIdx
+            && a.Assignment?.CourseId == b.Assignment?.CourseId;
+    }
+
+    private void SuppressNextClick()
+    {
+        _suppressNextClick = true;
+        Dispatcher.BeginInvoke(
+            () => _suppressNextClick = false,
+            DispatcherPriority.Background);
     }
 
     private static void RemoveHoverBadges(Grid root)

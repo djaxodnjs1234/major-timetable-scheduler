@@ -136,10 +136,43 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private string newRoomId = "";
 
     [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ApplyRoomChangeCommand))]
+    private string selectedOldRoomId = "";
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ApplyRoomChangeCommand))]
+    private string selectedReplacementRoomId = "";
+
+    [ObservableProperty]
     private string statusMessage = "셀을 클릭해서 편집할 과목을 선택하세요.";
 
-    public IReadOnlyList<string> AvailableRoomIds =>
-        SessionRooms.Select(r => r.Id).ToList();
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(HasRoomChangeStatusMessage))]
+    private string roomChangeStatusMessage = "";
+
+    public bool HasRoomChangeStatusMessage => !string.IsNullOrWhiteSpace(RoomChangeStatusMessage);
+
+    public IReadOnlyList<string> AvailableRoomIds => BuildAllowedRoomCandidateIds(includeAssignedRooms: true);
+
+    public IReadOnlyList<string> SingleRoomChangeCandidates => AvailableRoomIds;
+
+    public bool HasMultipleRoomCandidates => SingleRoomChangeCandidates.Count > 1;
+
+    public IReadOnlyList<string> AssignedRoomsForSelectedAssignment =>
+        SelectedAssignment == null
+            ? Array.Empty<string>()
+            : SelectedAssignment.Rooms.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
+
+    public bool HasMultipleAssignedRooms => AssignedRoomsForSelectedAssignment.Count > 1;
+
+    public bool HasSingleAssignedRoomDisplay => !HasMultipleAssignedRooms;
+
+    public bool HasSingleAssignedRoomChangeUi => !HasMultipleAssignedRooms && HasSelection;
+
+    public bool HasRoomChangeApplyUi => HasSingleAssignedRoomChangeUi || HasMultipleAssignedRooms;
+
+    public IReadOnlyList<string> ReplacementRoomCandidates =>
+        BuildReplacementRoomCandidates(SelectedOldRoomId);
 
     public string SelectedSlotLabel =>
         SelectedDay is int d && SelectedPeriod is int p ? $"{DayName(d)} {p}교시" : "";
@@ -185,7 +218,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         get
         {
             if (SelectedCourse == null || SelectedCourse.CoteachProfs.Count == 0) return "없음";
-            return string.Join(", ", SelectedCourse.CoteachProfs.Select(ProfessorDisplayName));
+            var primary = SelectedCourse.ProfessorId;
+            var coteachers = SelectedCourse.CoteachProfs
+                .Where(id => !IsSameProfessorId(id, primary))
+                .Distinct(StringComparer.Ordinal)
+                .Select(ProfessorDisplayName)
+                .ToList();
+            return coteachers.Count == 0 ? "없음" : string.Join(", ", coteachers);
         }
     }
 
@@ -217,10 +256,20 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             ? "HC-13 고정 시간표 보존 위반: 고정된 수업은 이동할 수 없습니다."
             : "없음";
 
+    public bool HasBlockingReasons => SelectedAssignment?.IsFixed == true;
+
     public string SelectedWarningReasonText =>
         SelectedDay is int d && SelectedPeriod is int p
             ? GetSoftWarning(d, p) ?? "없음"
             : "-";
+
+    public bool HasWarningReasons =>
+        SelectedAssignment != null
+        && SelectedDay is int d
+        && SelectedPeriod is int p
+        && GetSoftWarning(d, p) != null;
+
+    public bool HasAnyConstraintReasons => HasBlockingReasons || HasWarningReasons;
 
     public string SelectedCrossGroupText
     {
@@ -244,6 +293,25 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasNoSelection));
         NotifySelectionDetailChanged();
+        ApplyRoomChangeCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnNewRoomIdChanged(string value)
+    {
+        ApplyRoomChangeCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnSelectedOldRoomIdChanged(string value)
+    {
+        OnPropertyChanged(nameof(ReplacementRoomCandidates));
+        if (HasMultipleAssignedRooms && !ReplacementRoomCandidates.Contains(SelectedReplacementRoomId))
+            SelectedReplacementRoomId = ReplacementRoomCandidates.FirstOrDefault() ?? "";
+        ApplyRoomChangeCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnSelectedReplacementRoomIdChanged(string value)
+    {
+        ApplyRoomChangeCommand.NotifyCanExecuteChanged();
     }
 
     public ManualEditViewModel(WorkspaceService workspace, IConflictDialogService dialog)
@@ -449,6 +517,60 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         return CrossHoverState.Available();
     }
 
+    public CrossHoverState EvaluateCrossDropHover(
+        int sourceDay,
+        int sourcePeriod,
+        int sourceGrade,
+        int sourceSubColumnIdx,
+        CellAssignment? source,
+        int targetDay,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx,
+        CellAssignment? target)
+    {
+        if (source == null || target == null)
+            return CrossHoverState.Hidden();
+        if (IsSameMovingCell(
+                new UnifiedCell(targetDay, targetPeriod, targetGrade, targetSubColumnIdx, target),
+                source,
+                sourceDay,
+                sourcePeriod))
+            return CrossHoverState.Hidden("현재 선택한 수업입니다.");
+        if (target.Grade != source.Grade)
+            return CrossHoverState.Hidden("같은 학년 수업끼리만 크로스를 만들 수 있습니다.");
+        if (!HasSameCrossDuration(source, target))
+            return CrossHoverState.Hidden(CrossDurationMismatchReason);
+        if (!IsCrossTargetRangeStart(target, targetDay, targetPeriod, targetGrade, targetSubColumnIdx))
+            return CrossHoverState.Hidden(CrossTimeRangeMismatchReason);
+
+        var selectedCourse = SessionCourses.FirstOrDefault(c => c.Id == source.CourseId);
+        var targetCourse = SessionCourses.FirstOrDefault(c => c.Id == target.CourseId);
+        if (selectedCourse == null || targetCourse == null)
+            return CrossHoverState.Hidden("수업 정보를 확인할 수 없습니다.");
+        var existingLink = GetCrossLinkForCourse(source.CourseId);
+        if (IsAlreadyCrossed(source, target))
+            return CrossHoverState.Hidden("이미 크로스가 설정된 수업입니다.");
+        if (IsCourseAlreadyCrossedExcept(source.CourseId, existingLink)
+            || IsCourseAlreadyCrossedExcept(target.CourseId, existingLink))
+            return CrossHoverState.Hidden("이미 다른 수업과 크로스된 과목입니다. 크로스는 두 과목끼리만 설정할 수 있습니다.");
+
+        var reasons = ValidateCrossMoveWithProvisionalLink(
+            source,
+            target,
+            targetDay,
+            targetPeriod,
+            targetGrade,
+            targetSubColumnIdx,
+            existingLink,
+            sourceDay,
+            sourcePeriod);
+        if (reasons.Count > 0)
+            return CrossHoverState.Hidden(reasons[0]);
+
+        return CrossHoverState.Available();
+    }
+
     public void HandleCrossAddRequested(
         int day,
         int period,
@@ -469,6 +591,23 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             StatusMessage = reason;
             return;
         }
+    }
+
+    public void HandleCrossDrop(
+        int sourceDay,
+        int sourcePeriod,
+        int sourceGrade,
+        int sourceSubColumnIdx,
+        CellAssignment? source,
+        int targetDay,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx,
+        CellAssignment? target)
+    {
+        if (source == null || target == null) return;
+        SelectCell(sourceDay, sourcePeriod, sourceGrade, sourceSubColumnIdx, source);
+        HandleCrossAddRequested(targetDay, targetPeriod, targetGrade, targetSubColumnIdx, target);
     }
 
     public bool CanDropMove(
@@ -535,6 +674,33 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         return reason == null ? SwapHoverState.Available() : SwapHoverState.Hidden(reason);
     }
 
+    public SwapHoverState EvaluateSwapDropHover(
+        int sourceDay,
+        int sourcePeriod,
+        int sourceGrade,
+        int sourceSubColumnIdx,
+        CellAssignment? source,
+        int targetDay,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx,
+        CellAssignment? target)
+    {
+        if (source == null || target == null)
+            return SwapHoverState.Hidden();
+        if (IsSameMovingCell(
+                new UnifiedCell(targetDay, targetPeriod, targetGrade, targetSubColumnIdx, target),
+                source,
+                sourceDay,
+                sourcePeriod))
+            return SwapHoverState.Hidden("현재 선택한 수업입니다.");
+        if (target.Grade != source.Grade)
+            return SwapHoverState.Hidden("같은 학년 수업끼리만 교환할 수 있습니다.");
+
+        var reason = ValidateSwap(source, sourceDay, sourcePeriod, target, targetDay, targetPeriod);
+        return reason == null ? SwapHoverState.Available() : SwapHoverState.Hidden(reason);
+    }
+
     public void HandleSwapRequested(
         int day,
         int period,
@@ -554,8 +720,26 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             StatusMessage = reason;
     }
 
+    public void HandleSwapDrop(
+        int sourceDay,
+        int sourcePeriod,
+        int sourceGrade,
+        int sourceSubColumnIdx,
+        CellAssignment? source,
+        int targetDay,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx,
+        CellAssignment? target)
+    {
+        if (source == null || target == null) return;
+        SelectCell(sourceDay, sourcePeriod, sourceGrade, sourceSubColumnIdx, source);
+        HandleSwapRequested(targetDay, targetPeriod, targetGrade, targetSubColumnIdx, target);
+    }
+
     public void SelectCell(int day, int period, int grade, int subColumnIdx, CellAssignment? assignment)
     {
+        RoomChangeStatusMessage = "";
         SelectedDay = day;
         SelectedPeriod = period;
         SelectedAssignment = assignment;
@@ -566,6 +750,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (assignment != null)
         {
             NewRoomId = assignment.Rooms.FirstOrDefault() ?? "";
+            SelectedOldRoomId = NewRoomId;
+            SelectedReplacementRoomId = ReplacementRoomCandidates.FirstOrDefault() ?? "";
             StatusMessage = $"선택: {assignment.CourseName} ({assignment.CourseId}) — "
                 + $"{DayName(day)} {period}교시";
             Grid.SetEditState(_selectedGridCell, BuildMoveStates(assignment, day, period));
@@ -573,6 +759,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         else
         {
             NewRoomId = "";
+            SelectedOldRoomId = "";
+            SelectedReplacementRoomId = "";
             StatusMessage = $"{DayName(day)} {period}교시 — 비어있음";
             Grid.ClearEditState();
         }
@@ -581,37 +769,251 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     [RelayCommand(CanExecute = nameof(CanApplyRoomChange))]
     private void ApplyRoomChange()
     {
-        if (SelectedAssignment == null || SelectedDay == null || SelectedPeriod == null) return;
+        RoomChangeStatusMessage = "";
+        if (HasMultipleAssignedRooms)
+            ApplyMultiRoomReplacement();
+        else
+            ApplySingleRoomChange();
+    }
+
+    private void ApplySingleRoomChange()
+    {
+        if (SelectedAssignment == null || SelectedDay == null || SelectedPeriod == null)
+        {
+            SetRoomChangeFailure("수업을 선택하세요.");
+            return;
+        }
         var cid = SelectedAssignment.CourseId;
         int day = SelectedDay.Value;
         int period = SelectedPeriod.Value;
 
         var oldRoomId = SelectedAssignment.Rooms.FirstOrDefault();
-        if (oldRoomId == null) return;
-        if (oldRoomId == NewRoomId)
+        var replacementRoomId = NewRoomId;
+        if (string.IsNullOrWhiteSpace(replacementRoomId))
         {
-            StatusMessage = "변경 사항 없음 (동일한 강의실).";
+            SetRoomChangeFailure("새 강의실을 선택하세요.");
             return;
         }
+        if (oldRoomId == null)
+        {
+            SetRoomChangeFailure("변경할 배정 항목을 찾지 못했습니다.");
+            return;
+        }
+        if (oldRoomId == replacementRoomId)
+        {
+            SetRoomChangeFailure("기존 강의실과 동일합니다.");
+            return;
+        }
+
+        if (!RoomExists(replacementRoomId))
+        {
+            SetRoomChangeFailure("존재하지 않는 강의실입니다.");
+            return;
+        }
+
+        if (!TryApplyRoomChange(oldRoomId, replacementRoomId, out var changed))
+        {
+            return;
+        }
+
+        RefreshSelectionAfterRoomChange(cid, day, period);
+        NewRoomId = SelectedAssignment.Rooms.FirstOrDefault() ?? "";
+        Grid.SetEditState(_selectedGridCell, BuildMoveStates(SelectedAssignment, day, period));
+        SetRoomChangeSuccess("강의실을 변경했습니다.");
+    }
+
+    private void ApplyMultiRoomReplacement()
+    {
+        if (SelectedAssignment == null || SelectedDay == null || SelectedPeriod == null)
+        {
+            SetRoomChangeFailure("수업을 선택하세요.");
+            return;
+        }
+        int day = SelectedDay.Value;
+        int period = SelectedPeriod.Value;
+
+        var oldRoomId = SelectedOldRoomId;
+        var replacementRoomId = SelectedReplacementRoomId;
+        if (string.IsNullOrWhiteSpace(oldRoomId))
+        {
+            SetRoomChangeFailure("교체할 기존 강의실을 선택하세요.");
+            return;
+        }
+        if (string.IsNullOrWhiteSpace(replacementRoomId))
+        {
+            SetRoomChangeFailure("새 강의실을 선택하세요.");
+            return;
+        }
+        if (oldRoomId == replacementRoomId)
+        {
+            SetRoomChangeFailure("기존 강의실과 동일합니다.");
+            return;
+        }
+
+        if (!AssignedRoomsForSelectedAssignment.Contains(oldRoomId))
+        {
+            SetRoomChangeFailure("선택한 기존 강의실이 현재 배정 목록에 없습니다.");
+            return;
+        }
+
+        if (AssignedRoomsForSelectedAssignment.Contains(replacementRoomId))
+        {
+            SetRoomChangeFailure("새 강의실이 이미 이 수업에 배정되어 있습니다.");
+            return;
+        }
+
+        if (!RoomExists(replacementRoomId))
+        {
+            SetRoomChangeFailure("존재하지 않는 강의실입니다.");
+            return;
+        }
+
+        if (!TryApplyRoomChange(oldRoomId, replacementRoomId, out var changed))
+        {
+            return;
+        }
+
+        RefreshSelectionAfterRoomChange(SelectedAssignment.CourseId, day, period);
+        NewRoomId = SelectedAssignment.Rooms.FirstOrDefault() ?? "";
+        SelectedOldRoomId = replacementRoomId;
+        SelectedReplacementRoomId = ReplacementRoomCandidates.FirstOrDefault() ?? "";
+        Grid.SetEditState(_selectedGridCell, BuildMoveStates(SelectedAssignment, day, period));
+        SetRoomChangeSuccess("강의실을 변경했습니다.");
+    }
+
+    private bool TryApplyRoomChange(string oldRoomId, string replacementRoomId, out int changed)
+    {
+        changed = 0;
+        if (SelectedAssignment == null || SelectedDay == null || SelectedPeriod == null) return false;
+        var cid = SelectedAssignment.CourseId;
+        int day = SelectedDay.Value;
+        int period = SelectedPeriod.Value;
 
         var snapshot = CaptureSnapshot();
-        var changed = 0;
-        for (int i = 0; i < _working.Count; i++)
+        var candidate = _working.ToList();
+        foreach (var i in FindWorkingAssignmentsForRoomChange(candidate, cid, day, period, SelectedAssignment.RowSpan, oldRoomId))
         {
-            var a = _working[i];
-            if (a.CourseId == cid && a.Day == day && a.RoomId == oldRoomId
-                && a.Period >= period && a.Period < period + SelectedAssignment.RowSpan)
-            {
-                _working[i] = new SolutionAssignment(cid, day, a.Period, NewRoomId);
-                changed++;
-            }
+            var a = candidate[i];
+            candidate[i] = new SolutionAssignment(cid, day, a.Period, replacementRoomId);
+            changed++;
         }
 
-        if (!TryCommitChange(snapshot, $"{cid}의 강의실 {oldRoomId} → {NewRoomId} (변경 {changed}건)"))
-            return;
+        if (changed == 0)
+        {
+            SetRoomChangeFailure(BuildRoomChangeTargetNotFoundMessage(cid, day, period, SelectedAssignment.RowSpan, oldRoomId, replacementRoomId));
+            return false;
+        }
 
-        SelectedAssignment = SelectedAssignment with { Rooms = new List<string> { NewRoomId } };
-        Grid.SetEditState(_selectedGridCell, BuildMoveStates(SelectedAssignment, day, period));
+        var newErrors = DetectNewConflicts(_working, candidate)
+            .Where(c => c.Severity == ConflictSeverity.Error)
+            .ToList();
+        if (newErrors.Count > 0)
+        {
+            SetRoomChangeFailure(newErrors[0].Type == ConflictType.RoomConflict
+                ? "해당 시간에 이미 사용 중인 강의실입니다."
+                : ToUserReason(newErrors[0]));
+            return false;
+        }
+
+        _working = candidate;
+        if (!TryCommitChange(snapshot, $"{cid}의 강의실 {oldRoomId} → {replacementRoomId} (변경 {changed}건)"))
+        {
+            return false;
+        }
+
+        return true;
+    }
+
+    private void SetRoomChangeFailure(string message)
+    {
+        RoomChangeStatusMessage = message;
+        StatusMessage = message;
+    }
+
+    private void SetRoomChangeSuccess(string message)
+    {
+        RoomChangeStatusMessage = message;
+        StatusMessage = message;
+    }
+
+    private IReadOnlyList<int> FindWorkingAssignmentsForRoomChange(
+        IReadOnlyList<SolutionAssignment> assignments,
+        string courseId,
+        int day,
+        int selectedPeriod,
+        int rowSpan,
+        string oldRoomId)
+    {
+        var direct = Enumerable.Range(0, assignments.Count)
+            .Where(i => MatchesSelectedBlock(assignments[i], courseId, day, selectedPeriod, rowSpan, oldRoomId))
+            .ToList();
+        if (direct.Count >= Math.Max(1, rowSpan)) return direct;
+
+        var sameRoomPeriods = assignments
+            .Where(a => a.CourseId == courseId && a.Day == day && a.RoomId == oldRoomId)
+            .Select(a => a.Period)
+            .Distinct()
+            .OrderBy(p => p)
+            .ToList();
+        if (!sameRoomPeriods.Contains(selectedPeriod)) return direct;
+
+        var blockStart = selectedPeriod;
+        while (sameRoomPeriods.Contains(blockStart - 1))
+            blockStart--;
+
+        var blockPeriods = Enumerable.Range(blockStart, Math.Max(1, rowSpan)).ToHashSet();
+        return Enumerable.Range(0, assignments.Count)
+            .Where(i => assignments[i].CourseId == courseId
+                && assignments[i].Day == day
+                && assignments[i].RoomId == oldRoomId
+                && blockPeriods.Contains(assignments[i].Period))
+            .ToList();
+    }
+
+    private static bool MatchesSelectedBlock(
+        SolutionAssignment assignment,
+        string courseId,
+        int day,
+        int selectedPeriod,
+        int rowSpan,
+        string oldRoomId) =>
+        assignment.CourseId == courseId
+        && assignment.Day == day
+        && assignment.RoomId == oldRoomId
+        && assignment.Period >= selectedPeriod
+        && assignment.Period < selectedPeriod + rowSpan;
+
+    private string BuildRoomChangeTargetNotFoundMessage(
+        string courseId,
+        int day,
+        int selectedPeriod,
+        int rowSpan,
+        string oldRoomId,
+        string newRoomId)
+    {
+        var sameCourseDayCount = _working.Count(a => a.CourseId == courseId && a.Day == day);
+        var sameCourseDayRoomCount = _working.Count(a => a.CourseId == courseId && a.Day == day && a.RoomId == oldRoomId);
+        return "변경 불가 — 변경할 배정 항목을 찾지 못했습니다. "
+            + $"CourseId={courseId}, Day={day}, SelectedPeriod={selectedPeriod}, RowSpan={rowSpan}, "
+            + $"OldRoomId={oldRoomId}, NewRoomId={newRoomId}, "
+            + $"SameCourseDay={sameCourseDayCount}, SameCourseDayRoom={sameCourseDayRoomCount}";
+    }
+
+    private void RefreshSelectionAfterRoomChange(string courseId, int day, int selectedPeriod)
+    {
+        var cell = Grid.Cells.FirstOrDefault(c =>
+            c.Day == day
+            && c.Assignment.CourseId == courseId
+            && selectedPeriod >= c.Period
+            && selectedPeriod < c.Period + c.Assignment.RowSpan);
+        if (cell == null) return;
+
+        SelectedDay = cell.Day;
+        SelectedPeriod = cell.Period;
+        SelectedAssignment = cell.Assignment;
+        _selectedGridCell = new UnifiedCellKey(cell.Day, cell.Period, cell.Grade, cell.SubColumnIdx);
+        OnPropertyChanged(nameof(SelectedSlotLabel));
+        NotifySelectionDetailChanged();
     }
 
     [RelayCommand(CanExecute = nameof(CanClearSelection))]
@@ -718,17 +1120,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var movedCourseId = SelectedAssignment.CourseId;
         _working = candidate;
         MarkUserEditedAfterLoad();
+        var removedLinks = RemoveInvalidCrossesAfterMove(refreshLabels: false);
         Rerender();
 
         PushUndoSnapshot(snapshot);
-        SelectedDay = targetDay;
-        SelectedPeriod = targetPeriod;
-        _selectedGridCell = FindGridCellKey(movedCourseId, targetDay, targetPeriod, targetGrade)
-            ?? new UnifiedCellKey(targetDay, targetPeriod, targetGrade, targetSubColumnIdx);
-        OnPropertyChanged(nameof(SelectedSlotLabel));
-        NotifySelectionDetailChanged();
-        Grid.SetEditState(_selectedGridCell, BuildMoveStates(SelectedAssignment, targetDay, targetPeriod));
-        var removedLinks = RemoveInvalidCrossesAfterMove();
         var warning = GetSoftWarning(targetDay, targetPeriod);
         StatusMessage = removedLinks > 0
             ? $"{movedCourseId} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시. 수업 식별 또는 학년 조건 변경으로 크로스 관계가 해제되었습니다."
@@ -951,17 +1346,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
         _working = candidate;
         MarkUserEditedAfterLoad();
+        var removedLinks = RemoveInvalidCrossesAfterMove(refreshLabels: false);
         Rerender();
 
         PushUndoSnapshot(snapshot);
-        SelectedDay = targetDay;
-        SelectedPeriod = targetPeriod;
-        _selectedGridCell = FindGridCellKey(movedCourseId, targetDay, targetPeriod, targetGrade)
-            ?? new UnifiedCellKey(targetDay, targetPeriod, targetGrade, targetSubColumnIdx);
-        OnPropertyChanged(nameof(SelectedSlotLabel));
-        NotifySelectionDetailChanged();
-        Grid.SetEditState(_selectedGridCell, BuildMoveStates(SelectedAssignment, targetDay, targetPeriod));
-        var removedLinks = RemoveInvalidCrossesAfterMove();
         var errorCount = Conflicts.Count(c => c.Severity == ConflictSeverity.Error);
         var warningCount = Conflicts.Count(c => c.Severity == ConflictSeverity.Warning);
         StatusMessage = $"제약조건 위반 상태로 강제 이동했습니다. Error {errorCount}건, Warning {warningCount}건이 남아 있습니다. Error가 남아 있으면 저장할 수 없습니다."
@@ -1462,6 +1850,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
     }
 
+    private static bool IsCourseTaughtBy(Course course, string professorId) =>
+        course.ProfessorId == professorId || course.CoteachProfs.Contains(professorId);
+
     private IReadOnlyList<ConflictItem> DetectConflicts(
         IReadOnlyList<SolutionAssignment> assignment,
         bool strictManualCrossValidation = false) =>
@@ -1479,6 +1870,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         SelectedPeriod = null;
         _selectedGridCell = null;
         NewRoomId = "";
+        SelectedOldRoomId = "";
+        SelectedReplacementRoomId = "";
         OnPropertyChanged(nameof(SelectedSlotLabel));
         NotifySelectionDetailChanged();
         Grid.ClearEditState();
@@ -1487,8 +1880,57 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private string ProfessorDisplayName(string id) =>
         SessionProfessors.FirstOrDefault(p => p.Id == id)?.Name ?? id;
 
+    private static bool IsSameProfessorId(string? left, string? right) =>
+        string.Equals(left?.Trim(), right?.Trim(), StringComparison.Ordinal);
+
     private string RoomDisplayName(string id) =>
-        SessionRooms.FirstOrDefault(r => r.Id == id)?.Name ?? id;
+        _workspace.Rooms.FirstOrDefault(r => r.Id == id)?.Name
+        ?? _sessionData?.Rooms.FirstOrDefault(r => r.Id == id)?.Name
+        ?? id;
+
+    private IReadOnlyList<string> BuildRoomViewIds()
+    {
+        var ids = new List<string>();
+        ids.AddRange(_workspace.Rooms.Select(r => r.Id));
+        if (_sessionData != null)
+            ids.AddRange(_sessionData.Rooms.Select(r => r.Id));
+        ids.AddRange(_working.Select(a => a.RoomId));
+        return ids.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
+    }
+
+    private IReadOnlyList<string> BuildReplacementRoomCandidates(string selectedOldRoomId)
+    {
+        if (SelectedAssignment == null) return Array.Empty<string>();
+
+        var assigned = AssignedRoomsForSelectedAssignment.ToHashSet(StringComparer.Ordinal);
+        var ids = BuildEditableRoomIds(includeAssignedRooms: false)
+            .Where(id => !assigned.Contains(id))
+            .ToList();
+
+        return ids.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
+    }
+
+    private IReadOnlyList<string> BuildAllowedRoomCandidateIds(bool includeAssignedRooms)
+    {
+        if (SelectedAssignment == null) return Array.Empty<string>();
+
+        return BuildEditableRoomIds(includeAssignedRooms);
+    }
+
+    private IReadOnlyList<string> BuildEditableRoomIds(bool includeAssignedRooms)
+    {
+        var ids = new List<string>();
+        ids.AddRange(_workspace.Rooms.Select(r => r.Id));
+        if (_sessionData != null)
+            ids.AddRange(_sessionData.Rooms.Select(r => r.Id));
+        if (includeAssignedRooms)
+            ids.AddRange(SelectedAssignment?.Rooms ?? Array.Empty<string>());
+
+        return ids.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
+    }
+
+    private bool RoomExists(string id) =>
+        BuildEditableRoomIds(includeAssignedRooms: true).Contains(id);
 
     private static string Fallback(string value) =>
         string.IsNullOrWhiteSpace(value) ? "-" : value;
@@ -1505,10 +1947,23 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         OnPropertyChanged(nameof(SelectedCoteachText));
         OnPropertyChanged(nameof(SelectedMultiRoomText));
         OnPropertyChanged(nameof(SelectedAllowedRoomsText));
+        OnPropertyChanged(nameof(AvailableRoomIds));
+        OnPropertyChanged(nameof(SingleRoomChangeCandidates));
+        OnPropertyChanged(nameof(HasMultipleRoomCandidates));
+        OnPropertyChanged(nameof(AssignedRoomsForSelectedAssignment));
+        OnPropertyChanged(nameof(HasMultipleAssignedRooms));
+        OnPropertyChanged(nameof(HasSingleAssignedRoomDisplay));
+        OnPropertyChanged(nameof(HasSingleAssignedRoomChangeUi));
+        OnPropertyChanged(nameof(HasRoomChangeApplyUi));
+        OnPropertyChanged(nameof(ReplacementRoomCandidates));
         OnPropertyChanged(nameof(SelectedMoveStateText));
         OnPropertyChanged(nameof(SelectedBlockedReasonText));
         OnPropertyChanged(nameof(SelectedWarningReasonText));
+        OnPropertyChanged(nameof(HasBlockingReasons));
+        OnPropertyChanged(nameof(HasWarningReasons));
+        OnPropertyChanged(nameof(HasAnyConstraintReasons));
         OnPropertyChanged(nameof(SelectedCrossGroupText));
+        ApplyRoomChangeCommand.NotifyCanExecuteChanged();
     }
 
     public IReadOnlyList<CrossGroup> CommitWorkingCrossGroupsPreview() =>
@@ -1738,7 +2193,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private bool ShouldSuppressSavedCrossValidation =>
         _suppressSavedCrossValidation && !_hasUserEditedAfterLoad;
 
-    private int RemoveInvalidCrossesAfterMove()
+    private int RemoveInvalidCrossesAfterMove(bool refreshLabels = true)
     {
         _lastCrossCleanupExecuted = false;
         _lastCrossCleanupSkipReason = "";
@@ -1756,7 +2211,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         _lastCrossCleanupExecuted = true;
         var before = _workingCrossLinks.Count;
         _workingCrossLinks.RemoveAll(link => !IsCrossLinkStillValid(link));
-        if (before != _workingCrossLinks.Count)
+        if (refreshLabels && before != _workingCrossLinks.Count)
         {
             Grid.SetCrossLinkLabels(BuildCrossLinkLabels());
             NotifySelectionDetailChanged();
@@ -1777,9 +2232,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         int targetPeriod,
         int targetGrade,
         int targetSubColumnIdx,
-        ManualCrossLink? replacedLink)
+        ManualCrossLink? replacedLink,
+        int? sourceDay = null,
+        int? sourcePeriod = null)
     {
-        if (SelectedPeriod is not int selectedPeriod)
+        if (sourcePeriod == null && SelectedPeriod is not int)
             return new[] { "선택한 수업의 시간을 확인할 수 없습니다." };
 
         var snapshot = _workingCrossLinks.ToList();
@@ -1794,7 +2251,15 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (replacedLink != null)
             _workingCrossLinks.Remove(replacedLink);
         _workingCrossLinks.Add(provisional);
-        var reasons = ValidateCrossMove(selected, target, day, targetPeriod, targetGrade, targetSubColumnIdx);
+        var reasons = ValidateCrossMove(
+            selected,
+            target,
+            day,
+            targetPeriod,
+            targetGrade,
+            targetSubColumnIdx,
+            sourceDay,
+            sourcePeriod);
         RestoreCrossLinks(snapshot);
         return reasons;
     }
@@ -2028,14 +2493,16 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         int targetDay,
         int targetPeriod,
         int targetGrade,
-        int targetSubColumnIdx)
+        int targetSubColumnIdx,
+        int? sourceDay = null,
+        int? sourcePeriod = null)
     {
         if (targetGrade != selected.Grade || target.Grade != selected.Grade)
             return new[] { "같은 학년 수업끼리만 크로스를 만들 수 있습니다." };
         if (!HasSameCrossDuration(selected, target))
             return new[] { CrossDurationMismatchReason };
-        var selectedDay = SelectedDay ?? targetDay;
-        var selectedPeriod = SelectedPeriod ?? targetPeriod;
+        var selectedDay = sourceDay ?? SelectedDay ?? targetDay;
+        var selectedPeriod = sourcePeriod ?? SelectedPeriod ?? targetPeriod;
         if (!IsCrossTargetRangeStart(target, targetDay, targetPeriod, targetGrade, targetSubColumnIdx))
             return new[] { CrossTimeRangeMismatchReason };
 
@@ -2105,10 +2572,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         return cell == null ? null : new UnifiedCellKey(cell.Day, cell.Period, cell.Grade, cell.SubColumnIdx);
     }
 
-    private bool CanApplyRoomChange() =>
-        SelectedAssignment != null
-        && !string.IsNullOrEmpty(NewRoomId)
-        && SelectedAssignment.Rooms.FirstOrDefault() != NewRoomId;
+    private bool CanApplyRoomChange() => SelectedAssignment != null;
 
     private bool CanClearSelection() => SelectedAssignment != null;
 

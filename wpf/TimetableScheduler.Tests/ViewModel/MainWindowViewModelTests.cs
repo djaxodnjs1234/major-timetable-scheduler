@@ -2,6 +2,8 @@ using Microsoft.Extensions.DependencyInjection;
 using TimetableScheduler.Data;
 using TimetableScheduler.Domain;
 using TimetableScheduler.Scoring;
+using Microsoft.Extensions.DependencyInjection;
+using TimetableScheduler.Domain;
 using TimetableScheduler.Solver;
 using TimetableScheduler.ViewModel;
 using TimetableScheduler.ViewModel.Pages;
