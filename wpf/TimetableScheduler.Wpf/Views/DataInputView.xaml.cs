@@ -140,6 +140,21 @@ public partial class DataInputView : UserControl
         RebuildFixedSlotEditor(expander, item);
     }
 
+    private void OnCourseSharedSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is not ComboBox combo || e.AddedItems.Count == 0) return;
+        UpdateCourseSharedSelectionSource(combo);
+    }
+
+    private static void UpdateCourseSharedSelectionSource(ComboBox combo)
+    {
+        if (combo.SelectedItem == null) return;
+        var property = string.IsNullOrEmpty(combo.SelectedValuePath)
+            ? ComboBox.SelectedItemProperty
+            : ComboBox.SelectedValueProperty;
+        BindingOperations.GetBindingExpression(combo, property)?.UpdateSource();
+    }
+
     private void OnIsFixedCheckChanged(object sender, RoutedEventArgs e)
     {
         if (sender is not DependencyObject dep) return;
@@ -217,6 +232,12 @@ public partial class DataInputView : UserControl
         var item = FindCourseGroupItem(dep);
         if (item == null) return;
 
+        var expander = FindAncestor<Expander>(dep);
+        if (expander?.FindName("ProfessorComboBox") is ComboBox professorCombo)
+            UpdateCourseSharedSelectionSource(professorCombo);
+        if (expander?.FindName("CourseTypeComboBox") is ComboBox courseTypeCombo)
+            UpdateCourseSharedSelectionSource(courseTypeCombo);
+
         var rep = item.Sections[0];
         if (rep.BlockStructure.Count > 0 && rep.BlockStructure.Sum() != rep.HoursPerWeek)
         {
@@ -230,7 +251,6 @@ public partial class DataInputView : UserControl
         }
 
         // Flush fixed slot editor values back to sections before save
-        var expander = FindAncestor<Expander>(dep);
         var editorCtrl = expander != null ? FindDescendant<FixedSlotEditorControl>(expander) : null;
         var candidateFixedSlots = editorCtrl?.DataContext is FixedSlotEditorViewModel pendingEditorVm
             ? pendingEditorVm.SectionEditors

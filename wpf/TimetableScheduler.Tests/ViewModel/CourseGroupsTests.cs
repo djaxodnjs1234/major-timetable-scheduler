@@ -319,6 +319,68 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void CourseGroup_UsesNonEmptyProfessorFromAnySection()
+    {
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Prof One" });
+        var sectionA = MakeCourse("GA1005-01", 1);
+        var sectionB = MakeCourse("GA1005-02", 2);
+        sectionA.ProfessorId = "";
+        sectionB.ProfessorId = "P1";
+        _workspace.AddCourse(sectionA);
+        _workspace.AddCourse(sectionB);
+
+        var vm = MakeVm();
+
+        var group = Assert.Single(vm.CourseGroups);
+        Assert.Equal("Prof One", group.HeaderProfessor);
+        Assert.Equal("P1", group.Sections[0].ProfessorId);
+        Assert.Equal("P1", group.Sections[1].ProfessorId);
+    }
+
+    [Fact]
+    public void SaveGroup_DoesNotPropagateEmptyProfessorOverValidSection()
+    {
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Prof One" });
+        var sectionA = MakeCourse("GA1005-01", 1);
+        var sectionB = MakeCourse("GA1005-02", 2);
+        sectionA.ProfessorId = "";
+        sectionB.ProfessorId = "P1";
+        _workspace.AddCourse(sectionA);
+        _workspace.AddCourse(sectionB);
+
+        var vm = MakeVm();
+        var group = Assert.Single(vm.CourseGroups);
+        group.Sections[0].ProfessorId = "";
+        group.Sections[1].ProfessorId = "P1";
+
+        vm.SaveGroupCommand.Execute(group);
+
+        Assert.All(_workspace.Courses, course => Assert.Equal("P1", course.ProfessorId));
+    }
+
+    [Fact]
+    public void SaveGroup_DetectsInconsistentNonEmptyProfessors()
+    {
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Prof One" });
+        _workspace.AddProfessor(new Professor { Id = "P2", Name = "Prof Two" });
+        var sectionA = MakeCourse("GA1005-01", 1);
+        var sectionB = MakeCourse("GA1005-02", 2);
+        sectionA.ProfessorId = "P1";
+        sectionB.ProfessorId = "P2";
+        _workspace.AddCourse(sectionA);
+        _workspace.AddCourse(sectionB);
+
+        var vm = MakeVm();
+        var group = Assert.Single(vm.CourseGroups);
+
+        vm.SaveGroupCommand.Execute(group);
+
+        Assert.Contains("Inconsistent ProfessorId values", vm.LastCourseGroupWarning);
+        Assert.Contains("P1", vm.LastCourseGroupWarning);
+        Assert.Contains("P2", vm.LastCourseGroupWarning);
+    }
+
+    [Fact]
     public void FindFixedTimeOverlap_ReturnsExistingFixedCourseConflict()
     {
         var fixedCourse = MakeCourse("GA1005-01", 1, isFixed: true);

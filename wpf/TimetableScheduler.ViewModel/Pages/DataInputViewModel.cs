@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TimetableScheduler.Data;
@@ -144,6 +145,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public ObservableCollection<CrossGroupListItem> CrossGroupItems { get; } = new();
     public ObservableCollection<CrossCandidateItemViewModel> CrossCandidateItems { get; } = new();
     public ObservableCollection<CrossCandidateGradeGroup> CrossCandidateGradeGroups { get; } = new();
+
+    public string LastCourseGroupWarning { get; private set; } = "";
 
     public int[] GradeOptions { get; } = { 1, 2, 3, 4 };
     public int[] HourOptions { get; } = { 1, 2, 3, 4 };
@@ -396,6 +399,11 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void SaveGroup(CourseGroupItem item)
     {
         if (item is null || item.Sections.Count == 0) return;
+        TraceProfessorSections("Before SaveGroup", item.BaseId, item.Sections);
+        LastCourseGroupWarning = "";
+        OnPropertyChanged(nameof(LastCourseGroupWarning));
+        PromoteMissingSharedValues(item.Sections);
+        DetectProfessorConflict("SaveGroup", item.BaseId, item.Sections);
         var rep = item.Sections[0];
         foreach (var sec in item.Sections)
         {
@@ -417,6 +425,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             _workspace.UpdateCourse(sec);
         }
         item.IsEditing = false;
+        TraceProfessorSections("After SaveGroup", item.BaseId, item.Sections);
     }
 
     /// <summary>Delete all sections in the group.</summary>
@@ -539,7 +548,11 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void Back() => BackRequested?.Invoke(this, EventArgs.Empty);
 
     [RelayCommand(CanExecute = nameof(CanGoToSelection))]
-    private void GoToSelection() => GoToSelectionRequested?.Invoke(this, EventArgs.Empty);
+    private void GoToSelection()
+    {
+        TraceWorkspaceProfessors("Before navigating to preview");
+        GoToSelectionRequested?.Invoke(this, EventArgs.Empty);
+    }
     private bool CanGoToSelection() => IsSolveComplete;
 
     /// <summary>
@@ -547,13 +560,18 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     /// manual editing. Only valid in existing-timetable mode (a base layout exists).
     /// </summary>
     [RelayCommand(CanExecute = nameof(CanGoToManual))]
-    private void GoToManual() => GoToManualRequested?.Invoke(this, EventArgs.Empty);
+    private void GoToManual()
+    {
+        TraceWorkspaceProfessors("Before navigating to manual edit");
+        GoToManualRequested?.Invoke(this, EventArgs.Empty);
+    }
     private bool CanGoToManual() => IsExistingMode;
 
     /// <summary>The base assignments + saved manual cross links for handing off to manual editing.</summary>
     public ManualEditHandoff? BuildEditHandoff()
     {
         if (_editBaseAssignments == null) return null;
+        TraceWorkspaceProfessors("Before manual edit handoff");
         var solution = new RankedSolution(_editBaseAssignments, new SolutionScore(0, 0, 0, 0));
         return new ManualEditHandoff(solution, _editBaseManualCrossLinks);
     }
@@ -562,6 +580,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     public override void OnNavigatedTo()
     {
+        TraceWorkspaceProfessors("After returning to data input");
         RebuildProfessorItems();
         RebuildCourseGroups();
         RebuildRoomItems();
@@ -609,6 +628,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public void LoadForNewTimetable()
     {
         SwitchWorkspace(WorkspaceService.CreateSession(AppData.Empty()));
+        TraceWorkspaceProfessors("After loading new timetable session");
         IsExistingMode = false;
         _editBaseAssignments = null;
         _editBaseManualCrossLinks = Array.Empty<SavedManualCrossLinkRow>();
@@ -624,6 +644,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     {
         var snapshot = SavedTimetableSnapshotResolver.Resolve(record.SnapshotJson);
         SwitchWorkspace(WorkspaceService.CreateSession(snapshot));
+        TraceWorkspaceProfessors("After loading existing timetable session");
         IsExistingMode = true;
         SelectedCategory = InputCategory.Course;
         _editBaseAssignments = record.Assignments
@@ -713,6 +734,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     private void RebuildCourseGroups()
     {
+        TraceWorkspaceProfessors("Before RebuildCourseGroups");
         CourseGroups.Clear();
         var profNames = _workspace.Professors.ToDictionary(p => p.Id, p => p.Name);
         var roomNames = _workspace.Rooms.ToDictionary(r => r.Id, r => r.Name);
@@ -725,6 +747,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         {
             var sections = g.OrderBy(c => c.Section).ToList();
 
+            PromoteMissingSharedValues(sections);
+            DetectProfessorConflict("RebuildCourseGroups", g.Key, sections);
             var rep = sections[0];
             var fixedAny = sections.Any(c => c.IsFixed);
             var secPart = sections.Count > 1
@@ -752,7 +776,70 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 Sections = sections,
             });
         }
+        foreach (var group in CourseGroups)
+            TraceProfessorSections("After RebuildCourseGroups", group.BaseId, group.Sections);
     }
+
+    private void PromoteMissingSharedValues(IReadOnlyList<Course> sections)
+    {
+        if (sections.Count == 0) return;
+        var rep = sections[0];
+
+        var professorId = FirstNonEmpty(sections.Select(s => s.ProfessorId));
+        if (string.IsNullOrWhiteSpace(rep.ProfessorId) && professorId != null)
+            rep.ProfessorId = professorId;
+
+        var courseType = FirstNonEmpty(sections.Select(s => s.CourseType));
+        if (string.IsNullOrWhiteSpace(rep.CourseType) && courseType != null)
+            rep.CourseType = courseType;
+
+        if (rep.UnavailableRooms.Count == 0)
+        {
+            var unavailableRooms = sections.FirstOrDefault(s => s.UnavailableRooms.Count > 0)?.UnavailableRooms;
+            if (unavailableRooms != null)
+                rep.UnavailableRooms = new List<string>(unavailableRooms);
+        }
+
+        if (rep.CoteachProfs.Count == 0)
+        {
+            var coteachProfs = sections.FirstOrDefault(s => s.CoteachProfs.Count > 0)?.CoteachProfs;
+            if (coteachProfs != null)
+                rep.CoteachProfs = new List<string>(coteachProfs);
+        }
+    }
+
+    private void DetectProfessorConflict(string context, string baseId, IReadOnlyList<Course> sections)
+    {
+        var nonEmptyProfessorIds = sections
+            .Select(s => s.ProfessorId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (nonEmptyProfessorIds.Count <= 1) return;
+
+        LastCourseGroupWarning = $"Inconsistent ProfessorId values in {baseId}: {string.Join(", ", nonEmptyProfessorIds)}";
+        OnPropertyChanged(nameof(LastCourseGroupWarning));
+        Debug.WriteLine($"[ProfessorTrace][Conflict][{context}] CourseId={baseId}, ProfessorIds={string.Join(",", nonEmptyProfessorIds)}");
+    }
+
+    private void TraceWorkspaceProfessors(string label)
+    {
+        foreach (var group in _workspace.Courses
+            .GroupBy(c => DomainHelpers.BaseId(c.Id))
+            .OrderBy(g => SortNumericFirst(g.Key)))
+        {
+            TraceProfessorSections(label, group.Key, group.OrderBy(c => c.Section));
+        }
+    }
+
+    private static void TraceProfessorSections(string label, string baseId, IEnumerable<Course> sections)
+    {
+        foreach (var section in sections)
+            Debug.WriteLine($"[ProfessorTrace][{label}] CourseId={baseId}, Section={SectionLetter(section.Section)}, ProfessorId={section.ProfessorId}");
+    }
+
+    private static string? FirstNonEmpty(IEnumerable<string> values) =>
+        values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
     private void RebuildProfessorItems()
     {

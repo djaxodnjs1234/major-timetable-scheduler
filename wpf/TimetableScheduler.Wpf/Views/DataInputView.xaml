@@ -314,10 +314,12 @@
                                             <TextBlock Text="{Binding CourseType}"
                                                        VerticalAlignment="Center" />
                                         </Border>
-                                        <ComboBox Height="28" Width="72" Padding="6,3"
-                                                    ItemsSource="{Binding DataContext.CourseTypeOptions, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                                    SelectedItem="{Binding CourseType, Mode=TwoWay}"
-                                                    Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
+                                        <ComboBox x:Name="CourseTypeComboBox"
+                                                  Height="28" Width="72" Padding="6,3"
+                                                  ItemsSource="{Binding DataContext.CourseTypeOptions, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                  SelectedItem="{Binding CourseType, Mode=TwoWay, UpdateSourceTrigger=Explicit}"
+                                                  SelectionChanged="OnCourseSharedSelectionChanged"
+                                                  Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
                                     </StackPanel>
                                     <StackPanel Width="110" Margin="0,0,8,8">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,3">
@@ -375,11 +377,13 @@
                                                Foreground="{StaticResource OnSurfaceVariant}"
                                                Margin="0,2,0,0" />
                                 </StackPanel>
-                                <ComboBox Height="30" MaxWidth="180" HorizontalAlignment="Left" Padding="6,3"
+                                <ComboBox x:Name="ProfessorComboBox"
+                                          Height="30" MaxWidth="180" HorizontalAlignment="Left" Padding="6,3"
                                           ItemsSource="{Binding DataContext.Workspace.Professors, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                           DisplayMemberPath="Name"
                                           SelectedValuePath="Id"
-                                          SelectedValue="{Binding ProfessorId, Mode=TwoWay}"
+                                          SelectedValue="{Binding ProfessorId, Mode=TwoWay, UpdateSourceTrigger=Explicit}"
+                                          SelectionChanged="OnCourseSharedSelectionChanged"
                                           Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
 
                                 <StackPanel Orientation="Horizontal" Margin="0,12,0,4">

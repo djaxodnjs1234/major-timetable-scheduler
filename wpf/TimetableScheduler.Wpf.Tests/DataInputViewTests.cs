@@ -163,6 +163,175 @@ public class DataInputViewTests
         });
     }
 
+    [Fact]
+    public void RebuildingRenderedCourseGroups_PreservesSingleAndMultiSectionProfessors()
+    {
+        RunSta(() =>
+        {
+            EnsureApplicationResources();
+            var dbPath = Path.Combine(Path.GetTempPath(), $"wpf_rebuild_professor_test_{Guid.NewGuid():N}.db");
+
+            try
+            {
+                var repo = new SqliteRepository(dbPath);
+                var workspace = new WorkspaceService(repo);
+                workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor One" });
+                workspace.AddCourse(new Course
+                {
+                    Id = "SINGLE-01",
+                    Name = "Single",
+                    Grade = 1,
+                    HoursPerWeek = 1,
+                    Section = 1,
+                    CourseType = "전필",
+                    ProfessorId = "P1",
+                    BlockStructure = new List<int> { 1 },
+                });
+                workspace.AddCourse(new Course
+                {
+                    Id = "MULTI-01",
+                    Name = "Multi",
+                    Grade = 2,
+                    HoursPerWeek = 1,
+                    Section = 1,
+                    CourseType = "전필",
+                    ProfessorId = "P1",
+                    BlockStructure = new List<int> { 1 },
+                });
+                workspace.AddCourse(new Course
+                {
+                    Id = "MULTI-02",
+                    Name = "Multi",
+                    Grade = 2,
+                    HoursPerWeek = 1,
+                    Section = 2,
+                    CourseType = "전필",
+                    ProfessorId = "P1",
+                    BlockStructure = new List<int> { 1 },
+                });
+
+                var vm = new DataInputViewModel(workspace, null!);
+                foreach (var group in vm.CourseGroups)
+                    group.IsEditing = true;
+
+                var view = new DataInputView { DataContext = vm };
+                var window = new Window
+                {
+                    Width = 1400,
+                    Height = 900,
+                    Content = view,
+                    ShowInTaskbar = false,
+                    WindowStyle = WindowStyle.None,
+                };
+
+                window.Show();
+                view.UpdateLayout();
+                foreach (var expander in FindDescendants<Expander>(view)
+                    .Where(expander => expander.DataContext is CourseGroupItem))
+                {
+                    expander.IsExpanded = true;
+                }
+                view.UpdateLayout();
+
+                vm.OnNavigatedTo();
+                view.UpdateLayout();
+
+                Assert.All(workspace.Courses, course => Assert.Equal("P1", course.ProfessorId));
+                Assert.Equal("P1", vm.CourseGroups.Single(group => group.BaseId == "SINGLE").Sections[0].ProfessorId);
+                Assert.All(vm.CourseGroups.Single(group => group.BaseId == "MULTI").Sections,
+                    section => Assert.Equal("P1", section.ProfessorId));
+
+                window.Close();
+            }
+            finally
+            {
+                Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+                if (File.Exists(dbPath)) File.Delete(dbPath);
+            }
+        });
+    }
+
+    [Fact]
+    public void ValidSharedComboSelections_SaveToAllSections()
+    {
+        RunSta(() =>
+        {
+            EnsureApplicationResources();
+            var dbPath = Path.Combine(Path.GetTempPath(), $"wpf_shared_combo_test_{Guid.NewGuid():N}.db");
+
+            try
+            {
+                var repo = new SqliteRepository(dbPath);
+                var workspace = new WorkspaceService(repo);
+                workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor One" });
+                workspace.AddProfessor(new Professor { Id = "P2", Name = "Professor Two" });
+                workspace.AddCourse(new Course
+                {
+                    Id = "MULTI-01",
+                    Name = "Multi",
+                    Grade = 2,
+                    HoursPerWeek = 1,
+                    Section = 1,
+                    CourseType = "전필",
+                    ProfessorId = "P1",
+                    BlockStructure = new List<int> { 1 },
+                });
+                workspace.AddCourse(new Course
+                {
+                    Id = "MULTI-02",
+                    Name = "Multi",
+                    Grade = 2,
+                    HoursPerWeek = 1,
+                    Section = 2,
+                    CourseType = "전필",
+                    ProfessorId = "P1",
+                    BlockStructure = new List<int> { 1 },
+                });
+
+                var vm = new DataInputViewModel(workspace, null!);
+                var group = vm.CourseGroups.Single();
+                group.IsEditing = true;
+
+                var view = new DataInputView { DataContext = vm };
+                var window = new Window
+                {
+                    Width = 1400,
+                    Height = 900,
+                    Content = view,
+                    ShowInTaskbar = false,
+                    WindowStyle = WindowStyle.None,
+                };
+
+                window.Show();
+                view.UpdateLayout();
+                var expander = FindDescendant<Expander>(view, item => item.DataContext == group);
+                Assert.NotNull(expander);
+                expander!.IsExpanded = true;
+                view.UpdateLayout();
+
+                var professorCombo = FindDescendant<ComboBox>(expander, combo => combo.Name == "ProfessorComboBox");
+                var courseTypeCombo = FindDescendant<ComboBox>(expander, combo => combo.Name == "CourseTypeComboBox");
+                Assert.NotNull(professorCombo);
+                Assert.NotNull(courseTypeCombo);
+
+                professorCombo!.SelectedValue = "P2";
+                courseTypeCombo!.SelectedItem = "전선";
+                view.UpdateLayout();
+                vm.SaveGroupCommand.Execute(group);
+
+                Assert.All(workspace.Courses, course => Assert.Equal("P2", course.ProfessorId));
+                Assert.All(workspace.Courses, course => Assert.Equal("전선", course.CourseType));
+
+                window.Close();
+            }
+            finally
+            {
+                Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+                if (File.Exists(dbPath)) File.Delete(dbPath);
+            }
+        });
+    }
+
     private static void RunSta(Action action)
     {
         Exception? error = null;
