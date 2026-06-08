@@ -7,8 +7,10 @@ using TimetableScheduler.Data;
 using TimetableScheduler.Domain;
 using TimetableScheduler.Solver;
 using TimetableScheduler.ViewModel;
+using TimetableScheduler.ViewModel.Editors;
 using TimetableScheduler.ViewModel.Pages;
 using TimetableScheduler.Wpf;
+using TimetableScheduler.Wpf.Controls;
 using TimetableScheduler.Wpf.Views;
 
 namespace TimetableScheduler.Wpf.Tests;
@@ -290,7 +292,6 @@ public class DataInputViewTests
 
                 var vm = new DataInputViewModel(workspace, null!);
                 var group = vm.CourseGroups.Single();
-                group.IsEditing = true;
 
                 var view = new DataInputView { DataContext = vm };
                 var window = new Window
@@ -321,6 +322,91 @@ public class DataInputViewTests
 
                 Assert.All(workspace.Courses, course => Assert.Equal("P2", course.ProfessorId));
                 Assert.All(workspace.Courses, course => Assert.Equal("전선", course.CourseType));
+
+                window.Close();
+            }
+            finally
+            {
+                Microsoft.Data.Sqlite.SqliteConnection.ClearAllPools();
+                if (File.Exists(dbPath)) File.Delete(dbPath);
+            }
+        });
+    }
+
+    [Fact]
+    public void CourseRoomPickers_KeepUnavailableAndMultiRoomsExclusive()
+    {
+        RunSta(() =>
+        {
+            EnsureApplicationResources();
+            var dbPath = Path.Combine(Path.GetTempPath(), $"wpf_room_picker_test_{Guid.NewGuid():N}.db");
+
+            try
+            {
+                var repo = new SqliteRepository(dbPath);
+                var workspace = new WorkspaceService(repo);
+                workspace.AddRoom(new Room { Id = "R1", Name = "Room One" });
+                workspace.AddRoom(new Room { Id = "R2", Name = "Room Two" });
+                workspace.AddCourse(new Course
+                {
+                    Id = "ROOM-01",
+                    Name = "Room Course",
+                    Grade = 2,
+                    HoursPerWeek = 1,
+                    Section = 1,
+                    CourseType = "전필",
+                    BlockStructure = new List<int> { 1 },
+                    FixedRooms = new List<string> { "R1" },
+                    UnavailableRooms = new List<string> { "R2" },
+                });
+
+                var vm = new DataInputViewModel(workspace, null!);
+                var group = vm.CourseGroups.Single();
+                group.IsEditing = true;
+
+                var view = new DataInputView { DataContext = vm };
+                var window = new Window
+                {
+                    Width = 1400,
+                    Height = 900,
+                    Content = view,
+                    ShowInTaskbar = false,
+                    WindowStyle = WindowStyle.None,
+                };
+
+                window.Show();
+                view.UpdateLayout();
+                var expander = FindDescendant<Expander>(view, item => item.DataContext == group);
+                Assert.NotNull(expander);
+                expander!.IsExpanded = true;
+                view.UpdateLayout();
+
+                var unavailablePicker = FindDescendant<CheckListPickerControl>(expander, picker => picker.Name == "GroupUnavailableRoomsPicker");
+                var fixedPicker = FindDescendant<CheckListPickerControl>(expander, picker => picker.Name == "GroupFixedRoomsPicker");
+                var allButton = FindDescendant<Button>(expander, button => button.Name == "CourseUnavailableAllRoomsButton");
+                Assert.NotNull(unavailablePicker);
+                Assert.NotNull(fixedPicker);
+                Assert.NotNull(allButton);
+                Assert.NotEqual(Visibility.Visible, allButton!.Visibility);
+
+                group.IsEditing = true;
+                view.UpdateLayout();
+                Assert.Equal(Visibility.Visible, allButton.Visibility);
+
+                var unavailableItems = ((IEnumerable<CheckListItem>)unavailablePicker!.DataContext).ToList();
+                var fixedItems = ((IEnumerable<CheckListItem>)fixedPicker!.DataContext).ToList();
+
+                unavailableItems.Single(item => item.Id == "R1").IsChecked = true;
+                Assert.DoesNotContain("R1", group.Sections[0].FixedRooms);
+                Assert.Contains("R1", group.Sections[0].UnavailableRooms);
+
+                fixedItems.Single(item => item.Id == "R2").IsChecked = true;
+                Assert.Contains("R2", group.Sections[0].FixedRooms);
+                Assert.DoesNotContain("R2", group.Sections[0].UnavailableRooms);
+
+                allButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.Empty(group.Sections[0].FixedRooms);
+                Assert.Equal(new[] { "R1", "R2" }, group.Sections[0].UnavailableRooms.OrderBy(id => id));
 
                 window.Close();
             }

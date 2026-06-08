@@ -47,7 +47,15 @@ public sealed record CellAssignment(
             var labels = new List<string>();
             if (!string.IsNullOrWhiteSpace(ProfessorLabel))
                 labels.Add(ProfessorLabel);
-            labels.AddRange(CoteachProfLabels.Where(label => !string.IsNullOrWhiteSpace(label)));
+            for (var i = 0; i < CoteachProfLabels.Count; i++)
+            {
+                var label = CoteachProfLabels[i];
+                if (string.IsNullOrWhiteSpace(label)) continue;
+                var id = i < CoteachProfIds.Count ? CoteachProfIds[i] : "";
+                if (string.Equals(id, ProfessorId, StringComparison.Ordinal)) continue;
+                if (string.Equals(label, ProfessorLabel, StringComparison.Ordinal)) continue;
+                labels.Add(label);
+            }
             return string.Join(", ", labels);
         }
     }

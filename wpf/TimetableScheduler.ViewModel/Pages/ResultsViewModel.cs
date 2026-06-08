@@ -206,8 +206,12 @@ public sealed partial class ResultsViewModel : PageViewModelBase
         foreach (var p in professors)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignment, courses, (c, _) => c.ProfessorId == p.Id, professors, rooms);
+            vm.Render(assignment, courses, (c, _) => IsCourseTaughtBy(c, p.Id), professors, rooms);
             ProfessorViews.Add(new NamedGridViewModel(p.Id, p.Name, vm));
         }
     }
+
+    private static bool IsCourseTaughtBy(Course course, string professorId) =>
+        string.Equals(course.ProfessorId, professorId, StringComparison.Ordinal)
+        || course.CoteachProfs.Contains(professorId);
 }

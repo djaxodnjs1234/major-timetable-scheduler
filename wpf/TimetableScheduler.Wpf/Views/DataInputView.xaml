@@ -67,12 +67,10 @@
                                 <ColumnDefinition Width="72" SharedSizeGroup="ProfessorId" />
                                 <ColumnDefinition Width="180" SharedSizeGroup="ProfessorName" />
                                 <ColumnDefinition Width="220" SharedSizeGroup="ProfessorUnavailableSlots" />
-                                <ColumnDefinition Width="260" SharedSizeGroup="ProfessorUnavailableRooms" />
                             </Grid.ColumnDefinitions>
                             <TextBlock Grid.Column="0" Text="{Binding HeaderId}" FontWeight="Bold" Margin="6,0" />
                             <TextBlock Grid.Column="1" Text="{Binding HeaderName}" TextTrimming="CharacterEllipsis" Margin="6,0" />
                             <TextBlock Grid.Column="2" Text="{Binding HeaderUnavailableSlots}" TextTrimming="CharacterEllipsis" Margin="6,0" />
-                            <TextBlock Grid.Column="3" Text="{Binding HeaderUnavailableRooms}" TextTrimming="CharacterEllipsis" Margin="6,0" />
                         </Grid>
                     </Border>
                 </Expander.Header>
@@ -121,10 +119,6 @@
 
                                 <WrapPanel Margin="0,0,0,8"
                                            Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
-                                    <TextBlock Text="불가 강의실: " FontSize="11" FontWeight="Bold"
-                                               Foreground="{StaticResource OnSurfaceVariant}" />
-                                    <TextBlock Text="{Binding HeaderUnavailableRooms}"
-                                               FontSize="11" Margin="0,0,16,0" />
                                     <TextBlock Text="불가 시간: " FontSize="11" FontWeight="Bold"
                                                Foreground="{StaticResource OnSurfaceVariant}" />
                                     <TextBlock Text="{Binding HeaderUnavailableSlots}"
@@ -132,18 +126,8 @@
                                 </WrapPanel>
 
                                 <StackPanel Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}">
-                                    <StackPanel Orientation="Horizontal" Margin="0,4,0,4">
-                                        <TextBlock Text="불가 강의실"
-                                                   FontSize="11" FontWeight="Bold"
-                                                   Foreground="{StaticResource OnSurfaceVariant}" />
-                                        <Button Content="전체 선택" Click="OnProfessorAllRoomsClick"
-                                                Padding="8,2" Margin="12,0,0,0"
-                                                Background="{StaticResource SurfaceContainer}" />
-                                    </StackPanel>
-                                    <ctrl:CheckListPickerControl x:Name="UnavailableRoomsPicker" />
-
                                     <TextBlock Text="불가 시간 (외래/겸임 출강)"
-                                               FontSize="11" FontWeight="Bold" Margin="0,12,0,4"
+                                               FontSize="11" FontWeight="Bold" Margin="0,4,0,4"
                                                Foreground="{StaticResource OnSurfaceVariant}" />
                                     <ctrl:TimeSlotPickerControl x:Name="UnavailableSlotsPicker"
                                                                  Width="400" HorizontalAlignment="Left" />
@@ -201,8 +185,9 @@
                             <ColumnDefinition Width="56" SharedSizeGroup="CourseGrade" />
                             <ColumnDefinition Width="74" SharedSizeGroup="CourseHours" />
                             <ColumnDefinition Width="70" SharedSizeGroup="CourseBlocks" />
-                            <ColumnDefinition Width="112" SharedSizeGroup="CourseUnavailableRooms" />
                             <ColumnDefinition Width="112" SharedSizeGroup="CourseCoteach" />
+                            <ColumnDefinition Width="112" SharedSizeGroup="CourseUnavailableRooms" />
+                            <ColumnDefinition Width="112" SharedSizeGroup="CourseFixedRooms" />
                             <ColumnDefinition Width="104" SharedSizeGroup="CourseFixedTimes" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0" Text="{Binding HeaderCode}" FontWeight="Bold" TextTrimming="CharacterEllipsis" Margin="6,0" />
@@ -213,9 +198,10 @@
                         <TextBlock Grid.Column="5" Text="{Binding HeaderGrade}" Margin="6,0" />
                         <TextBlock Grid.Column="6" Text="{Binding HeaderHours}" Margin="6,0" />
                         <TextBlock Grid.Column="7" Text="{Binding HeaderBlockStructure}" TextTrimming="CharacterEllipsis" Margin="6,0" />
-                        <TextBlock Grid.Column="8" Text="{Binding HeaderUnavailableRooms}" TextTrimming="CharacterEllipsis" Margin="6,0" />
-                        <TextBlock Grid.Column="9" Text="{Binding HeaderCoteachProfessors}" TextTrimming="CharacterEllipsis" Margin="6,0" />
-                        <TextBlock Grid.Column="10" Text="{Binding HeaderFixedTimes}" TextTrimming="CharacterEllipsis" Margin="6,0" />
+                        <TextBlock Grid.Column="8" Text="{Binding HeaderCoteachProfessors}" TextTrimming="CharacterEllipsis" Margin="6,0" />
+                        <TextBlock Grid.Column="9" Text="{Binding HeaderUnavailableRooms}" TextTrimming="CharacterEllipsis" Margin="6,0" />
+                        <TextBlock Grid.Column="10" Text="{Binding HeaderFixedRooms}" TextTrimming="CharacterEllipsis" Margin="6,0" />
+                        <TextBlock Grid.Column="11" Text="{Binding HeaderFixedTimes}" TextTrimming="CharacterEllipsis" Margin="6,0" />
                     </Grid>
                     </Border>
                 </Expander.Header>
@@ -325,7 +311,7 @@
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,3">
                                             <TextBlock Text="블록구조" FontSize="11" />
                                             <TextBlock Text=" (?)" FontSize="11" Foreground="{StaticResource PrimaryBrush}"
-                                                       ToolTip="한 과목의 주당 시간이 나뉘는 방식입니다. 예: 주당 3시간 과목은 보통 2시간+1시간 블록입니다." />
+                                                       ToolTip="한 과목의 주당 시간이 나뉘는 방식입니다.&#x0a;예: 주당 3시간 과목은 보통 2시간+1시간 블록입니다." />
                                         </StackPanel>
                                         <Border Height="28" Width="104"
                                                 Background="#F3F4F6"
@@ -361,14 +347,18 @@
 
                                 <StackPanel Margin="0,0,0,8"
                                             Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
-                                    <TextBlock Text="{Binding DataContext.ReadOnlyProfessor, RelativeSource={RelativeSource AncestorType=Expander}, StringFormat=교수: {0}}"
+                                    <TextBlock Text="{Binding DataContext.ReadOnlyProfessor, RelativeSource={RelativeSource AncestorType=Expander}, StringFormat=담당교수: {0}}"
                                                FontSize="11"
                                                Foreground="{StaticResource OnSurfaceVariant}" />
-                                    <TextBlock Text="{Binding DataContext.ReadOnlyUnavailableRooms, RelativeSource={RelativeSource AncestorType=Expander}, StringFormat=불가강의실: {0}}"
+                                    <TextBlock Text="{Binding DataContext.ReadOnlyCoteachProfessors, RelativeSource={RelativeSource AncestorType=Expander}, StringFormat=팀티칭 교수: {0}}"
                                                FontSize="11"
                                                Foreground="{StaticResource OnSurfaceVariant}"
                                                Margin="0,2,0,0" />
-                                    <TextBlock Text="{Binding DataContext.ReadOnlyCoteachProfessors, RelativeSource={RelativeSource AncestorType=Expander}, StringFormat=팀티칭 교수: {0}}"
+                                    <TextBlock Text="{Binding DataContext.ReadOnlyUnavailableRooms, RelativeSource={RelativeSource AncestorType=Expander}, StringFormat=불가 강의실: {0}}"
+                                               FontSize="11"
+                                               Foreground="{StaticResource OnSurfaceVariant}"
+                                               Margin="0,2,0,0" />
+                                    <TextBlock Text="{Binding DataContext.ReadOnlyFixedRooms, RelativeSource={RelativeSource AncestorType=Expander}, StringFormat=고정 강의실(다중 강의실 가능): {0}}"
                                                FontSize="11"
                                                Foreground="{StaticResource OnSurfaceVariant}"
                                                Margin="0,2,0,0" />
@@ -377,6 +367,10 @@
                                                Foreground="{StaticResource OnSurfaceVariant}"
                                                Margin="0,2,0,0" />
                                 </StackPanel>
+                                <TextBlock Text="담당교수"
+                                           FontSize="11" FontWeight="Bold" Margin="0,4,0,4"
+                                           Foreground="{StaticResource OnSurfaceVariant}"
+                                           Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
                                 <ComboBox x:Name="ProfessorComboBox"
                                           Height="30" MaxWidth="180" HorizontalAlignment="Left" Padding="6,3"
                                           ItemsSource="{Binding DataContext.Workspace.Professors, RelativeSource={RelativeSource AncestorType=UserControl}}"
@@ -386,20 +380,35 @@
                                           SelectionChanged="OnCourseSharedSelectionChanged"
                                           Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
 
-                                <StackPanel Orientation="Horizontal" Margin="0,12,0,4">
+                                <TextBlock Text="팀티칭 교수"
+                                           FontSize="11" FontWeight="Bold" Margin="0,12,0,4"
+                                           Foreground="{StaticResource OnSurfaceVariant}"
+                                           Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
+                                <ctrl:CheckListPickerControl x:Name="GroupCoteachProfsPicker"
+                                                             Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
+
+                                <StackPanel Orientation="Horizontal" Margin="0,12,0,4"
+                                            Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}">
                                     <TextBlock Text="불가 강의실"
                                                FontSize="11" FontWeight="Bold"
                                                Foreground="{StaticResource OnSurfaceVariant}" />
                                     <TextBlock Text=" (?)" FontSize="11" Foreground="{StaticResource PrimaryBrush}"
-                                               ToolTip="교수의 강의실 선호보다 교과목의 불가 강의실 회피가 먼저 적용됩니다." />
+                                               ToolTip="교수의 강의실 선호보다&#x0a;교과목의 불가 강의실 회피가 먼저 적용됩니다." />
+                                    <Button x:Name="CourseUnavailableAllRoomsButton"
+                                            Content="전체 선택"
+                                            Click="OnCourseUnavailableAllRoomsClick"
+                                            Padding="8,2"
+                                            Margin="12,0,0,0"
+                                            Background="{StaticResource SurfaceContainer}" />
                                 </StackPanel>
                                 <ctrl:CheckListPickerControl x:Name="GroupUnavailableRoomsPicker"
                                                              Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
 
-                                <TextBlock Text="팀티칭 교수"
+                                <TextBlock Text="고정 강의실(다중 강의실 가능)"
                                            FontSize="11" FontWeight="Bold" Margin="0,12,0,4"
-                                           Foreground="{StaticResource OnSurfaceVariant}" />
-                                <ctrl:CheckListPickerControl x:Name="GroupCoteachProfsPicker"
+                                           Foreground="{StaticResource OnSurfaceVariant}"
+                                           Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
+                                <ctrl:CheckListPickerControl x:Name="GroupFixedRoomsPicker"
                                                              Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
 
                                 <CheckBox x:Name="IsFixedCheckBox"
@@ -708,12 +717,10 @@
                                     <ColumnDefinition Width="72" SharedSizeGroup="ProfessorId" />
                                     <ColumnDefinition Width="180" SharedSizeGroup="ProfessorName" />
                                     <ColumnDefinition Width="220" SharedSizeGroup="ProfessorUnavailableSlots" />
-                                    <ColumnDefinition Width="260" SharedSizeGroup="ProfessorUnavailableRooms" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Grid.Column="1" Text="교수 ID" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                                 <TextBlock Grid.Column="2" Text="이름" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                                 <TextBlock Grid.Column="3" Text="불가 시간" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="4" Text="불가 강의실" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                             </Grid>
                             <ItemsControl ItemsSource="{Binding ProfessorItems}"
                                           ItemTemplate="{StaticResource ProfessorRowTemplate}" />
@@ -732,8 +739,9 @@
                                     <ColumnDefinition Width="56" SharedSizeGroup="CourseGrade" />
                                     <ColumnDefinition Width="74" SharedSizeGroup="CourseHours" />
                                     <ColumnDefinition Width="70" SharedSizeGroup="CourseBlocks" />
-                                    <ColumnDefinition Width="112" SharedSizeGroup="CourseUnavailableRooms" />
                                     <ColumnDefinition Width="112" SharedSizeGroup="CourseCoteach" />
+                                    <ColumnDefinition Width="112" SharedSizeGroup="CourseUnavailableRooms" />
+                                    <ColumnDefinition Width="112" SharedSizeGroup="CourseFixedRooms" />
                                     <ColumnDefinition Width="104" SharedSizeGroup="CourseFixedTimes" />
                                 </Grid.ColumnDefinitions>
                                 <TextBlock Grid.Column="1" Text="교과목" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
@@ -744,9 +752,10 @@
                                 <TextBlock Grid.Column="6" Text="학년" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                                 <TextBlock Grid.Column="7" Text="시수" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                                 <TextBlock Grid.Column="8" Text="블록" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="9" Text="불가 강의실" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="10" Text="팀티칭 교수" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="11" Text="시간 고정" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="9" Text="팀티칭 교수" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="10" Text="불가 강의실" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="11" Text="고정 강의실" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="12" Text="시간 고정" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                             </Grid>
                             <ItemsControl ItemsSource="{Binding CourseGroups}"
                                           ItemTemplate="{StaticResource CourseGroupRowTemplate}" />
@@ -812,7 +821,7 @@
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                                 <TextBlock Text="Cross 수동 설정" FontSize="14" FontWeight="Bold" />
                                 <TextBlock Text=" (?)" FontSize="12" Foreground="{StaticResource PrimaryBrush}"
-                                           ToolTip="Cross는 두 과목의 분반 시간을 서로 엇갈리게 묶어 시간표 공간을 아끼는 설정입니다. 공간이 줄어들면 다른 수업을 배치할 여지가 커져 해를 더 잘 찾을 수 있습니다. 단, 분반 수와 시수가 같은 과목 2개만 묶고, 너무 많이 설정하면 오히려 선택지가 줄어들 수 있습니다." />
+                                           ToolTip="Cross는 두 과목의 분반 시간을 서로 엇갈리게 묶어&#x0a;시간표 공간을 아끼는 설정입니다.&#x0a;공간이 줄어들면 다른 수업을 배치할 여지가 커져&#x0a;해를 더 잘 찾을 수 있습니다.&#x0a;단, 분반 수와 시수가 같은 과목 2개만 묶고,&#x0a;너무 많이 설정하면 오히려 선택지가 줄어들 수 있습니다." />
                             </StackPanel>
                             <Border Background="#FAFAFA" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1" Margin="0,0,0,16">
                                 <Grid>
@@ -885,14 +894,14 @@
                                     <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,4" VerticalAlignment="Center">
                                         <TextBlock Text="해 후보 수" />
                                         <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
-                                                   ToolTip="자동 생성 후 비교해 볼 시간표 후보 개수입니다. 숫자가 클수록 더 많이 찾지만 시간이 더 걸릴 수 있습니다." />
+                                                   ToolTip="자동 생성 후 비교해 볼 시간표 후보 개수입니다.&#x0a;숫자가 클수록 더 많이 찾지만 시간이 더 걸릴 수 있습니다." />
                                     </StackPanel>
                                     <TextBox Grid.Row="0" Grid.Column="1" Padding="6,4" Margin="0,4" Width="120" HorizontalAlignment="Left"
                                              Text="{Binding TotalSolutions, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                     <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="0,4" VerticalAlignment="Center">
                                         <TextBlock Text="제한 시간 (초)" />
                                         <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
-                                                   ToolTip="시간표를 찾기 위해 솔버가 사용할 최대 시간입니다. 시간이 길수록 해를 찾을 가능성이 높아질 수 있습니다." />
+                                                   ToolTip="시간표를 찾기 위해 솔버가 사용할 최대 시간입니다.&#x0a;시간이 길수록 해를 찾을 가능성이 높아질 수 있습니다." />
                                     </StackPanel>
                                     <TextBox Grid.Row="1" Grid.Column="1" Padding="6,4" Margin="0,4" Width="120" HorizontalAlignment="Left"
                                              Text="{Binding TimeLimitSec, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
@@ -902,7 +911,7 @@
                             <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
                                 <TextBlock Text="선호 조건" FontSize="14" FontWeight="Bold" />
                                 <TextBlock Text=" (?)" FontSize="12" Foreground="{StaticResource PrimaryBrush}"
-                                           ToolTip="시간표가 반드시 지켜야 하는 규칙은 아니지만, 가능하면 더 좋은 시간표가 되도록 솔버가 줄이려는 조건입니다." />
+                                           ToolTip="시간표가 반드시 지켜야 하는 규칙은 아니지만,&#x0a;가능하면 더 좋은 시간표가 되도록 솔버가 줄이려는 조건입니다." />
                             </StackPanel>
                             <Border Background="#FAFAFA" Padding="16" BorderBrush="{StaticResource OutlineVariant}" BorderThickness="1" Margin="0,0,0,16">
                                 <StackPanel>
@@ -910,21 +919,21 @@
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="월요일 오전 / 금요일 오후 피하기" />
                                             <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
-                                                       ToolTip="월요일 이른 시간과 금요일 늦은 시간 수업을 줄여 학생·교수 부담을 낮춥니다." />
+                                                       ToolTip="월요일 이른 시간과 금요일 늦은 시간 수업을 줄여&#x0a;학생·교수 부담을 낮춥니다." />
                                         </StackPanel>
                                     </CheckBox>
                                     <CheckBox IsChecked="{Binding UseSc02}" Margin="0,4">
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="교수별 강의 요일 3일 이내 선호" />
                                             <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
-                                                       ToolTip="한 교수의 수업이 너무 많은 요일에 흩어지지 않도록 합니다." />
+                                                       ToolTip="한 교수의 수업이 너무 많은 요일에&#x0a;흩어지지 않도록 합니다." />
                                         </StackPanel>
                                     </CheckBox>
                                     <CheckBox IsChecked="{Binding UseSc03}" Margin="0,4">
                                         <StackPanel Orientation="Horizontal">
                                             <TextBlock Text="같은 과목 수업 간격 확보" />
                                             <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
-                                                       ToolTip="같은 과목의 여러 수업 블록이 너무 붙지 않게 배치합니다." />
+                                                       ToolTip="같은 과목의 여러 수업 블록이&#x0a;너무 붙지 않게 배치합니다." />
                                         </StackPanel>
                                     </CheckBox>
                                 </StackPanel>

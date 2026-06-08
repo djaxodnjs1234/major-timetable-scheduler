@@ -4,7 +4,7 @@
              xmlns:sys="clr-namespace:System;assembly=mscorlib"
              IsHitTestVisible="False">
     <Border HorizontalAlignment="Right"
-            Padding="8,5"
+            Padding="6,3"
             Background="#F2FFFFFF"
             BorderBrush="#CCD4DA"
             BorderThickness="1"
@@ -25,14 +25,14 @@
             </ItemsControl.ItemsPanel>
             <ItemsControl.ItemTemplate>
                 <DataTemplate>
-                    <StackPanel Orientation="Horizontal" Margin="0,0,8,0">
-                        <Border Width="12"
-                                Height="12"
-                                Margin="0,0,3,0"
+                    <StackPanel Orientation="Horizontal" Margin="0,0,6,0">
+                        <Border Width="10"
+                                Height="10"
+                                Margin="0,0,2,0"
                                 BorderBrush="#555"
                                 BorderThickness="1"
                                 Background="{Binding Converter={StaticResource GradeToBrush}}" />
-                        <TextBlock FontSize="11"
+                        <TextBlock FontSize="10"
                                    Foreground="#333"
                                    VerticalAlignment="Center"
                                    Text="{Binding StringFormat={}{0}학년}" />
