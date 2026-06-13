@@ -59,6 +59,40 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void CourseEditorItems_AreViewModelsNotRawCourses()
+    {
+        _workspace.AddCourse(MakeCourse("GA1004-01", 1));
+        var vm = MakeVm();
+
+        var item = Assert.Single(vm.CourseGroups);
+
+        Assert.IsType<CourseGroupItem>(item);
+        Assert.IsNotType<Course>(item);
+    }
+
+    [Fact]
+    public void CourseEditorItem_ProvidesBlockSummaryAndSectionEditors()
+    {
+        _workspace.AddCourse(MakeCourse("GA1004-01", 1, isFixed: true));
+        _workspace.AddCourse(MakeCourse("GA1004-02", 2, isFixed: true));
+        var vm = MakeVm();
+
+        var item = Assert.Single(vm.CourseGroups);
+
+        Assert.NotNull(item.FixedSlotEditor);
+        Assert.Contains("블록 구성", item.FixedSlotEditor.BlockSummary);
+        Assert.Equal(2, item.FixedSlotEditor.SectionEditors.Count);
+    }
+
+    [Fact]
+    public void CourseDisplay_DoesNotBindMissingCourseProperties()
+    {
+        Assert.Null(typeof(Course).GetProperty("BlockSummary"));
+        Assert.Null(typeof(Course).GetProperty("SectionEditors"));
+        Assert.NotNull(typeof(CourseGroupItem).GetProperty("FixedSlotEditor"));
+    }
+
+    [Fact]
     public void AddNew_Course_GeneratesNextNumericId()
     {
         _workspace.AddCourse(MakeCourse("1-01", 1));

@@ -37,7 +37,9 @@ public partial class ManualEditView : UserControl
     private CrossHoverState EvaluateCrossHover(UnifiedTimetableControl.CellClickedEventArgs e)
     {
         if (DataContext is ManualEditViewModel vm)
+        {
             return vm.EvaluateCrossHover(e.Day, e.Period, e.Grade, e.SubColumnIdx, e.Assignment);
+        }
         return CrossHoverState.Hidden();
     }
 
@@ -51,6 +53,7 @@ public partial class ManualEditView : UserControl
     private CrossHoverState EvaluateCrossDropHover(UnifiedTimetableControl.CellDropMoveEventArgs e)
     {
         if (DataContext is ManualEditViewModel vm)
+        {
             return vm.EvaluateCrossDropHover(
                 e.Source.Day,
                 e.Source.Period,
@@ -62,6 +65,7 @@ public partial class ManualEditView : UserControl
                 e.Target.Grade,
                 e.Target.SubColumnIdx,
                 e.Target.Assignment);
+        }
         return CrossHoverState.Hidden();
     }
 

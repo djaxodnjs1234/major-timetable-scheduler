@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Diagnostics;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TimetableScheduler.Data;
@@ -110,6 +109,9 @@ public sealed partial class CourseGroupItem : ObservableObject
 
     [ObservableProperty]
     private bool isEditing;
+
+    [ObservableProperty]
+    private FixedSlotEditorViewModel? fixedSlotEditor;
 }
 
 public sealed record FixedTimeOverlapInfo(
@@ -400,7 +402,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void SaveGroup(CourseGroupItem item)
     {
         if (item is null || item.Sections.Count == 0) return;
-        TraceProfessorSections("Before SaveGroup", item.BaseId, item.Sections);
         LastCourseGroupWarning = "";
         OnPropertyChanged(nameof(LastCourseGroupWarning));
         PromoteMissingSharedValues(item.Sections);
@@ -426,7 +427,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             _workspace.UpdateCourse(sec);
         }
         item.IsEditing = false;
-        TraceProfessorSections("After SaveGroup", item.BaseId, item.Sections);
     }
 
     /// <summary>Delete all sections in the group.</summary>
@@ -551,7 +551,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     [RelayCommand(CanExecute = nameof(CanGoToSelection))]
     private void GoToSelection()
     {
-        TraceWorkspaceProfessors("Before navigating to preview");
         GoToSelectionRequested?.Invoke(this, EventArgs.Empty);
     }
     private bool CanGoToSelection() => IsSolveComplete;
@@ -563,7 +562,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     [RelayCommand(CanExecute = nameof(CanGoToManual))]
     private void GoToManual()
     {
-        TraceWorkspaceProfessors("Before navigating to manual edit");
         GoToManualRequested?.Invoke(this, EventArgs.Empty);
     }
     private bool CanGoToManual() => IsExistingMode;
@@ -572,7 +570,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public ManualEditHandoff? BuildEditHandoff()
     {
         if (_editBaseAssignments == null) return null;
-        TraceWorkspaceProfessors("Before manual edit handoff");
         var solution = new RankedSolution(_editBaseAssignments, new SolutionScore(0, 0, 0, 0));
         return new ManualEditHandoff(solution, _editBaseManualCrossLinks);
     }
@@ -581,7 +578,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     public override void OnNavigatedTo()
     {
-        TraceWorkspaceProfessors("After returning to data input");
         RebuildProfessorItems();
         RebuildCourseGroups();
         RebuildRoomItems();
@@ -629,7 +625,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public void LoadForNewTimetable()
     {
         SwitchWorkspace(WorkspaceService.CreateSession(AppData.Empty()));
-        TraceWorkspaceProfessors("After loading new timetable session");
         IsExistingMode = false;
         _editBaseAssignments = null;
         _editBaseManualCrossLinks = Array.Empty<SavedManualCrossLinkRow>();
@@ -645,7 +640,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     {
         var snapshot = SavedTimetableSnapshotResolver.Resolve(record.SnapshotJson);
         SwitchWorkspace(WorkspaceService.CreateSession(snapshot));
-        TraceWorkspaceProfessors("After loading existing timetable session");
         IsExistingMode = true;
         SelectedCategory = InputCategory.Course;
         _editBaseAssignments = record.Assignments
@@ -735,7 +729,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     private void RebuildCourseGroups()
     {
-        TraceWorkspaceProfessors("Before RebuildCourseGroups");
         CourseGroups.Clear();
         var profNames = _workspace.Professors.ToDictionary(p => p.Id, p => p.Name);
         var roomNames = _workspace.Rooms.ToDictionary(r => r.Id, r => r.Name);
@@ -757,7 +750,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 : "";
             var fixedPart = fixedAny ? "  ★" : "";
             var label = $"{g.Key}  {rep.Name}  {rep.Grade}학년  {rep.HoursPerWeek}h{secPart}{fixedPart}";
-            CourseGroups.Add(new CourseGroupItem
+            var item = new CourseGroupItem
             {
                 BaseId = g.Key,
                 DisplayLabel = label,
@@ -776,10 +769,10 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 HeaderCrossGroups = FormatCrossGroups(g.Key),
                 IsImportedFromExcel = sections.Any(s => !string.IsNullOrWhiteSpace(s.Department)),
                 Sections = sections,
-            });
+            };
+            item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, rep.IsFixed);
+            CourseGroups.Add(item);
         }
-        foreach (var group in CourseGroups)
-            TraceProfessorSections("After RebuildCourseGroups", group.BaseId, group.Sections);
     }
 
     private void PromoteMissingSharedValues(IReadOnlyList<Course> sections)
@@ -828,23 +821,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
         LastCourseGroupWarning = $"Inconsistent ProfessorId values in {baseId}: {string.Join(", ", nonEmptyProfessorIds)}";
         OnPropertyChanged(nameof(LastCourseGroupWarning));
-        Debug.WriteLine($"[ProfessorTrace][Conflict][{context}] CourseId={baseId}, ProfessorIds={string.Join(",", nonEmptyProfessorIds)}");
-    }
-
-    private void TraceWorkspaceProfessors(string label)
-    {
-        foreach (var group in _workspace.Courses
-            .GroupBy(c => DomainHelpers.BaseId(c.Id))
-            .OrderBy(g => SortNumericFirst(g.Key)))
-        {
-            TraceProfessorSections(label, group.Key, group.OrderBy(c => c.Section));
-        }
-    }
-
-    private static void TraceProfessorSections(string label, string baseId, IEnumerable<Course> sections)
-    {
-        foreach (var section in sections)
-            Debug.WriteLine($"[ProfessorTrace][{label}] CourseId={baseId}, Section={SectionLetter(section.Section)}, ProfessorId={section.ProfessorId}");
     }
 
     private static string? FirstNonEmpty(IEnumerable<string> values) =>

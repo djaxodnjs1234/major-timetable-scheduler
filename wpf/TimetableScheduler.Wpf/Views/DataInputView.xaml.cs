@@ -114,10 +114,7 @@ public partial class DataInputView : UserControl
                 p => p.Id, p => p.Name,
                 course.CoteachProfs);
         }
-        if (expander.FindName("FixedSlotEditor") is FixedSlotEditorControl editor)
-        {
-            editor.DataContext = FixedSlotEditorViewModel.Build(item, course.IsFixed);
-        }
+        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, course.IsFixed);
         RefreshCourseBlockStructureCombo(expander, item);
     }
 
@@ -135,7 +132,7 @@ public partial class DataInputView : UserControl
         Vm.HandleCourseHoursChanged(item, weeklyHours);
         RefreshCourseBlockStructureCombo(expander, item);
         RefreshFixedTimeCheckBox(expander);
-        RebuildFixedSlotEditor(expander, item);
+        RebuildFixedSlotEditor(item);
     }
 
     private void OnCourseBlockStructureChanged(object sender, SelectionChangedEventArgs e)
@@ -154,7 +151,7 @@ public partial class DataInputView : UserControl
 
         Vm.HandleCourseBlockStructureChanged(item);
         RefreshCourseBlockStructureCombo(expander, item);
-        RebuildFixedSlotEditor(expander, item);
+        RebuildFixedSlotEditor(item);
     }
 
     private void OnCourseSharedSelectionChanged(object sender, SelectionChangedEventArgs e)
@@ -179,9 +176,7 @@ public partial class DataInputView : UserControl
         if (item == null) return;
         var expander = FindAncestor<Expander>(dep);
         if (expander == null) return;
-        var editor = FindDescendant<FixedSlotEditorControl>(expander);
-        if (editor != null)
-            editor.DataContext = FixedSlotEditorViewModel.Build(item, item.Sections[0].IsFixed);
+        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, item.Sections[0].IsFixed);
     }
 
     private static void RefreshCourseBlockStructureCombo(Expander expander, CourseGroupItem item)
@@ -194,10 +189,9 @@ public partial class DataInputView : UserControl
         BindingOperations.GetBindingExpression(combo, ComboBox.SelectedItemProperty)?.UpdateTarget();
     }
 
-    private static void RebuildFixedSlotEditor(Expander expander, CourseGroupItem item)
+    private static void RebuildFixedSlotEditor(CourseGroupItem item)
     {
-        if (expander.FindName("FixedSlotEditor") is FixedSlotEditorControl editor)
-            editor.DataContext = FixedSlotEditorViewModel.Build(item, item.Sections[0].IsFixed);
+        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, item.Sections[0].IsFixed);
     }
 
     private static void RefreshFixedTimeCheckBox(Expander expander)

@@ -40,7 +40,7 @@ public sealed record EditCellState(ManualMoveCellState State, string Reason)
 public sealed record CrossHoverState(bool CanCreate, string Reason)
 {
     public static CrossHoverState Hidden(string reason = "") => new(false, reason);
-    public static CrossHoverState Available(string reason = "크로스 가능: + 클릭 시 선택 수업이 대상 수업 시간대로 이동하고 HC-11 예외가 생성됩니다.") => new(true, reason);
+    public static CrossHoverState Available(string reason = "크로스 가능: + 클릭 시 선택 수업이 대상 수업 시간대로 이동하고 학년 충돌 예외가 생성됩니다.") => new(true, reason);
 }
 
 public sealed record SwapHoverState(bool CanSwap, string Reason)
@@ -75,6 +75,35 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
 
     public event EventHandler? Rebuilt;
 
+    public static string BuildManualCrossDisplayKey(
+        CellAssignment assignment,
+        int day,
+        int period) =>
+        BuildManualCrossDisplayKey(
+            assignment.CourseId,
+            assignment.Section,
+            day,
+            period,
+            assignment.RowSpan,
+            assignment.Rooms);
+
+    public static string BuildManualCrossDisplayKey(
+        string courseId,
+        int section,
+        int day,
+        int period,
+        int rowSpan,
+        IEnumerable<string> roomIds) =>
+        string.Join("\u001f", new[]
+        {
+            courseId.Trim(),
+            section > 0 ? section.ToString(System.Globalization.CultureInfo.InvariantCulture) : "",
+            day.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            period.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            rowSpan.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            BuildRoomIdsKey(roomIds),
+        });
+
     partial void OnExpandAllGradesChanged(bool value)
     {
         if (_lastAssignment != null && _lastCourses != null)
@@ -97,16 +126,18 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         _lastProfessors = professors;
         _lastRooms = rooms;
 
-        var courseMap = courses.ToDictionary(c => c.Id);
+        var courseMap = BuildAssignmentCourseMap(assignment, courses);
         var professorNames = BuildProfessorNameMap(professors);
         var roomNames = BuildRoomNameMap(rooms);
 
-        // (cid, d, p) → set of rooms
-        var roomsBySlot = new Dictionary<(string Cid, int Day, int Period), HashSet<string>>();
+        // (course metadata key, d, p) -> set of rooms. The metadata key is not just
+        // CourseId because some imported/saved sessions can contain duplicate Course.Id.
+        var roomsBySlot = new Dictionary<(string CourseKey, int Day, int Period), HashSet<string>>();
         foreach (var a in assignment)
         {
-            if (!courseMap.ContainsKey(a.CourseId)) continue;
-            var key = (a.CourseId, a.Day, a.Period);
+            var courseKey = BuildAssignmentCourseKey(a, courses);
+            if (!courseMap.ContainsKey(courseKey)) continue;
+            var key = (courseKey, a.Day, a.Period);
             if (!roomsBySlot.TryGetValue(key, out var set))
                 roomsBySlot[key] = set = new HashSet<string>();
             set.Add(a.RoomId);
@@ -125,7 +156,7 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
 
         foreach (var block in visualBlocks)
         {
-            var g = courseMap[block.CourseId].Grade;
+            var g = courseMap[block.CourseKey].Grade;
             var requiredWidth = block.SubColumnIdx + 1;
             if (requiredWidth > maxWidth[(block.Day, g)])
                 maxWidth[(block.Day, g)] = requiredWidth;
@@ -162,13 +193,13 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
                 {
                     if (col.Grade is not int g) continue;
                     var coursesHere = visualBlocks
-                        .Where(b => b.Day == d && b.StartPeriod == p && courseMap[b.CourseId].Grade == g)
+                        .Where(b => b.Day == d && b.StartPeriod == p && courseMap[b.CourseKey].Grade == g)
                         .OrderBy(b => b.SubColumnIdx)
                         .ToList();
 
                     foreach (var block in coursesHere)
                     {
-                        var c = courseMap[block.CourseId];
+                        var c = courseMap[block.CourseKey];
                         cells.Add(new UnifiedCell(
                             d, p, g, block.SubColumnIdx,
                             CellAssignment.FromCourse(c, block.Rooms, block.RowSpan, professorNames, roomNames)));
@@ -181,15 +212,75 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         Rebuilt?.Invoke(this, EventArgs.Empty);
     }
 
+    private static Dictionary<string, Course> BuildAssignmentCourseMap(
+        IReadOnlyList<SolutionAssignment> assignments,
+        IReadOnlyList<Course> courses)
+    {
+        var map = new Dictionary<string, Course>(StringComparer.Ordinal);
+        foreach (var assignment in assignments)
+        {
+            var key = BuildAssignmentCourseKey(assignment, courses);
+            if (string.IsNullOrWhiteSpace(key)) continue;
+            map.TryAdd(key, ResolveCourseForAssignment(assignment, courses));
+        }
+        return map;
+    }
+
+    private static string BuildAssignmentCourseKey(
+        SolutionAssignment assignment,
+        IReadOnlyList<Course> courses)
+    {
+        var candidates = courses
+            .Select((Course, Index) => new { Course, Index })
+            .Where(c => c.Course.Id == assignment.CourseId)
+            .ToList();
+        if (candidates.Count == 0) return "";
+        if (candidates.Count == 1) return assignment.CourseId;
+
+        var resolved = ResolveCourseForAssignment(assignment, courses);
+        var resolvedIndex = courses
+            .Select((Course, Index) => new { Course, Index })
+            .FirstOrDefault(c => ReferenceEquals(c.Course, resolved))?.Index ?? 0;
+        var roomKey = NormalizeRoomId(assignment.RoomId);
+        return string.Join("\u001f", assignment.CourseId, resolvedIndex, roomKey);
+    }
+
+    private static Course ResolveCourseForAssignment(
+        SolutionAssignment assignment,
+        IReadOnlyList<Course> courses)
+    {
+        var candidates = courses
+            .Where(c => c.Id == assignment.CourseId)
+            .ToList();
+        if (candidates.Count == 0) return new Course { Id = assignment.CourseId };
+        if (candidates.Count == 1) return candidates[0];
+
+        var roomId = NormalizeRoomId(assignment.RoomId);
+        var fixedRoomMatches = candidates
+            .Where(c => c.FixedRooms.Any(room => string.Equals(NormalizeRoomId(room), roomId, StringComparison.Ordinal)))
+            .ToList();
+        if (fixedRoomMatches.Count == 1) return fixedRoomMatches[0];
+
+        var unavailableRoomExclusions = candidates
+            .Where(c => c.UnavailableRooms.All(room => !string.Equals(NormalizeRoomId(room), roomId, StringComparison.Ordinal)))
+            .ToList();
+        if (unavailableRoomExclusions.Count == 1) return unavailableRoomExclusions[0];
+
+        return candidates[0];
+    }
+
+    private static string NormalizeRoomId(string? roomId) =>
+        string.IsNullOrWhiteSpace(roomId) ? "" : roomId.Trim();
+
     private static RunInfo ComputeVisualRuns(
-        IReadOnlyDictionary<(string Cid, int Day, int Period), HashSet<string>> roomsBySlot,
+        IReadOnlyDictionary<(string CourseKey, int Day, int Period), HashSet<string>> roomsBySlot,
         IReadOnlyDictionary<string, Course> courseMap,
         bool mergeOnlyStructuredBlocks)
     {
         var runLen = new Dictionary<(string CourseId, int Day, int Period), int>();
         var inside = new HashSet<(string CourseId, int Day, int Period)>();
 
-        foreach (var group in roomsBySlot.Keys.GroupBy(k => (k.Cid, k.Day)))
+        foreach (var group in roomsBySlot.Keys.GroupBy(k => (k.CourseKey, k.Day)))
         {
             var ordered = group.OrderBy(k => k.Period).ToList();
             int i = 0;
@@ -199,7 +290,7 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
                 while (j + 1 < ordered.Count
                        && ordered[j + 1].Period == ordered[j].Period + 1
                        && (!mergeOnlyStructuredBlocks
-                           || (courseMap.TryGetValue(ordered[i].Cid, out var course)
+                           || (courseMap.TryGetValue(ordered[i].CourseKey, out var course)
                                && j - i + 1 < MaxStructuredBlockLength(course)))
                        && CanMergeAsSameVisualBlock(
                            ordered[j],
@@ -212,11 +303,11 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
                 }
 
                 var start = ordered[i];
-                runLen[(start.Cid, start.Day, start.Period)] = j - i + 1;
+                runLen[(start.CourseKey, start.Day, start.Period)] = j - i + 1;
                 for (int k = i + 1; k <= j; k++)
                 {
                     var current = ordered[k];
-                    inside.Add((current.Cid, current.Day, current.Period));
+                    inside.Add((current.CourseKey, current.Day, current.Period));
                 }
                 i = j + 1;
             }
@@ -227,7 +318,7 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
 
     private sealed class VisualBlock
     {
-        public required string CourseId { get; init; }
+        public required string CourseKey { get; init; }
         public required int Day { get; init; }
         public required int StartPeriod { get; init; }
         public required int RowSpan { get; init; }
@@ -237,19 +328,19 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
     }
 
     private static List<VisualBlock> BuildVisualBlocks(
-        IReadOnlyDictionary<(string Cid, int Day, int Period), HashSet<string>> roomsBySlot,
+        IReadOnlyDictionary<(string CourseKey, int Day, int Period), HashSet<string>> roomsBySlot,
         IReadOnlyDictionary<string, Course> courseMap,
         RunInfo runs)
     {
         var blocks = new List<VisualBlock>();
-        foreach (var ((cid, d, p), slotRooms) in roomsBySlot)
+        foreach (var ((courseKey, d, p), slotRooms) in roomsBySlot)
         {
-            if (!courseMap.ContainsKey(cid)) continue;
-            if (runs.Inside.Contains((cid, d, p))) continue;
-            var rowSpan = runs.RunLen.TryGetValue((cid, d, p), out var n) ? n : 1;
+            if (!courseMap.ContainsKey(courseKey)) continue;
+            if (runs.Inside.Contains((courseKey, d, p))) continue;
+            var rowSpan = runs.RunLen.TryGetValue((courseKey, d, p), out var n) ? n : 1;
             blocks.Add(new VisualBlock
             {
-                CourseId = cid,
+                CourseKey = courseKey,
                 Day = d,
                 StartPeriod = p,
                 RowSpan = rowSpan,
@@ -264,14 +355,15 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         IReadOnlyList<VisualBlock> blocks,
         IReadOnlyDictionary<string, Course> courseMap)
     {
-        foreach (var group in blocks.GroupBy(b => (b.Day, courseMap[b.CourseId].Grade)))
+        foreach (var group in blocks.GroupBy(b => (b.Day, courseMap[b.CourseKey].Grade)))
         {
             var columns = new List<VisualBlock>();
             foreach (var block in group
                          .OrderBy(b => b.StartPeriod)
-                         .ThenBy(b => CrossParallelOrder.GetValueOrDefault(b.CourseId, int.MaxValue))
-                         .ThenBy(b => courseMap[b.CourseId].Section)
-                         .ThenBy(b => b.CourseId, StringComparer.Ordinal))
+                         .ThenBy(b => CrossParallelOrder.GetValueOrDefault(BuildManualCrossDisplayKey(b, courseMap), int.MaxValue))
+                         .ThenBy(b => courseMap[b.CourseKey].Section)
+                         .ThenBy(b => courseMap[b.CourseKey].Id, StringComparer.Ordinal)
+                         .ThenBy(b => b.CourseKey, StringComparer.Ordinal))
             {
                 var col = 0;
                 while (col < columns.Count && BlocksOverlap(columns[col], block))
@@ -289,16 +381,37 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
     private static bool BlocksOverlap(VisualBlock a, VisualBlock b) =>
         a.Day == b.Day && a.StartPeriod <= b.EndPeriod && b.StartPeriod <= a.EndPeriod;
 
+    private static string BuildManualCrossDisplayKey(
+        VisualBlock block,
+        IReadOnlyDictionary<string, Course> courseMap)
+    {
+        var course = courseMap[block.CourseKey];
+        return BuildManualCrossDisplayKey(
+            course.Id,
+            course.Section,
+            block.Day,
+            block.StartPeriod,
+            block.RowSpan,
+            block.Rooms);
+    }
+
+    private static string BuildRoomIdsKey(IEnumerable<string> roomIds) =>
+        string.Join("|", roomIds
+            .Select(roomId => roomId.Trim())
+            .Where(roomId => !string.IsNullOrEmpty(roomId))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(roomId => roomId, StringComparer.Ordinal));
+
     private static bool CanMergeAsSameVisualBlock(
-        (string Cid, int Day, int Period) a,
-        (string Cid, int Day, int Period) b,
-        IReadOnlyDictionary<(string Cid, int Day, int Period), HashSet<string>> roomsBySlot,
+        (string CourseKey, int Day, int Period) a,
+        (string CourseKey, int Day, int Period) b,
+        IReadOnlyDictionary<(string CourseKey, int Day, int Period), HashSet<string>> roomsBySlot,
         IReadOnlyDictionary<string, Course> courseMap,
         bool mergeOnlyStructuredBlocks)
     {
-        if (a.Cid != b.Cid || a.Day != b.Day) return false;
-        if (!courseMap.TryGetValue(a.Cid, out var left) ||
-            !courseMap.TryGetValue(b.Cid, out var right))
+        if (a.CourseKey != b.CourseKey || a.Day != b.Day) return false;
+        if (!courseMap.TryGetValue(a.CourseKey, out var left) ||
+            !courseMap.TryGetValue(b.CourseKey, out var right))
             return false;
 
         return left.Id == right.Id

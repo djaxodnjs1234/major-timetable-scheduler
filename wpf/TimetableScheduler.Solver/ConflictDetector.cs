@@ -37,13 +37,15 @@ public static class ConflictDetector
         Func<string, string, int, int, bool>? isManualGradeOverlapAllowed = null)
     {
         var list = new List<ConflictItem>();
-        var courseMap = courses.ToDictionary(c => c.Id);
+        var courseMap = courses
+            .GroupBy(c => c.Id)
+            .ToDictionary(g => g.Key, g => g.First());
         var profMap = professors?.ToDictionary(p => p.Id) ?? new Dictionary<string, Professor>();
 
         // HC-12: lunch period (5) — never allowed
         foreach (var a in assignment.Where(a => a.Period == Constants.LunchPeriod))
         {
-            var name = courseMap.TryGetValue(a.CourseId, out var c) ? c.Name : a.CourseId;
+            var name = ResolveCourseForAssignment(a, courses)?.Name ?? a.CourseId;
             list.Add(new ConflictItem(
                 ConflictType.LunchConflict, ConflictSeverity.Error,
                 $"{name}({a.CourseId})가 점심 시간({DayName(a.Day)} {a.Period}교시)에 배치됨",
@@ -68,7 +70,8 @@ public static class ConflictDetector
         var profSlots = new Dictionary<(string Pid, int Day, int Period), HashSet<string>>();
         foreach (var a in assignment)
         {
-            if (!courseMap.TryGetValue(a.CourseId, out var c)) continue;
+            var c = ResolveCourseForAssignment(a, courses);
+            if (c == null) continue;
             foreach (var pid in DomainHelpers.CourseProfIds(c))
             {
                 var key = (pid, a.Day, a.Period);
@@ -109,7 +112,8 @@ public static class ConflictDetector
         // HC-03: professor unavailable slot
         foreach (var a in assignment)
         {
-            if (!courseMap.TryGetValue(a.CourseId, out var c)) continue;
+            var c = ResolveCourseForAssignment(a, courses);
+            if (c == null) continue;
             foreach (var pid in DomainHelpers.CourseProfIds(c))
             {
                 if (!profMap.TryGetValue(pid, out var prof)) continue;
@@ -125,36 +129,30 @@ public static class ConflictDetector
         }
 
         // HC-14: course has FixedRooms but uses outside room
-        foreach (var c in courses)
+        foreach (var a in assignment)
         {
-            if (c.FixedRooms.Count == 0) continue;
+            var c = ResolveCourseForAssignment(a, courses);
+            if (c == null || c.FixedRooms.Count == 0) continue;
             var allowed = c.FixedRooms.ToHashSet();
-            foreach (var a in assignment.Where(a => a.CourseId == c.Id))
+            if (!allowed.Contains(a.RoomId))
             {
-                if (!allowed.Contains(a.RoomId))
-                {
-                    list.Add(new ConflictItem(
-                        ConflictType.FixedRoomViolation, ConflictSeverity.Error,
-                        $"{c.Name}({c.Id})은 고정 강의실 [{string.Join(",", c.FixedRooms)}] 만 사용 가능 — {a.RoomId} 사용",
-                        a.Day, a.Period));
-                    break;
-                }
+                list.Add(new ConflictItem(
+                    ConflictType.FixedRoomViolation, ConflictSeverity.Error,
+                    $"{c.Name}({c.Id})은 고정 강의실 [{string.Join(",", c.FixedRooms)}] 만 사용 가능 — {a.RoomId} 사용",
+                    a.Day, a.Period));
             }
         }
 
-        foreach (var c in courses)
+        foreach (var a in assignment)
         {
-            if (c.UnavailableRooms.Count == 0) continue;
+            var c = ResolveCourseForAssignment(a, courses);
+            if (c == null || c.UnavailableRooms.Count == 0) continue;
             var blocked = c.UnavailableRooms.ToHashSet();
-            foreach (var a in assignment.Where(a => a.CourseId == c.Id))
-            {
-                if (!blocked.Contains(a.RoomId)) continue;
-                list.Add(new ConflictItem(
-                    ConflictType.CourseUnavailableRoomViolation, ConflictSeverity.Error,
-                    $"{c.Name}({c.Id})은 불가 강의실 [{string.Join(",", c.UnavailableRooms)}]을 사용할 수 없습니다 — {a.RoomId} 사용",
-                    a.Day, a.Period));
-                break;
-            }
+            if (!blocked.Contains(a.RoomId)) continue;
+            list.Add(new ConflictItem(
+                ConflictType.CourseUnavailableRoomViolation, ConflictSeverity.Error,
+                $"{c.Name}({c.Id})은 불가 강의실 [{string.Join(",", c.UnavailableRooms)}]을 사용할 수 없습니다 — {a.RoomId} 사용",
+                a.Day, a.Period));
         }
 
         // HC-19: length-2 blocks must start at 1/3/6/8.
@@ -179,8 +177,9 @@ public static class ConflictDetector
 
         // HC-20: same course/section/professor must not appear as multiple block occurrences on the same day.
         foreach (var g in assignment
-                     .Where(a => courseMap.ContainsKey(a.CourseId))
-                     .Select(a => (Assignment: a, Course: courseMap[a.CourseId]))
+                     .Select(a => (Assignment: a, Course: ResolveCourseForAssignment(a, courses)))
+                     .Where(x => x.Course != null)
+                     .Select(x => (x.Assignment, Course: x.Course!))
                      .Select(x => (x.Assignment, x.Course, Key: BuildHc20Key(x.Course, x.Assignment.Day)))
                      .Where(x => x.Key != null)
                      .GroupBy(x => x.Key!))
@@ -209,7 +208,8 @@ public static class ConflictDetector
         var autoRoomsByProf = new Dictionary<string, HashSet<string>>();
         foreach (var a in assignment)
         {
-            if (!courseMap.TryGetValue(a.CourseId, out var c)) continue;
+            var c = ResolveCourseForAssignment(a, courses);
+            if (c == null) continue;
             if (c.FixedRooms.Count > 0) continue;
             var pid = c.ProfessorId;
             if (string.IsNullOrEmpty(pid)) continue;
@@ -229,7 +229,8 @@ public static class ConflictDetector
         // HC-21 candidate-room subset for auto-assigned courses.
         foreach (var a in assignment)
         {
-            if (!courseMap.TryGetValue(a.CourseId, out var c)) continue;
+            var c = ResolveCourseForAssignment(a, courses);
+            if (c == null) continue;
             if (c.FixedRooms.Count > 0) continue;
             if (!profMap.TryGetValue(c.ProfessorId, out var prof)) continue;
             if (prof.UnavailableRooms.Contains(a.RoomId))
@@ -297,6 +298,35 @@ public static class ConflictDetector
 
         return list;
     }
+
+    private static Course? ResolveCourseForAssignment(
+        SolutionAssignment assignment,
+        IReadOnlyList<Course> courses)
+    {
+        var candidates = courses
+            .Where(c => c.Id == assignment.CourseId)
+            .ToList();
+        if (candidates.Count == 0) return null;
+        if (candidates.Count == 1) return candidates[0];
+
+        var roomId = NormalizeRoomId(assignment.RoomId);
+        var fixedRoomMatches = candidates
+            .Where(c => c.FixedRooms.Any(room => string.Equals(NormalizeRoomId(room), roomId, StringComparison.Ordinal)))
+            .ToList();
+        if (fixedRoomMatches.Count == 1) return fixedRoomMatches[0];
+        if (fixedRoomMatches.Count > 0) candidates = fixedRoomMatches;
+
+        var unavailableRoomExclusions = candidates
+            .Where(c => c.UnavailableRooms.All(room => !string.Equals(NormalizeRoomId(room), roomId, StringComparison.Ordinal)))
+            .ToList();
+        if (unavailableRoomExclusions.Count == 1) return unavailableRoomExclusions[0];
+        if (unavailableRoomExclusions.Count > 0) candidates = unavailableRoomExclusions;
+
+        return candidates[0];
+    }
+
+    private static string NormalizeRoomId(string? roomId) =>
+        string.IsNullOrWhiteSpace(roomId) ? "" : roomId.Trim();
 
     private static string DayName(int d) => d switch
     {

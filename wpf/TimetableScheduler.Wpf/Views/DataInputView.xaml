@@ -420,6 +420,7 @@
                                           Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
 
                                 <ctrl:FixedSlotEditorControl x:Name="FixedSlotEditor"
+                                                             DataContext="{Binding DataContext.FixedSlotEditor, RelativeSource={RelativeSource AncestorType=Expander}}"
                                                              Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
                             </StackPanel>
                         </Border>

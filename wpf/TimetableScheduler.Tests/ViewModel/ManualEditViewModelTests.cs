@@ -4,6 +4,7 @@ using TimetableScheduler.Domain;
 using TimetableScheduler.Scoring;
 using TimetableScheduler.Solver;
 using TimetableScheduler.ViewModel;
+using TimetableScheduler.ViewModel.Grid;
 using TimetableScheduler.ViewModel.Pages;
 using TimetableScheduler.ViewModel.Services;
 
@@ -87,6 +88,1646 @@ public class ManualEditViewModelTests : IDisposable
         int period,
         string courseId) =>
         vm.Grid.Cells.First(c => c.Day == day && c.Period == period && c.Assignment.CourseId == courseId).Assignment;
+
+    private static ManualEditViewModel.ManualCrossAssignmentKey ManualCrossAssignmentKey(
+        string courseId = "X-01",
+        int section = 1,
+        int day = 0,
+        int period = 1,
+        int rowSpan = 1,
+        IReadOnlyList<string>? rooms = null)
+    {
+        var assignment = new CellAssignment(
+            courseId,
+            "테스트",
+            "P1",
+            2,
+            section,
+            rooms ?? new[] { "R1" },
+            rowSpan,
+            1,
+            false);
+        var method = typeof(ManualEditViewModel).GetMethod(
+            "BuildManualCrossAssignmentKey",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Static,
+            binder: null,
+            types: new[] { typeof(CellAssignment), typeof(int), typeof(int) },
+            modifiers: null);
+        Assert.NotNull(method);
+        return (ManualEditViewModel.ManualCrossAssignmentKey)method.Invoke(null, new object[] { assignment, day, period })!;
+    }
+
+    private static ManualEditViewModel.ManualCrossLink ManualCrossLink(
+        ManualEditViewModel.ManualCrossAssignmentKey source,
+        ManualEditViewModel.ManualCrossAssignmentKey target) =>
+        new(
+            source.CourseId,
+            target.CourseId,
+            target.Day,
+            target.Period,
+            source.RowSpan,
+            target.Period,
+            target.RowSpan,
+            source,
+            target);
+
+    private static bool IsAlreadyCrossedByLink(
+        ManualEditViewModel.ManualCrossLink link,
+        ManualEditViewModel.ManualCrossAssignmentKey key) =>
+        link.Contains(key);
+
+    private static bool IsCrossPair(
+        ManualEditViewModel.ManualCrossLink link,
+        ManualEditViewModel.ManualCrossAssignmentKey left,
+        ManualEditViewModel.ManualCrossAssignmentKey right) =>
+        link.MatchesPair(left, right);
+
+    private static IReadOnlyList<SavedManualCrossLinkRow> SavedManualCrossRows(ManualEditViewModel vm)
+    {
+        var method = typeof(ManualEditViewModel).GetMethod(
+            "ToSavedManualCrossLinks",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(method);
+        return (IReadOnlyList<SavedManualCrossLinkRow>)method.Invoke(vm, Array.Empty<object>())!;
+    }
+
+    private static int RestoreSavedManualCrossRows(
+        ManualEditViewModel vm,
+        IReadOnlyList<SavedManualCrossLinkRow> rows)
+    {
+        var method = typeof(ManualEditViewModel).GetMethod(
+            "RestoreSavedManualCrossLinks",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(method);
+        return (int)method.Invoke(vm, new object[] { rows })!;
+    }
+
+    private static void SetWorkingAssignments(ManualEditViewModel vm, params SolutionAssignment[] assignments)
+    {
+        var field = typeof(ManualEditViewModel).GetField(
+            "_working",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(field);
+        field.SetValue(vm, assignments.ToList());
+    }
+
+    private static void AddWorkingCrossLink(
+        ManualEditViewModel vm,
+        ManualEditViewModel.ManualCrossLink link)
+    {
+        var field = typeof(ManualEditViewModel).GetField(
+            "_workingCrossLinks",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(field);
+        var links = Assert.IsAssignableFrom<IList<ManualEditViewModel.ManualCrossLink>>(field.GetValue(vm));
+        links.Add(link);
+    }
+
+    private static IReadOnlyDictionary<string, int> CrossParallelOrder(ManualEditViewModel vm)
+    {
+        var method = typeof(ManualEditViewModel).GetMethod(
+            "BuildCrossParallelOrder",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(method);
+        return (IReadOnlyDictionary<string, int>)method.Invoke(vm, Array.Empty<object>())!;
+    }
+
+    private static IReadOnlyDictionary<string, string> CrossLinkLabels(ManualEditViewModel vm)
+    {
+        var method = typeof(ManualEditViewModel).GetMethod(
+            "BuildCrossLinkLabels",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(method);
+        return (IReadOnlyDictionary<string, string>)method.Invoke(vm, Array.Empty<object>())!;
+    }
+
+    private static string ManualCrossDisplayKey(
+        string courseId = "X-01",
+        int section = 1,
+        int day = 0,
+        int period = 1,
+        int rowSpan = 1,
+        IReadOnlyList<string>? rooms = null) =>
+        UnifiedTimetableViewModel.BuildManualCrossDisplayKey(
+            courseId,
+            section,
+            day,
+            period,
+            rowSpan,
+            rooms ?? new[] { "R1" });
+
+    private static CellAssignment ManualCell(
+        string courseId = "X-01",
+        string name = "테스트",
+        string professorId = "P1",
+        int grade = 2,
+        int section = 1,
+        IReadOnlyList<string>? rooms = null,
+        int rowSpan = 1,
+        IReadOnlyList<string>? coteachProfIds = null) =>
+        new(
+            courseId,
+            name,
+            professorId,
+            grade,
+            section,
+            rooms ?? new[] { "R1" },
+            rowSpan,
+            rowSpan,
+            false)
+        {
+            CoteachProfIds = coteachProfIds ?? Array.Empty<string>(),
+        };
+
+    private (ManualEditViewModel Vm, CellAssignment Source, CellAssignment Target) ArrangeSameBaseManualCrossCase(
+        int sourceGrade = 2,
+        int targetGrade = 2,
+        int sourceRowSpan = 2,
+        int targetRowSpan = 2,
+        int sourceSection = 1,
+        int targetSection = 2,
+        string sourceProfessorId = "4",
+        string targetProfessorId = "12",
+        string sourceRoomId = "3",
+        string targetRoomId = "6",
+        bool includeThirdAssignment = false)
+    {
+        if (_ws.Professors.All(p => p.Id != sourceProfessorId))
+            _ws.AddProfessor(new Professor { Id = sourceProfessorId, Name = sourceProfessorId });
+        if (_ws.Professors.All(p => p.Id != targetProfessorId))
+            _ws.AddProfessor(new Professor { Id = targetProfessorId, Name = targetProfessorId });
+        if (_ws.Rooms.All(r => r.Id != sourceRoomId))
+            _ws.AddRoom(new Room { Id = sourceRoomId, Name = sourceRoomId });
+        if (_ws.Rooms.All(r => r.Id != targetRoomId))
+            _ws.AddRoom(new Room { Id = targetRoomId, Name = targetRoomId });
+        if (includeThirdAssignment)
+        {
+            _ws.AddProfessor(new Professor { Id = "P3", Name = "P3" });
+            _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        }
+
+        _ws.AddCourse(new Course
+        {
+            Id = "4-01",
+            Name = "공통과목",
+            Grade = sourceGrade,
+            Section = sourceSection,
+            HoursPerWeek = sourceRowSpan,
+            ProfessorId = sourceProfessorId,
+        });
+        _ws.AddCourse(new Course
+        {
+            Id = "4-02",
+            Name = "공통과목",
+            Grade = targetGrade,
+            Section = targetSection,
+            HoursPerWeek = targetRowSpan,
+            ProfessorId = targetProfessorId,
+        });
+        if (includeThirdAssignment)
+        {
+            _ws.AddCourse(new Course
+            {
+                Id = "4-03",
+                Name = "공통과목",
+                Grade = targetGrade,
+                Section = 3,
+                HoursPerWeek = targetRowSpan,
+                ProfessorId = "P3",
+            });
+        }
+
+        var assignments = new List<SolutionAssignment>();
+        for (var offset = 0; offset < sourceRowSpan; offset++)
+            assignments.Add(new SolutionAssignment("4-01", 0, 1 + offset, sourceRoomId));
+        for (var offset = 0; offset < targetRowSpan; offset++)
+            assignments.Add(new SolutionAssignment("4-02", 0, 3 + offset, targetRoomId));
+        if (includeThirdAssignment)
+        {
+            for (var offset = 0; offset < targetRowSpan; offset++)
+                assignments.Add(new SolutionAssignment("4-03", 0, 3 + offset, "R3"));
+        }
+
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        SetWorkingAssignments(vm, assignments.ToArray());
+        vm.Grid.Render(assignments, _ws.ExpandedCourses, _ws.Professors, _ws.Rooms);
+
+        var source = ManualCell(
+            courseId: "4-01",
+            name: "공통과목",
+            professorId: sourceProfessorId,
+            grade: sourceGrade,
+            section: sourceSection,
+            rooms: new[] { sourceRoomId },
+            rowSpan: sourceRowSpan);
+        var target = ManualCell(
+            courseId: "4-02",
+            name: "공통과목",
+            professorId: targetProfessorId,
+            grade: targetGrade,
+            section: targetSection,
+            rooms: new[] { targetRoomId },
+            rowSpan: targetRowSpan);
+        return (vm, source, target);
+    }
+
+    private ManualEditViewModel ArrangeResetBaselineCrossCase()
+    {
+        if (_ws.Professors.All(p => p.Id != "4"))
+            _ws.AddProfessor(new Professor { Id = "4", Name = "4" });
+        if (_ws.Professors.All(p => p.Id != "12"))
+            _ws.AddProfessor(new Professor { Id = "12", Name = "12" });
+        if (_ws.Rooms.All(r => r.Id != "3"))
+            _ws.AddRoom(new Room { Id = "3", Name = "3" });
+        if (_ws.Rooms.All(r => r.Id != "6"))
+            _ws.AddRoom(new Room { Id = "6", Name = "6" });
+
+        _ws.AddCourse(new Course
+        {
+            Id = "4-01",
+            Name = "공통과목",
+            Grade = 2,
+            Section = 1,
+            HoursPerWeek = 2,
+            ProfessorId = "4",
+        });
+        _ws.AddCourse(new Course
+        {
+            Id = "4-02",
+            Name = "공통과목",
+            Grade = 2,
+            Section = 2,
+            HoursPerWeek = 2,
+            ProfessorId = "12",
+        });
+
+        var solution = MakeSolution(
+            new SolutionAssignment("4-01", 0, 3, "3"),
+            new SolutionAssignment("4-01", 0, 4, "3"),
+            new SolutionAssignment("4-02", 0, 3, "6"),
+            new SolutionAssignment("4-02", 0, 4, "6"));
+        var cross = new SavedManualCrossLinkRow(
+            "4-01", 2, "1", 0, 3, "3",
+            "4-02", 2, "2", 0, 3, "6",
+            "HC11_ONLY_EXCEPTION");
+
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSnapshot(_ws.Snapshot(), solution, "reset-baseline", new[] { cross });
+        return vm;
+    }
+
+    private static IReadOnlyList<ConflictItem> DetectManualConflicts(
+        ManualEditViewModel vm,
+        params SolutionAssignment[] assignments)
+    {
+        var method = typeof(ManualEditViewModel).GetMethod(
+            "DetectConflicts",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(method);
+        return (IReadOnlyList<ConflictItem>)method.Invoke(vm, new object[] { assignments.ToList(), false })!;
+    }
+
+    private static bool IsAllowedManualCrossOverlapConflict(
+        ManualEditViewModel vm,
+        ConflictItem conflict,
+        IReadOnlyList<SolutionAssignment> candidate,
+        CellAssignment movingAssignment,
+        int sourceDay,
+        int sourcePeriod,
+        int targetDay,
+        IReadOnlyList<int> targetPeriods,
+        int targetGrade,
+        bool allowManualCrossOverlap = true)
+    {
+        var method = typeof(ManualEditViewModel).GetMethod(
+            "IsAllowedManualCrossOverlapConflict",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(method);
+        return (bool)method.Invoke(vm, new object[]
+        {
+            conflict,
+            candidate,
+            movingAssignment,
+            sourceDay,
+            sourcePeriod,
+            targetDay,
+            targetPeriods,
+            targetGrade,
+            allowManualCrossOverlap,
+        })!;
+    }
+
+    private static void RefreshConflicts(
+        ManualEditViewModel vm,
+        bool strictManualCrossValidation)
+    {
+        var method = typeof(ManualEditViewModel).GetMethod(
+            "RefreshConflicts",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(method);
+        method.Invoke(vm, new object[] { strictManualCrossValidation });
+    }
+
+    private static bool AddManualCrossLinkIfMissing(
+        ManualEditViewModel vm,
+        ManualEditViewModel.ManualCrossLink link)
+    {
+        var method = typeof(ManualEditViewModel).GetMethod(
+            "AddManualCrossLinkIfMissing",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(method);
+        return (bool)method.Invoke(vm, new object[] { link })!;
+    }
+
+    [Fact]
+    public void ManualCrossAssignmentKey_SameCourseDifferentSection_AreDifferent()
+    {
+        var left = ManualCrossAssignmentKey(section: 1);
+        var right = ManualCrossAssignmentKey(section: 2);
+
+        Assert.NotEqual(left, right);
+    }
+
+    [Fact]
+    public void ManualCrossAssignmentKey_SameCourseDifferentRoom_AreDifferent()
+    {
+        var left = ManualCrossAssignmentKey(rooms: new[] { "R1" });
+        var right = ManualCrossAssignmentKey(rooms: new[] { "R2" });
+
+        Assert.NotEqual(left, right);
+    }
+
+    [Fact]
+    public void ManualCrossAssignmentKey_SameCourseDifferentPeriod_AreDifferent()
+    {
+        var left = ManualCrossAssignmentKey(period: 1);
+        var right = ManualCrossAssignmentKey(period: 2);
+
+        Assert.NotEqual(left, right);
+    }
+
+    [Fact]
+    public void ManualCrossAssignmentKey_RoomIdsOrder_DoesNotMatter()
+    {
+        var left = ManualCrossAssignmentKey(rooms: new[] { "R2", "R1" });
+        var right = ManualCrossAssignmentKey(rooms: new[] { "R1", "R2" });
+
+        Assert.Equal(left, right);
+    }
+
+    [Fact]
+    public void ManualCrossAssignmentKey_SameCourseSameSectionSameSlotSameRooms_AreEqual()
+    {
+        var left = ManualCrossAssignmentKey(
+            courseId: "X-01",
+            section: 1,
+            day: 0,
+            period: 1,
+            rowSpan: 2,
+            rooms: new[] { " R1", "R2", "R1" });
+        var right = ManualCrossAssignmentKey(
+            courseId: "X-01",
+            section: 1,
+            day: 0,
+            period: 1,
+            rowSpan: 2,
+            rooms: new[] { "R2", "R1" });
+
+        Assert.Equal(left, right);
+    }
+
+    [Fact]
+    public void CrossParallelOrder_UsesAssignmentKey_NotCourseId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var source = ManualCrossAssignmentKey(courseId: "X-01", section: 1, rooms: new[] { "R1" });
+        var target = ManualCrossAssignmentKey(courseId: "Y-01", section: 1, rooms: new[] { "R2" });
+        AddWorkingCrossLink(vm, ManualCrossLink(source, target));
+
+        var order = CrossParallelOrder(vm);
+
+        Assert.DoesNotContain("X-01", order.Keys);
+        Assert.DoesNotContain("Y-01", order.Keys);
+        Assert.Equal(1, order[ManualCrossDisplayKey(courseId: "X-01", section: 1, rooms: new[] { "R1" })]);
+        Assert.Equal(0, order[ManualCrossDisplayKey(courseId: "Y-01", section: 1, rooms: new[] { "R2" })]);
+    }
+
+    [Fact]
+    public void CrossLinkLabels_UsesAssignmentKey_NotCourseId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        var source = ManualCrossAssignmentKey(courseId: "X-01", section: 1, rooms: new[] { "R1" });
+        var target = ManualCrossAssignmentKey(courseId: "Y-01", section: 1, rooms: new[] { "R2" });
+        AddWorkingCrossLink(vm, ManualCrossLink(source, target));
+
+        var labels = CrossLinkLabels(vm);
+
+        Assert.DoesNotContain("X-01", labels.Keys);
+        Assert.DoesNotContain("Y-01", labels.Keys);
+        Assert.Equal("기타", labels[ManualCrossDisplayKey(courseId: "X-01", section: 1, rooms: new[] { "R1" })]);
+        Assert.Equal("테스트", labels[ManualCrossDisplayKey(courseId: "Y-01", section: 1, rooms: new[] { "R2" })]);
+    }
+
+    [Fact]
+    public void SameCourseDifferentSection_GetsSeparateCrossLabels()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "X-01", Name = "테스트", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
+        var first = ManualCrossAssignmentKey(courseId: "X-01", section: 1, rooms: new[] { "R1" });
+        var second = ManualCrossAssignmentKey(courseId: "X-01", section: 2, rooms: new[] { "R2" });
+        AddWorkingCrossLink(vm, ManualCrossLink(first, second));
+
+        var labels = CrossLinkLabels(vm);
+
+        Assert.True(labels.ContainsKey(ManualCrossDisplayKey(courseId: "X-01", section: 1, rooms: new[] { "R1" })));
+        Assert.True(labels.ContainsKey(ManualCrossDisplayKey(courseId: "X-01", section: 2, rooms: new[] { "R2" })));
+        Assert.Equal(2, labels.Count);
+    }
+
+    [Fact]
+    public void SameCourseDifferentRoom_GetsSeparateCrossParallelOrder()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var first = ManualCrossAssignmentKey(courseId: "X-01", section: 1, rooms: new[] { "R1" });
+        var second = ManualCrossAssignmentKey(courseId: "X-01", section: 1, rooms: new[] { "R2" });
+        AddWorkingCrossLink(vm, ManualCrossLink(first, second));
+
+        var order = CrossParallelOrder(vm);
+
+        Assert.Equal(1, order[ManualCrossDisplayKey(courseId: "X-01", section: 1, rooms: new[] { "R1" })]);
+        Assert.Equal(0, order[ManualCrossDisplayKey(courseId: "X-01", section: 1, rooms: new[] { "R2" })]);
+        Assert.Equal(2, order.Count);
+    }
+
+    [Fact]
+    public void RestoredCross_SameCourseDifferentSection_ShowsOnCorrectAssignmentKeys()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "X-01", Name = "테스트", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"));
+        RestoreSavedManualCrossRows(vm, new[]
+        {
+            new SavedManualCrossLinkRow(
+                "X-01", 2, "1", 0, 1, "R1",
+                "X-01", 2, "2", 0, 1, "R2",
+                "HC11_ONLY_EXCEPTION"),
+        });
+
+        var labels = CrossLinkLabels(vm);
+        var order = CrossParallelOrder(vm);
+
+        Assert.True(labels.ContainsKey(ManualCrossDisplayKey(courseId: "X-01", section: 1, rooms: new[] { "R1" })));
+        Assert.True(labels.ContainsKey(ManualCrossDisplayKey(courseId: "X-01", section: 2, rooms: new[] { "R2" })));
+        Assert.Equal(1, order[ManualCrossDisplayKey(courseId: "X-01", section: 1, rooms: new[] { "R1" })]);
+        Assert.Equal(0, order[ManualCrossDisplayKey(courseId: "X-01", section: 2, rooms: new[] { "R2" })]);
+    }
+
+    [Fact]
+    public void CrossDisplayKey_RoomIdsOrder_DoesNotMatter()
+    {
+        var left = ManualCrossDisplayKey(rooms: new[] { "R2", "R1" });
+        var right = ManualCrossDisplayKey(rooms: new[] { "R1", "R2" });
+
+        Assert.Equal(left, right);
+    }
+
+    [Fact]
+    public void ExistingNormalCross_DisplayStillWorks()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        var source = ManualCrossAssignmentKey(courseId: "X-01", section: 1, rooms: new[] { "R1" });
+        var target = ManualCrossAssignmentKey(courseId: "Y-01", section: 1, rooms: new[] { "R2" });
+        AddWorkingCrossLink(vm, ManualCrossLink(source, target));
+
+        var labels = CrossLinkLabels(vm);
+        var order = CrossParallelOrder(vm);
+
+        Assert.Equal("기타", labels[ManualCrossDisplayKey(courseId: "X-01", section: 1, rooms: new[] { "R1" })]);
+        Assert.Equal("테스트", labels[ManualCrossDisplayKey(courseId: "Y-01", section: 1, rooms: new[] { "R2" })]);
+        Assert.Equal(1, order[ManualCrossDisplayKey(courseId: "X-01", section: 1, rooms: new[] { "R1" })]);
+        Assert.Equal(0, order[ManualCrossDisplayKey(courseId: "Y-01", section: 1, rooms: new[] { "R2" })]);
+    }
+
+    [Fact]
+    public void ManualCrossHover_AllowsSameCourseDifferentSectionProfessorRoom()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"));
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        var target = ManualCell(section: 2, professorId: "P2", rooms: new[] { "R2" });
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var state = vm.EvaluateCrossHover(0, 1, 2, 1, target);
+
+        Assert.True(state.CanCreate, state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossHover_SourceMovedToTargetSlot_SectionConflictIgnored()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase();
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var state = vm.EvaluateCrossHover(0, 3, 2, 0, target);
+
+        Assert.True(state.CanCreate, state.Reason);
+        Assert.DoesNotContain("분반 중복 금지", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossHover_SectionConflictBeforeFilter_AfterFilterEmpty_CanCreateTrue()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase();
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var state = vm.EvaluateCrossHover(0, 3, 2, 0, target);
+
+        Assert.True(state.CanCreate, state.Reason);
+        Assert.DoesNotContain("분반 중복 금지", state.Reason);
+        Assert.Empty(vm.WorkingCrossLinks);
+    }
+
+    [Fact]
+    public void ManualCrossFilter_ConflictCourseIdIsBaseId_SourceTargetFullIds_Matches()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase();
+        AddWorkingCrossLink(vm, ManualCrossLink(
+            ManualCrossAssignmentKey("4-01", section: 1, day: 0, period: 3, rowSpan: 2, rooms: new[] { "3" }),
+            ManualCrossAssignmentKey("4-02", section: 2, day: 0, period: 3, rowSpan: 2, rooms: new[] { "6" })));
+        var candidate = new[]
+        {
+            new SolutionAssignment("4-01", 0, 3, "3"),
+            new SolutionAssignment("4-01", 0, 4, "3"),
+            new SolutionAssignment("4-02", 0, 3, "6"),
+            new SolutionAssignment("4-02", 0, 4, "6"),
+        };
+        var conflict = new ConflictItem(
+            ConflictType.SectionConflict,
+            ConflictSeverity.Error,
+            "4의 분반이 월 3교시에 중복: 4-02, 4-01",
+            0,
+            3);
+
+        var allowed = IsAllowedManualCrossOverlapConflict(
+            vm,
+            conflict,
+            candidate,
+            source,
+            sourceDay: 0,
+            sourcePeriod: 1,
+            targetDay: 0,
+            targetPeriods: new[] { 3, 4 },
+            targetGrade: target.Grade);
+
+        Assert.True(allowed);
+    }
+
+    [Fact]
+    public void ManualCrossFilter_RowSpanCoverage_SecondPeriodSectionConflict_Ignored()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase();
+        AddWorkingCrossLink(vm, ManualCrossLink(
+            ManualCrossAssignmentKey("4-01", section: 1, day: 0, period: 3, rowSpan: 2, rooms: new[] { "3" }),
+            ManualCrossAssignmentKey("4-02", section: 2, day: 0, period: 3, rowSpan: 2, rooms: new[] { "6" })));
+        var candidate = new[]
+        {
+            new SolutionAssignment("4-01", 0, 3, "3"),
+            new SolutionAssignment("4-01", 0, 4, "3"),
+            new SolutionAssignment("4-02", 0, 3, "6"),
+            new SolutionAssignment("4-02", 0, 4, "6"),
+        };
+        var conflict = new ConflictItem(
+            ConflictType.SectionConflict,
+            ConflictSeverity.Error,
+            "4의 분반이 월 4교시에 중복: 4-02, 4-01",
+            0,
+            4);
+
+        var allowed = IsAllowedManualCrossOverlapConflict(
+            vm,
+            conflict,
+            candidate,
+            source,
+            sourceDay: 0,
+            sourcePeriod: 1,
+            targetDay: 0,
+            targetPeriods: new[] { 3, 4 },
+            targetGrade: target.Grade);
+
+        Assert.True(allowed);
+    }
+
+    [Fact]
+    public void ManualCrossDrop_SourceMovedToTargetSlot_SectionConflictIgnored()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase();
+
+        var state = vm.EvaluateCrossDropHover(0, 1, 2, 0, source, 0, 3, 2, 0, target);
+
+        Assert.True(state.CanCreate, state.Reason);
+        Assert.DoesNotContain("분반 중복 금지", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossDropPreview_SectionConflictFiltered_CanCreateTrue()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase();
+
+        var state = vm.EvaluateCrossDropHover(0, 1, 2, 0, source, 0, 3, 2, 0, target);
+
+        Assert.True(state.CanCreate, state.Reason);
+        Assert.DoesNotContain("분반 중복 금지", state.Reason);
+        Assert.Empty(vm.WorkingCrossLinks);
+    }
+
+    [Fact]
+    public void ManualCrossAdd_SourceMovedToTargetSlot_CreatesCross()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase();
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        vm.HandleCrossAddRequested(0, 3, 2, 0, target);
+
+        var link = Assert.Single(vm.WorkingCrossLinks);
+        Assert.NotEqual(link.SourceKey, link.TargetKey);
+        Assert.Equal("4-01", link.SourceKey.CourseId);
+        Assert.Equal("4-02", link.TargetKey.CourseId);
+    }
+
+    [Fact]
+    public void ManualCrossAdd_CreatesSingleCrossLink_NoDuplicateProvisionalLinks()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase();
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var hover = vm.EvaluateCrossHover(0, 3, 2, 0, target);
+        vm.HandleCrossAddRequested(0, 3, 2, 0, target);
+
+        Assert.True(hover.CanCreate, hover.Reason);
+        Assert.Single(vm.WorkingCrossLinks);
+    }
+
+    [Fact]
+    public void ManualCrossAdd_ThenRefreshConflicts_SectionConflictNotBlockingForPair()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase();
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        vm.HandleCrossAddRequested(0, 3, 2, 0, target);
+        RefreshConflicts(vm, strictManualCrossValidation: true);
+
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.SectionConflict);
+    }
+
+    [Fact]
+    public void ManualCrossDropActual_DoesNotAccidentallyRunGeneralMoveWhenCrossBadgeRequired()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase();
+
+        var generalDropAllowed = vm.CanDropMove(0, 1, 2, 0, source, 0, 3, 2, 0);
+        vm.HandleCrossDrop(0, 1, 2, 0, source, 0, 3, 2, 0, target);
+
+        Assert.False(generalDropAllowed);
+        Assert.Single(vm.WorkingCrossLinks);
+    }
+
+    [Fact]
+    public void ManualCrossLink_DirectionInsensitiveDuplicate_Prevented()
+    {
+        var (vm, _, _) = ArrangeSameBaseManualCrossCase();
+        var first = ManualCrossLink(
+            ManualCrossAssignmentKey("4-01", section: 1, day: 0, period: 3, rowSpan: 2, rooms: new[] { "3" }),
+            ManualCrossAssignmentKey("4-02", section: 2, day: 0, period: 3, rowSpan: 2, rooms: new[] { "6" }));
+        var reversed = ManualCrossLink(
+            ManualCrossAssignmentKey("4-02", section: 2, day: 0, period: 3, rowSpan: 2, rooms: new[] { "6" }),
+            ManualCrossAssignmentKey("4-01", section: 1, day: 0, period: 3, rowSpan: 2, rooms: new[] { "3" }));
+
+        var firstAdded = AddManualCrossLinkIfMissing(vm, first);
+        var secondAdded = AddManualCrossLinkIfMissing(vm, reversed);
+
+        Assert.True(firstAdded);
+        Assert.False(secondAdded);
+        Assert.Single(vm.WorkingCrossLinks);
+    }
+
+    [Fact]
+    public void ManualCross_SourceMovedToTargetSlot_SameProfessorStillBlocks()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase(
+            sourceSection: 1,
+            targetSection: 1,
+            sourceProfessorId: "P1",
+            targetProfessorId: "P1");
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var state = vm.EvaluateCrossHover(0, 3, 2, 0, target);
+
+        Assert.False(state.CanCreate);
+        Assert.Contains("교수", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossFilter_SameProfessor_StillBlocks()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase(
+            sourceProfessorId: "P1",
+            targetProfessorId: "P1");
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var state = vm.EvaluateCrossHover(0, 3, 2, 0, target);
+
+        Assert.False(state.CanCreate);
+        Assert.Contains("교수", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCross_SameBaseCourseDifferentSectionSameProfessor_BlocksProfessorConflict()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase(
+            sourceProfessorId: "P1",
+            targetProfessorId: "P1");
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var state = vm.EvaluateCrossHover(0, 3, 2, 0, target);
+
+        Assert.False(state.CanCreate);
+        Assert.Contains("교수", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCross_SourceMovedToTargetSlot_SameRoomStillBlocks()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase(
+            sourceRoomId: "R1",
+            targetRoomId: "R1");
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var state = vm.EvaluateCrossHover(0, 3, 2, 0, target);
+
+        Assert.False(state.CanCreate);
+        Assert.Contains("강의실", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossFilter_SameRoom_StillBlocks()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase(
+            sourceRoomId: "R1",
+            targetRoomId: "R1");
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var state = vm.EvaluateCrossHover(0, 3, 2, 0, target);
+
+        Assert.False(state.CanCreate);
+        Assert.Contains("강의실", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCross_SourceMovedToTargetSlot_ThirdAssignmentStillBlocks()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase(includeThirdAssignment: true);
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var state = vm.EvaluateCrossHover(0, 3, 2, 0, target);
+
+        Assert.False(state.CanCreate);
+        Assert.Contains("3개 이상의 과목", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossFilter_ThirdAssignment_StillBlocks()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase(includeThirdAssignment: true);
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var state = vm.EvaluateCrossHover(0, 3, 2, 0, target);
+
+        Assert.False(state.CanCreate);
+        Assert.Contains("3개 이상의 과목", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCross_SourceMovedToTargetSlot_DifferentGradeStillBlocks()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase(targetGrade: 3);
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var state = vm.EvaluateCrossHover(0, 3, 3, 0, target);
+
+        Assert.False(state.CanCreate);
+        Assert.Contains("같은 학년", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCross_SourceMovedToTargetSlot_RowSpanMismatchStillBlocks()
+    {
+        var (vm, source, target) = ArrangeSameBaseManualCrossCase(
+            sourceRowSpan: 1,
+            targetRowSpan: 2);
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var state = vm.EvaluateCrossHover(0, 3, 2, 0, target);
+
+        Assert.False(state.CanCreate);
+        Assert.Contains("서로 다른 길이", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCross_GeneralMove_SectionConflictStillBlocks()
+    {
+        _ws.AddProfessor(new Professor { Id = "P4", Name = "P4" });
+        _ws.AddProfessor(new Professor { Id = "P12", Name = "P12" });
+        _ws.AddRoom(new Room { Id = "R6", Name = "강의실6" });
+        _ws.AddCourse(new Course
+        {
+            Id = "4-01",
+            Name = "공통과목",
+            Grade = 2,
+            Section = 1,
+            HoursPerWeek = 1,
+            ProfessorId = "P4",
+        });
+        _ws.AddCourse(new Course
+        {
+            Id = "4-02",
+            Name = "공통과목",
+            Grade = 2,
+            Section = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P12",
+        });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("4-01", 0, 3, "R1"),
+            new SolutionAssignment("4-02", 0, 3, "R6")));
+        vm.SaveName = "분반중복저장차단";
+
+        vm.SaveTimetableCommand.Execute(null);
+
+        Assert.Contains(vm.Conflicts, c => c.Type == ConflictType.SectionConflict);
+        Assert.Contains("저장 차단", vm.StatusMessage);
+        Assert.DoesNotContain(_ws.SavedTimetables, t => t.Name == "분반중복저장차단");
+    }
+
+    [Fact]
+    public void ManualCrossHover_DoesNotBlockSameCourseIdWhenAssignmentKeyDifferent()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        var target = ManualCell(section: 1, professorId: "P2", rooms: new[] { "R2" });
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var state = vm.EvaluateCrossHover(0, 1, 2, 1, target);
+
+        Assert.True(state.CanCreate, state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossAdd_AllowsSameCourseDifferentSectionProfessorRoom()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"));
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        var target = ManualCell(section: 2, professorId: "P2", rooms: new[] { "R2" });
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        vm.HandleCrossAddRequested(0, 1, 2, 1, target);
+
+        Assert.True(vm.WorkingCrossLinks.Count == 1, vm.StatusMessage);
+        var link = Assert.Single(vm.WorkingCrossLinks);
+        Assert.Equal("1", link.SourceKey.Section);
+        Assert.Equal("2", link.TargetKey.Section);
+    }
+
+    [Fact]
+    public void ManualCrossDrop_AllowsSameCourseDifferentSectionProfessorRoom()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"));
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        var target = ManualCell(section: 2, professorId: "P2", rooms: new[] { "R2" });
+
+        vm.HandleCrossDrop(0, 1, 2, 0, source, 0, 1, 2, 1, target);
+
+        Assert.True(vm.WorkingCrossLinks.Count == 1, vm.StatusMessage);
+    }
+
+    [Fact]
+    public void ManualCrossHover_BlocksSameAssignmentKey()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        var target = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var state = vm.EvaluateCrossHover(0, 1, 2, 1, target);
+
+        Assert.False(state.CanCreate);
+        Assert.Contains("현재 선택", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossAdd_BlocksSameProfessor()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        var target = ManualCell(section: 2, professorId: "P1", rooms: new[] { "R2" });
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        vm.HandleCrossAddRequested(0, 1, 2, 1, target);
+
+        Assert.Empty(vm.WorkingCrossLinks);
+        Assert.Contains("같은 교수", vm.StatusMessage);
+        Assert.DoesNotContain("HC-02", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void ManualCrossAdd_BlocksSameRoom()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        var target = ManualCell(section: 2, professorId: "P2", rooms: new[] { "R1" });
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        vm.HandleCrossAddRequested(0, 1, 2, 1, target);
+
+        Assert.Empty(vm.WorkingCrossLinks);
+        Assert.Contains("같은 강의실", vm.StatusMessage);
+        Assert.DoesNotContain("HC-01", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void ManualCrossDrop_BlocksAlreadyCrossedAssignmentKey()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        var target = ManualCell(section: 2, professorId: "P2", rooms: new[] { "R2" });
+        AddWorkingCrossLink(vm, ManualCrossLink(
+            ManualCrossAssignmentKey(section: 1, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(section: 2, rooms: new[] { "R2" })));
+
+        var state = vm.EvaluateCrossDropHover(0, 1, 2, 0, source, 0, 1, 2, 1, target);
+
+        Assert.False(state.CanCreate);
+        Assert.Contains("이미 크로스", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossDrop_BlocksThirdAssignmentByKey()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        var third = ManualCell(section: 3, professorId: "P3", rooms: new[] { "R3" });
+        AddWorkingCrossLink(vm, ManualCrossLink(
+            ManualCrossAssignmentKey(section: 1, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(section: 2, rooms: new[] { "R2" })));
+
+        var state = vm.EvaluateCrossDropHover(0, 1, 2, 0, source, 0, 1, 2, 2, third);
+
+        Assert.False(state.CanCreate);
+        Assert.Contains("이미 다른 수업", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossHover_ExistingNormalCrossStillWorks()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        var source = ManualCell(courseId: "X-01", professorId: "P1", rooms: new[] { "R1" });
+        var target = ManualCell(courseId: "Y-01", name: "기타", professorId: "P2", rooms: new[] { "R2" });
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var state = vm.EvaluateCrossHover(0, 1, 2, 1, target);
+
+        Assert.True(state.CanCreate, state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossScenario_SameCourseDifferentSectionProfessorRoom_CreateSaveRestoreDisplay()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"));
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        var target = ManualCell(section: 2, professorId: "P2", rooms: new[] { "R2" });
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        vm.HandleCrossAddRequested(0, 1, 2, 1, target);
+
+        var created = Assert.Single(vm.WorkingCrossLinks);
+        Assert.Equal("1", created.SourceKey.Section);
+        Assert.Equal("2", created.TargetKey.Section);
+        var row = Assert.Single(SavedManualCrossRows(vm));
+        Assert.Equal("X-01", row.SourceCourseId);
+        Assert.Equal("X-01", row.TargetCourseId);
+        Assert.Equal("1", row.SourceSection);
+        Assert.Equal("2", row.TargetSection);
+        Assert.Equal("R1", row.SourceRoomId);
+        Assert.Equal("R2", row.TargetRoomId);
+        Assert.Equal(0, row.SourceDay);
+        Assert.Equal(1, row.SourcePeriod);
+        Assert.Equal(0, row.TargetDay);
+        Assert.Equal(1, row.TargetPeriod);
+
+        _ws.AddCourse(new Course { Id = "X-01", Name = "테스트", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
+        var restoredVm = _sp.GetRequiredService<ManualEditViewModel>();
+        SetWorkingAssignments(
+            restoredVm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"));
+
+        var ignored = RestoreSavedManualCrossRows(restoredVm, new[] { row });
+
+        Assert.Equal(0, ignored);
+        var restored = Assert.Single(restoredVm.WorkingCrossLinks);
+        Assert.True(restored.MatchesPair(created.SourceKey, created.TargetKey));
+        var sourceDisplayKey = ManualCrossDisplayKey(section: 1, day: 0, period: 1, rooms: new[] { "R1" });
+        var targetDisplayKey = ManualCrossDisplayKey(section: 2, day: 0, period: 1, rooms: new[] { "R2" });
+        Assert.Equal(1, CrossParallelOrder(restoredVm)[sourceDisplayKey]);
+        Assert.Equal(0, CrossParallelOrder(restoredVm)[targetDisplayKey]);
+        Assert.True(CrossLinkLabels(restoredVm).ContainsKey(sourceDisplayKey));
+        Assert.True(CrossLinkLabels(restoredVm).ContainsKey(targetDisplayKey));
+    }
+
+    [Fact]
+    public void ManualCrossScenario_SaveRows_DoNotCollapseSameCourseId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"));
+        AddWorkingCrossLink(vm, ManualCrossLink(
+            ManualCrossAssignmentKey(section: 1, day: 0, period: 1, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(section: 2, day: 0, period: 1, rooms: new[] { "R2" })));
+
+        var row = Assert.Single(SavedManualCrossRows(vm));
+
+        Assert.Equal(row.SourceCourseId, row.TargetCourseId);
+        Assert.NotEqual(row.SourceSection, row.TargetSection);
+        Assert.NotEqual(row.SourceRoomId, row.TargetRoomId);
+        Assert.Equal(0, row.SourceDay);
+        Assert.Equal(1, row.SourcePeriod);
+        Assert.Equal(0, row.TargetDay);
+        Assert.Equal(1, row.TargetPeriod);
+    }
+
+    [Fact]
+    public void ManualCrossScenario_Restore_UsesSavedEndpointNotFirstCourseIdMatch()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "X-01", Name = "테스트", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
+        _ws.AddCourse(new Course { Id = "X-01", Name = "테스트", Grade = 2, HoursPerWeek = 1, ProfessorId = "P3", Section = 3 });
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R0"),
+            new SolutionAssignment("X-01", 1, 2, "R1"),
+            new SolutionAssignment("X-01", 2, 3, "R2"));
+
+        var ignored = RestoreSavedManualCrossRows(vm, new[]
+        {
+            new SavedManualCrossLinkRow(
+                "X-01", 2, "2", 1, 2, "R1",
+                "X-01", 2, "3", 2, 3, "R2",
+                "HC11_ONLY_EXCEPTION"),
+        });
+
+        Assert.Equal(0, ignored);
+        var link = Assert.Single(vm.WorkingCrossLinks);
+        Assert.Equal("2", link.SourceKey.Section);
+        Assert.Equal(1, link.SourceKey.Day);
+        Assert.Equal(2, link.SourceKey.Period);
+        Assert.Equal("R1", link.SourceKey.RoomIdsKey);
+        Assert.Equal("3", link.TargetKey.Section);
+        Assert.Equal(2, link.TargetKey.Day);
+        Assert.Equal(3, link.TargetKey.Period);
+        Assert.Equal("R2", link.TargetKey.RoomIdsKey);
+    }
+
+    [Fact]
+    public void ManualCrossScenario_RestoredCross_HasSeparateLabelsAndSubColumns()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "X-01", Name = "테스트", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"));
+        RestoreSavedManualCrossRows(vm, new[]
+        {
+            new SavedManualCrossLinkRow(
+                "X-01", 2, "1", 0, 1, "R1",
+                "X-01", 2, "2", 0, 1, "R2",
+                "HC11_ONLY_EXCEPTION"),
+        });
+
+        var sourceDisplayKey = ManualCrossDisplayKey(section: 1, rooms: new[] { "R1" });
+        var targetDisplayKey = ManualCrossDisplayKey(section: 2, rooms: new[] { "R2" });
+        var order = CrossParallelOrder(vm);
+        var labels = CrossLinkLabels(vm);
+
+        Assert.Contains(sourceDisplayKey, order.Keys);
+        Assert.Contains(targetDisplayKey, order.Keys);
+        Assert.Contains(sourceDisplayKey, labels.Keys);
+        Assert.Contains(targetDisplayKey, labels.Keys);
+        Assert.DoesNotContain("X-01", order.Keys);
+        Assert.DoesNotContain("X-01", labels.Keys);
+    }
+
+    [Fact]
+    public void ManualCrossScenario_ExemptsOnlyGradeConflict_NotProfessorOrRoom()
+    {
+        var gradeVm = _sp.GetRequiredService<ManualEditViewModel>();
+        AddWorkingCrossLink(gradeVm, ManualCrossLink(
+            ManualCrossAssignmentKey(courseId: "X-01", section: 1, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(courseId: "Y-01", section: 2, rooms: new[] { "R2" })));
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+
+        var gradeConflicts = DetectManualConflicts(
+            gradeVm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R2"));
+
+        Assert.DoesNotContain(gradeConflicts, c => c.Type == ConflictType.GradeConflict);
+
+        var professorVm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Z-01", Name = "교수충돌", Grade = 2, HoursPerWeek = 1, ProfessorId = "P1", Section = 3 });
+        AddWorkingCrossLink(professorVm, ManualCrossLink(
+            ManualCrossAssignmentKey(courseId: "X-01", section: 1, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(courseId: "Z-01", section: 3, rooms: new[] { "R2" })));
+
+        var professorConflicts = DetectManualConflicts(
+            professorVm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Z-01", 0, 1, "R2"));
+
+        Assert.Contains(professorConflicts, c => c.Type == ConflictType.ProfessorConflict);
+
+        var roomVm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "W-01", Name = "강의실충돌", Grade = 2, HoursPerWeek = 1, ProfessorId = "P4", Section = 4 });
+        AddWorkingCrossLink(roomVm, ManualCrossLink(
+            ManualCrossAssignmentKey(courseId: "X-01", section: 1, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(courseId: "W-01", section: 4, rooms: new[] { "R1" })));
+
+        var roomConflicts = DetectManualConflicts(
+            roomVm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("W-01", 0, 1, "R1"));
+
+        Assert.Contains(roomConflicts, c => c.Type == ConflictType.RoomConflict);
+    }
+
+    [Fact]
+    public void ManualCrossQa_PlusClick_SameCourseDifferentSectionProfessorRoom_CreatesCross()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"));
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        var target = ManualCell(section: 2, professorId: "P2", rooms: new[] { "R2" });
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var hover = vm.EvaluateCrossHover(0, 1, 2, 1, target);
+        vm.HandleCrossAddRequested(0, 1, 2, 1, target);
+
+        Assert.True(hover.CanCreate, hover.Reason);
+        var link = Assert.Single(vm.WorkingCrossLinks);
+        Assert.Equal("1", link.SourceKey.Section);
+        Assert.Equal("2", link.TargetKey.Section);
+    }
+
+    [Fact]
+    public void ManualCrossQa_DragDrop_SameCourseDifferentSectionProfessorRoom_CreatesCross()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"));
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        var target = ManualCell(section: 2, professorId: "P2", rooms: new[] { "R2" });
+
+        var hover = vm.EvaluateCrossDropHover(0, 1, 2, 0, source, 0, 1, 2, 1, target);
+        vm.HandleCrossDrop(0, 1, 2, 0, source, 0, 1, 2, 1, target);
+
+        Assert.True(hover.CanCreate, hover.Reason);
+        Assert.Single(vm.WorkingCrossLinks);
+    }
+
+    [Fact]
+    public void ManualCrossQa_SaveThenReload_PreservesSameCourseCross()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"));
+        AddWorkingCrossLink(vm, ManualCrossLink(
+            ManualCrossAssignmentKey(section: 1, day: 0, period: 1, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(section: 2, day: 0, period: 1, rooms: new[] { "R2" })));
+        var row = Assert.Single(SavedManualCrossRows(vm));
+
+        _ws.AddCourse(new Course { Id = "X-01", Name = "테스트", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
+        var reloaded = _sp.GetRequiredService<ManualEditViewModel>();
+        SetWorkingAssignments(
+            reloaded,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"));
+
+        var ignored = RestoreSavedManualCrossRows(reloaded, new[] { row });
+
+        Assert.Equal(0, ignored);
+        var link = Assert.Single(reloaded.WorkingCrossLinks);
+        Assert.Equal("1", link.SourceKey.Section);
+        Assert.Equal("2", link.TargetKey.Section);
+        Assert.Equal("R1", link.SourceKey.RoomIdsKey);
+        Assert.Equal("R2", link.TargetKey.RoomIdsKey);
+    }
+
+    [Fact]
+    public void ManualCrossQa_Reload_PreservesCrossLabelsAndSubColumns()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "X-01", Name = "테스트", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"));
+        RestoreSavedManualCrossRows(vm, new[]
+        {
+            new SavedManualCrossLinkRow(
+                "X-01", 2, "1", 0, 1, "R1",
+                "X-01", 2, "2", 0, 1, "R2",
+                "HC11_ONLY_EXCEPTION"),
+        });
+
+        var sourceDisplayKey = ManualCrossDisplayKey(section: 1, rooms: new[] { "R1" });
+        var targetDisplayKey = ManualCrossDisplayKey(section: 2, rooms: new[] { "R2" });
+
+        Assert.Equal(1, CrossParallelOrder(vm)[sourceDisplayKey]);
+        Assert.Equal(0, CrossParallelOrder(vm)[targetDisplayKey]);
+        Assert.Contains(sourceDisplayKey, CrossLinkLabels(vm).Keys);
+        Assert.Contains(targetDisplayKey, CrossLinkLabels(vm).Keys);
+    }
+
+    [Fact]
+    public void ManualCrossQa_BlocksSameProfessor()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        var target = ManualCell(section: 2, professorId: "P1", rooms: new[] { "R2" });
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        vm.HandleCrossAddRequested(0, 1, 2, 1, target);
+
+        Assert.Empty(vm.WorkingCrossLinks);
+        Assert.Contains("같은 교수", vm.StatusMessage);
+        Assert.DoesNotContain("HC-02", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void ManualCrossQa_BlocksSameRoom()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        var target = ManualCell(section: 2, professorId: "P2", rooms: new[] { "R1" });
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        vm.HandleCrossAddRequested(0, 1, 2, 1, target);
+
+        Assert.Empty(vm.WorkingCrossLinks);
+        Assert.Contains("같은 강의실", vm.StatusMessage);
+        Assert.DoesNotContain("HC-01", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void ManualCrossQa_BlocksDifferentRowSpan()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" }, rowSpan: 1);
+        var target = ManualCell(section: 2, professorId: "P2", rooms: new[] { "R2" }, rowSpan: 2);
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        var hover = vm.EvaluateCrossHover(0, 1, 2, 1, target);
+        vm.HandleCrossAddRequested(0, 1, 2, 1, target);
+
+        Assert.False(hover.CanCreate);
+        Assert.Empty(vm.WorkingCrossLinks);
+        Assert.Contains("서로 다른 길이", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void ManualCrossQa_BlocksThirdAssignment()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
+        var third = ManualCell(section: 3, professorId: "P3", rooms: new[] { "R3" });
+        AddWorkingCrossLink(vm, ManualCrossLink(
+            ManualCrossAssignmentKey(section: 1, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(section: 2, rooms: new[] { "R2" })));
+
+        var hover = vm.EvaluateCrossDropHover(0, 1, 2, 0, source, 0, 1, 2, 2, third);
+
+        Assert.False(hover.CanCreate);
+        Assert.Contains("이미 다른 수업", hover.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossQa_ExistingNormalCrossStillWorks()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        var source = ManualCell(courseId: "X-01", professorId: "P1", rooms: new[] { "R1" });
+        var target = ManualCell(courseId: "Y-01", name: "기타", professorId: "P2", rooms: new[] { "R2" });
+        vm.SelectCell(0, 1, 2, 0, source);
+
+        vm.HandleCrossAddRequested(0, 1, 2, 1, target);
+
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.Contains("크로스가 설정", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void ManualCrossQa_MoveSwapDndBasicRegressionStillWorks()
+    {
+        var moveVm = _sp.GetRequiredService<ManualEditViewModel>();
+        moveVm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        var moveSource = moveVm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+
+        var moved = moveVm.HandleDropMove(
+            moveSource.Day,
+            moveSource.Period,
+            moveSource.Grade,
+            moveSource.SubColumnIdx,
+            moveSource.Assignment,
+            1,
+            3,
+            2,
+            0);
+
+        Assert.True(moved, moveVm.StatusMessage);
+        Assert.Contains(moveVm.Grid.Cells, c => c.Assignment.CourseId == "X-01" && c.Day == 1 && c.Period == 3);
+
+        var swapVm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 2, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        swapVm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 1, 3, "R2")));
+        var swapSource = swapVm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+        var swapTarget = swapVm.Grid.Cells.Single(c => c.Assignment.CourseId == "Y-01");
+        swapVm.HandleCellClick(swapSource.Day, swapSource.Period, swapSource.Grade, swapSource.SubColumnIdx, swapSource.Assignment);
+
+        swapVm.HandleSwapRequested(swapTarget.Day, swapTarget.Period, swapTarget.Grade, swapTarget.SubColumnIdx, swapTarget.Assignment);
+
+        Assert.Contains(swapVm.Grid.Cells, c => c.Assignment.CourseId == "X-01" && c.Day == 1 && c.Period == 3);
+        Assert.Contains(swapVm.Grid.Cells, c => c.Assignment.CourseId == "Y-01" && c.Day == 0 && c.Period == 1);
+    }
+
+    [Fact]
+    public void ManualCross_ConflictDetector_ExemptsOnlyLinkedAssignmentPairGradeConflict()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        AddWorkingCrossLink(vm, ManualCrossLink(
+            ManualCrossAssignmentKey(courseId: "X-01", day: 0, period: 1, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(courseId: "Y-01", day: 0, period: 1, rooms: new[] { "R2" })));
+
+        var conflicts = DetectManualConflicts(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R2"));
+
+        Assert.DoesNotContain(conflicts, c => c.Type == ConflictType.GradeConflict);
+    }
+
+    [Fact]
+    public void ManualCross_ConflictDetector_DoesNotExemptSameCourseDifferentUnlinkedPair()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddCourse(new Course { Id = "Z-01", Name = "별도", Grade = 2, HoursPerWeek = 1, ProfessorId = "P3" });
+        AddWorkingCrossLink(vm, ManualCrossLink(
+            ManualCrossAssignmentKey(courseId: "X-01", day: 0, period: 1, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(courseId: "Y-01", day: 0, period: 1, rooms: new[] { "R2" })));
+
+        var conflicts = DetectManualConflicts(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Z-01", 0, 1, "R3"));
+
+        Assert.Contains(conflicts, c => c.Type == ConflictType.GradeConflict);
+    }
+
+    [Fact]
+    public void ManualCross_ConflictDetector_DoesNotExemptDifferentPeriod()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        AddWorkingCrossLink(vm, ManualCrossLink(
+            ManualCrossAssignmentKey(courseId: "X-01", day: 0, period: 1, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(courseId: "Y-01", day: 0, period: 1, rooms: new[] { "R2" })));
+
+        var conflicts = DetectManualConflicts(
+            vm,
+            new SolutionAssignment("X-01", 0, 2, "R1"),
+            new SolutionAssignment("Y-01", 0, 2, "R2"));
+
+        Assert.Contains(conflicts, c => c.Type == ConflictType.GradeConflict);
+    }
+
+    [Fact]
+    public void ManualCross_ConflictDetector_DoesNotExemptDifferentDay()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        AddWorkingCrossLink(vm, ManualCrossLink(
+            ManualCrossAssignmentKey(courseId: "X-01", day: 0, period: 1, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(courseId: "Y-01", day: 0, period: 1, rooms: new[] { "R2" })));
+
+        var conflicts = DetectManualConflicts(
+            vm,
+            new SolutionAssignment("X-01", 1, 1, "R1"),
+            new SolutionAssignment("Y-01", 1, 1, "R2"));
+
+        Assert.Contains(conflicts, c => c.Type == ConflictType.GradeConflict);
+    }
+
+    [Fact]
+    public void ManualCross_ConflictDetector_DoesNotExemptProfessorConflict()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P1" });
+        AddWorkingCrossLink(vm, ManualCrossLink(
+            ManualCrossAssignmentKey(courseId: "X-01", day: 0, period: 1, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(courseId: "Y-01", day: 0, period: 1, rooms: new[] { "R2" })));
+
+        var conflicts = DetectManualConflicts(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R2"));
+
+        Assert.DoesNotContain(conflicts, c => c.Type == ConflictType.GradeConflict);
+        Assert.Contains(conflicts, c => c.Type == ConflictType.ProfessorConflict);
+    }
+
+    [Fact]
+    public void ManualCross_ConflictDetector_DoesNotExemptRoomConflict()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        AddWorkingCrossLink(vm, ManualCrossLink(
+            ManualCrossAssignmentKey(courseId: "X-01", day: 0, period: 1, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(courseId: "Y-01", day: 0, period: 1, rooms: new[] { "R1" })));
+
+        var conflicts = DetectManualConflicts(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R1"));
+
+        Assert.DoesNotContain(conflicts, c => c.Type == ConflictType.GradeConflict);
+        Assert.Contains(conflicts, c => c.Type == ConflictType.RoomConflict);
+    }
+
+    [Fact]
+    public void ManualCross_ConflictDetector_TwoHourBlock_ExemptsOnlyCoveredPeriods()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 2, ProfessorId = "P2" });
+        AddWorkingCrossLink(vm, ManualCrossLink(
+            ManualCrossAssignmentKey(courseId: "X-01", day: 0, period: 1, rowSpan: 2, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(courseId: "Y-01", day: 0, period: 1, rowSpan: 2, rooms: new[] { "R2" })));
+
+        var coveredConflicts = DetectManualConflicts(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R2"),
+            new SolutionAssignment("X-01", 0, 2, "R1"),
+            new SolutionAssignment("Y-01", 0, 2, "R2"));
+        var outsideConflicts = DetectManualConflicts(
+            vm,
+            new SolutionAssignment("X-01", 0, 3, "R1"),
+            new SolutionAssignment("Y-01", 0, 3, "R2"));
+
+        Assert.DoesNotContain(coveredConflicts, c => c.Type == ConflictType.GradeConflict);
+        Assert.Contains(outsideConflicts, c => c.Type == ConflictType.GradeConflict);
+    }
+
+    [Fact]
+    public void ManualCross_ConflictDetector_PairOrderDoesNotMatter()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        AddWorkingCrossLink(vm, ManualCrossLink(
+            ManualCrossAssignmentKey(courseId: "X-01", day: 0, period: 1, rooms: new[] { "R1" }),
+            ManualCrossAssignmentKey(courseId: "Y-01", day: 0, period: 1, rooms: new[] { "R2" })));
+
+        var conflicts = DetectManualConflicts(
+            vm,
+            new SolutionAssignment("Y-01", 0, 1, "R2"),
+            new SolutionAssignment("X-01", 0, 1, "R1"));
+
+        Assert.DoesNotContain(conflicts, c => c.Type == ConflictType.GradeConflict);
+    }
+
+    [Fact]
+    public void ManualCrossLink_SameCourseDifferentSection_AreNotConsideredSameCrossedAssignment()
+    {
+        var crossed = ManualCrossAssignmentKey(courseId: "X-01", section: 1);
+        var otherSameCourse = ManualCrossAssignmentKey(courseId: "X-01", section: 2);
+        var target = ManualCrossAssignmentKey(courseId: "Y-01", section: 1, rooms: new[] { "R2" });
+        var link = ManualCrossLink(crossed, target);
+
+        Assert.False(IsAlreadyCrossedByLink(link, otherSameCourse));
+    }
+
+    [Fact]
+    public void ManualCrossLink_SameCourseDifferentRoom_AreNotConsideredSameCrossedAssignment()
+    {
+        var crossed = ManualCrossAssignmentKey(courseId: "X-01", rooms: new[] { "R1" });
+        var otherSameCourse = ManualCrossAssignmentKey(courseId: "X-01", rooms: new[] { "R3" });
+        var target = ManualCrossAssignmentKey(courseId: "Y-01", rooms: new[] { "R2" });
+        var link = ManualCrossLink(crossed, target);
+
+        Assert.False(IsAlreadyCrossedByLink(link, otherSameCourse));
+    }
+
+    [Fact]
+    public void ManualCrossLink_SameCourseSameSectionSameSlotSameRoom_IsAlreadyCrossed()
+    {
+        var crossed = ManualCrossAssignmentKey(courseId: "X-01", section: 1, day: 0, period: 1, rooms: new[] { "R1" });
+        var equivalent = ManualCrossAssignmentKey(courseId: "X-01", section: 1, day: 0, period: 1, rooms: new[] { "R1" });
+        var target = ManualCrossAssignmentKey(courseId: "Y-01", rooms: new[] { "R2" });
+        var link = ManualCrossLink(crossed, target);
+
+        Assert.True(IsAlreadyCrossedByLink(link, equivalent));
+    }
+
+    [Fact]
+    public void ManualCrossLink_PairOrder_DoesNotMatter()
+    {
+        var left = ManualCrossAssignmentKey(courseId: "X-01", rooms: new[] { "R1" });
+        var right = ManualCrossAssignmentKey(courseId: "Y-01", rooms: new[] { "R2" });
+        var link = ManualCrossLink(left, right);
+
+        Assert.True(IsCrossPair(link, left, right));
+        Assert.True(IsCrossPair(link, right, left));
+    }
+
+    [Fact]
+    public void ManualCross_BlocksThirdAssignment_ByAssignmentKey()
+    {
+        var first = ManualCrossAssignmentKey(courseId: "X-01", rooms: new[] { "R1" });
+        var second = ManualCrossAssignmentKey(courseId: "Y-01", rooms: new[] { "R2" });
+        var third = ManualCrossAssignmentKey(courseId: "Z-01", rooms: new[] { "R3" });
+        var link = ManualCrossLink(first, second);
+
+        Assert.True(IsAlreadyCrossedByLink(link, first));
+        Assert.True(IsAlreadyCrossedByLink(link, second));
+        Assert.False(IsAlreadyCrossedByLink(link, third));
+    }
+
+    [Fact]
+    public void ManualCross_DoesNotBlockSameCourseIdDifferentAssignmentKey()
+    {
+        var crossed = ManualCrossAssignmentKey(courseId: "X-01", section: 1, period: 1, rooms: new[] { "R1" });
+        var otherSameCourse = ManualCrossAssignmentKey(courseId: "X-01", section: 2, period: 1, rooms: new[] { "R2" });
+        var target = ManualCrossAssignmentKey(courseId: "Y-01", section: 1, rooms: new[] { "R3" });
+        var link = ManualCrossLink(crossed, target);
+
+        Assert.False(IsAlreadyCrossedByLink(link, otherSameCourse));
+    }
+
+    [Fact]
+    public void ManualCross_AllowsSameCourseDifferentSectionProfessorRoom_WhenOtherRulesPass()
+    {
+        var source = ManualCrossAssignmentKey(courseId: "X-01", section: 1, period: 1, rooms: new[] { "R1" });
+        var target = ManualCrossAssignmentKey(courseId: "X-01", section: 2, period: 1, rooms: new[] { "R2" });
+        var link = ManualCrossLink(source, target);
+
+        Assert.True(IsCrossPair(link, source, target));
+    }
 
     [Fact]
     public void LoadFromSolution_PopulatesGridAndResetsSelection()
@@ -445,6 +2086,59 @@ public class ManualEditViewModelTests : IDisposable
 
         Assert.True(state.CanSwap);
         Assert.Contains("교환 가능", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCross_Swap_SectionConflictStillBlocksIfNotManualCross()
+    {
+        _ws.AddProfessor(new Professor { Id = "P4", Name = "P4" });
+        _ws.AddProfessor(new Professor { Id = "P12", Name = "P12" });
+        _ws.AddProfessor(new Professor { Id = "PY", Name = "PY" });
+        _ws.AddRoom(new Room { Id = "R6", Name = "강의실6" });
+        _ws.AddRoom(new Room { Id = "RY", Name = "교환강의실" });
+        _ws.AddCourse(new Course
+        {
+            Id = "4-01",
+            Name = "공통과목",
+            Grade = 2,
+            Section = 1,
+            HoursPerWeek = 1,
+            ProfessorId = "P4",
+        });
+        _ws.AddCourse(new Course
+        {
+            Id = "4-02",
+            Name = "공통과목",
+            Grade = 2,
+            Section = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P12",
+        });
+        _ws.AddCourse(new Course
+        {
+            Id = "Y-01",
+            Name = "교환대상",
+            Grade = 2,
+            Section = 1,
+            HoursPerWeek = 1,
+            ProfessorId = "PY",
+        });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("4-01", 0, 1, "R1"),
+            new SolutionAssignment("4-02", 0, 3, "R6"),
+            new SolutionAssignment("Y-01", 0, 3, "RY")));
+        var selected = vm.Grid.Cells.First(c => c.Assignment.CourseId == "4-01");
+        var target = vm.Grid.Cells.First(c => c.Assignment.CourseId == "Y-01");
+        vm.HandleCellClick(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+        _dialog.ResponseToReturn = false;
+
+        vm.HandleSwapRequested(target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        var call = Assert.Single(_dialog.Calls);
+        Assert.Contains(call, c => c.Type == ConflictType.SectionConflict);
+        Assert.Empty(vm.WorkingCrossLinks);
+        Assert.Contains("교환이 취소", vm.StatusMessage);
     }
 
     [Fact]
@@ -866,7 +2560,8 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Equal("예 (강의실1, 강의실2)", vm.SelectedMultiRoomText);
         Assert.Equal("강의실1, 강의실2", vm.SelectedAllowedRoomsText);
         Assert.Equal("이동 불가", vm.SelectedMoveStateText);
-        Assert.Contains("HC-13", vm.SelectedBlockedReasonText);
+        Assert.Contains("고정 시간표", vm.SelectedBlockedReasonText);
+        Assert.DoesNotContain("HC-13", vm.SelectedBlockedReasonText);
         Assert.True(vm.HasBlockingReasons);
         Assert.False(vm.HasWarningReasons);
         Assert.True(vm.HasAnyConstraintReasons);
@@ -1037,6 +2732,71 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
+    public void ConflictDisplayTitle_UsesCourseAndTime()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "운영체제", Grade = 2, HoursPerWeek = 2, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 3, "R1"),
+            new SolutionAssignment("X-01", 0, 4, "R1"),
+            new SolutionAssignment("Y-01", 0, 3, "R1"),
+            new SolutionAssignment("Y-01", 0, 4, "R1")));
+
+        var conflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.RoomConflict && c.Period == 3));
+        Assert.NotEqual(conflict.Type.ToString(), conflict.DisplayTitle);
+        Assert.Contains("월 3~4교시", conflict.DisplayTitle);
+        Assert.Contains("분반", conflict.DisplayTitle);
+    }
+
+    [Fact]
+    public void ConflictDisplayTitle_FallsBackSafelyWhenCourseMissing()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("MISSING-01", 0, 3, "R1"),
+            new SolutionAssignment("OTHER-01", 0, 3, "R1")));
+
+        var conflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.RoomConflict));
+        Assert.Contains("MISSING-01", conflict.DisplayTitle);
+        Assert.Contains("월 3교시", conflict.DisplayTitle);
+    }
+
+    [Fact]
+    public void ConflictDisplayTitle_KeepsConstraintNameInDetails()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("MISSING-01", 0, 3, "R1"),
+            new SolutionAssignment("OTHER-01", 0, 3, "R1")));
+
+        var conflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.RoomConflict));
+        Assert.DoesNotContain(conflict.Type.ToString(), conflict.DisplayTitle);
+        Assert.Contains(conflict.Type.ToString(), conflict.DisplayDescription);
+        Assert.Contains("제약조건:", conflict.DisplayDescription);
+    }
+
+    [Fact]
+    public void ConflictDisplayTitle_HandlesTwoCourseConflict()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "운영체제", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 3, "R1"),
+            new SolutionAssignment("Y-01", 0, 3, "R1")));
+
+        var conflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.RoomConflict));
+        Assert.Contains("월 3교시", conflict.DisplayTitle);
+        Assert.Contains("테스트", conflict.DisplayDescription);
+        Assert.Contains("운영체제", conflict.DisplayDescription);
+    }
+
+    [Fact]
     public void SaveTimetable_Hc20Error_BlocksSave()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
@@ -1065,7 +2825,8 @@ public class ManualEditViewModelTests : IDisposable
 
         var targetKey = new TimetableScheduler.ViewModel.Grid.UnifiedCellKey(0, 3, 2, 0);
         Assert.Equal(TimetableScheduler.ViewModel.Grid.ManualMoveCellState.Blocked, vm.Grid.EditStates[targetKey].State);
-        Assert.Contains("HC-20", vm.Grid.EditStates[targetKey].Reason);
+        Assert.Contains("동일 교과목", vm.Grid.EditStates[targetKey].Reason);
+        Assert.DoesNotContain("HC-20", vm.Grid.EditStates[targetKey].Reason);
     }
 
     [Fact]
@@ -1155,6 +2916,197 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Equal(1, vm.LastSavedCrossLinkCount);
         Assert.Equal(1, vm.LastRestoredCrossLinkCount);
         Assert.Equal(0, vm.LastIgnoredCrossLinkCount);
+    }
+
+    [Fact]
+    public void ManualCross_SaveRow_IncludesSectionDayPeriodRoom()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 1, 3, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R2")));
+        var selected = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+        var target = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "Y-01");
+        vm.HandleCellClick(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+        vm.HandleCrossAddRequested(target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        var row = Assert.Single(SavedManualCrossRows(vm));
+
+        Assert.Equal("X-01", row.SourceCourseId);
+        Assert.Equal("1", row.SourceSection);
+        Assert.Equal(0, row.SourceDay);
+        Assert.Equal(1, row.SourcePeriod);
+        Assert.Equal("R1", row.SourceRoomId);
+        Assert.Equal("Y-01", row.TargetCourseId);
+        Assert.Equal("2", row.TargetSection);
+        Assert.Equal(0, row.TargetDay);
+        Assert.Equal(1, row.TargetPeriod);
+        Assert.Equal("R2", row.TargetRoomId);
+    }
+
+    [Fact]
+    public void ManualCross_Save_SameCourseDifferentSection_DoesNotCollapseCourseId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "X-01", Name = "테스트", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"));
+        AddWorkingCrossLink(
+            vm,
+            ManualCrossLink(
+                ManualCrossAssignmentKey(courseId: "X-01", section: 1, day: 0, period: 1, rooms: new[] { "R1" }),
+                ManualCrossAssignmentKey(courseId: "X-01", section: 2, day: 0, period: 1, rooms: new[] { "R2" })));
+
+        var row = Assert.Single(SavedManualCrossRows(vm));
+
+        Assert.Equal("X-01", row.SourceCourseId);
+        Assert.Equal("1", row.SourceSection);
+        Assert.Equal("R1", row.SourceRoomId);
+        Assert.Equal("X-01", row.TargetCourseId);
+        Assert.Equal("2", row.TargetSection);
+        Assert.Equal("R2", row.TargetRoomId);
+    }
+
+    [Fact]
+    public void ManualCross_Restore_UsesSectionDayPeriodRoom()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 2, 3, "R1"),
+            new SolutionAssignment("Y-01", 1, 2, "R2"));
+
+        var ignored = RestoreSavedManualCrossRows(vm, new[]
+        {
+            new SavedManualCrossLinkRow(
+                "X-01", 2, "1", 2, 3, "R1",
+                "Y-01", 2, "2", 1, 2, "R2",
+                "HC11_ONLY_EXCEPTION"),
+        });
+
+        Assert.Equal(0, ignored);
+        var link = Assert.Single(vm.WorkingCrossLinks);
+        Assert.Equal(2, link.SourceKey.Day);
+        Assert.Equal(3, link.SourceKey.Period);
+        Assert.Equal("R1", link.SourceKey.RoomIdsKey);
+        Assert.Equal(1, link.TargetKey.Day);
+        Assert.Equal(2, link.TargetKey.Period);
+    }
+
+    [Fact]
+    public void ManualCross_Restore_SameCourseDifferentSection()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "X-01", Name = "테스트", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"));
+
+        var ignored = RestoreSavedManualCrossRows(vm, new[]
+        {
+            new SavedManualCrossLinkRow(
+                "X-01", 2, "1", 0, 1, "R1",
+                "X-01", 2, "2", 0, 1, "R2",
+                "HC11_ONLY_EXCEPTION"),
+        });
+
+        Assert.Equal(0, ignored);
+        var link = Assert.Single(vm.WorkingCrossLinks);
+        Assert.Equal("1", link.SourceKey.Section);
+        Assert.Equal("R1", link.SourceKey.RoomIdsKey);
+        Assert.Equal("2", link.TargetKey.Section);
+        Assert.Equal("R2", link.TargetKey.RoomIdsKey);
+    }
+
+    [Fact]
+    public void ManualCross_Restore_DoesNotUseCourseIdFirstMatch_WhenAmbiguous()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 1, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R2"));
+
+        var ignored = RestoreSavedManualCrossRows(vm, new[]
+        {
+            new SavedManualCrossLinkRow(
+                "X-01", 2, "1", 3, 3, "R1",
+                "Y-01", 2, "1", 0, 1, "R2",
+                "HC11_ONLY_EXCEPTION"),
+        });
+
+        Assert.Equal(1, ignored);
+        Assert.Empty(vm.WorkingCrossLinks);
+    }
+
+    [Fact]
+    public void ManualCross_Restore_AllowsCourseIdFallback_WhenSingleCandidate()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R2"));
+
+        var ignored = RestoreSavedManualCrossRows(vm, new[]
+        {
+            new SavedManualCrossLinkRow(
+                "X-01", 2, "1", 3, 3, "R1",
+                "Y-01", 2, "1", 0, 1, "R2",
+                "HC11_ONLY_EXCEPTION"),
+        });
+
+        Assert.Equal(0, ignored);
+        Assert.Single(vm.WorkingCrossLinks);
+    }
+
+    [Fact]
+    public void ManualCross_Restore_SkipsWhenSourceKeyEqualsTargetKey()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        SetWorkingAssignments(vm, new SolutionAssignment("X-01", 0, 1, "R1"));
+
+        var ignored = RestoreSavedManualCrossRows(vm, new[]
+        {
+            new SavedManualCrossLinkRow(
+                "X-01", 2, "1", 0, 1, "R1",
+                "X-01", 2, "1", 0, 1, "R1",
+                "HC11_ONLY_EXCEPTION"),
+        });
+
+        Assert.Equal(1, ignored);
+        Assert.Empty(vm.WorkingCrossLinks);
+    }
+
+    [Fact]
+    public void ManualCross_Restore_DoesNotDuplicateExistingPair()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R2"));
+        var row = new SavedManualCrossLinkRow(
+            "X-01", 2, "1", 0, 1, "R1",
+            "Y-01", 2, "1", 0, 1, "R2",
+            "HC11_ONLY_EXCEPTION");
+
+        var ignored = RestoreSavedManualCrossRows(vm, new[] { row, row });
+
+        Assert.Equal(0, ignored);
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.Equal(2, vm.LastSavedCrossLinkCount);
+        Assert.Equal(1, vm.LastRestoredCrossLinkCount);
     }
 
     [Fact]
@@ -2128,7 +4080,7 @@ public class ManualEditViewModelTests : IDisposable
         vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
         vm.NewRoomId = "";
 
-        Assert.True(vm.ApplyRoomChangeCommand.CanExecute(null));
+        Assert.False(vm.ApplyRoomChangeCommand.CanExecute(null));
     }
 
     [Fact]
@@ -2712,10 +4664,11 @@ public class ManualEditViewModelTests : IDisposable
         vm.SelectedOldRoomId = "R1";
         vm.SelectedReplacementRoomId = "R2";
 
-        Assert.True(vm.ApplyRoomChangeCommand.CanExecute(null));
-        vm.ApplyRoomChangeCommand.Execute(null);
+        Assert.False(vm.ApplyRoomChangeCommand.CanExecute(null));
+        if (vm.ApplyRoomChangeCommand.CanExecute(null))
+            vm.ApplyRoomChangeCommand.Execute(null);
         Assert.False(vm.UndoCommand.CanExecute(null));
-        Assert.Equal("새 강의실이 이미 이 수업에 배정되어 있습니다.", vm.RoomChangeStatusMessage);
+        Assert.Equal("", vm.RoomChangeStatusMessage);
         Assert.Equal(new[] { "R1", "R2" }, AssignmentAt(vm, 0, 1, "X-01").Rooms.OrderBy(r => r).ToArray());
     }
 
@@ -2995,6 +4948,70 @@ public class ManualEditViewModelTests : IDisposable
 
         Assert.Null(vm.SelectedAssignment);
         Assert.Empty(vm.Conflicts);
+    }
+
+    [Fact]
+    public void Reset_RestoresBaselineCrossLinks()
+    {
+        var vm = ArrangeResetBaselineCrossCase();
+        var baseline = Assert.Single(vm.WorkingCrossLinks);
+        RestoreSavedManualCrossRows(vm, Array.Empty<SavedManualCrossLinkRow>());
+
+        vm.ResetCommand.Execute(null);
+
+        var restored = Assert.Single(vm.WorkingCrossLinks);
+        Assert.True(restored.MatchesPair(baseline.SourceKey, baseline.TargetKey));
+    }
+
+    [Fact]
+    public void Reset_RerenderUsesRestoredCrossLinks()
+    {
+        var vm = ArrangeResetBaselineCrossCase();
+        RestoreSavedManualCrossRows(vm, Array.Empty<SavedManualCrossLinkRow>());
+
+        vm.ResetCommand.Execute(null);
+
+        var order = CrossParallelOrder(vm);
+        var labels = CrossLinkLabels(vm);
+        Assert.Equal(2, order.Count);
+        Assert.Equal(2, labels.Count);
+        Assert.NotEmpty(vm.Grid.CrossParallelOrder);
+        Assert.NotEmpty(vm.Grid.CrossLinkLabels);
+    }
+
+    [Fact]
+    public void Reset_RefreshConflictsIsCrossAware()
+    {
+        var vm = ArrangeResetBaselineCrossCase();
+        RestoreSavedManualCrossRows(vm, Array.Empty<SavedManualCrossLinkRow>());
+        RefreshConflicts(vm, strictManualCrossValidation: true);
+        Assert.Contains(vm.Conflicts, c => c.Type == ConflictType.SectionConflict);
+
+        vm.ResetCommand.Execute(null);
+
+        Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.SectionConflict);
+    }
+
+    [Fact]
+    public void Reset_UndoRestoresPreResetState()
+    {
+        var vm = ArrangeResetBaselineCrossCase();
+        SetWorkingAssignments(
+            vm,
+            new SolutionAssignment("4-01", 1, 3, "3"),
+            new SolutionAssignment("4-01", 1, 4, "3"),
+            new SolutionAssignment("4-02", 0, 3, "6"),
+            new SolutionAssignment("4-02", 0, 4, "6"));
+        RestoreSavedManualCrossRows(vm, Array.Empty<SavedManualCrossLinkRow>());
+
+        vm.ResetCommand.Execute(null);
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.CourseId == "4-01" && c.Day == 0 && c.Period == 3);
+
+        vm.UndoCommand.Execute(null);
+
+        Assert.Empty(vm.WorkingCrossLinks);
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.CourseId == "4-01" && c.Day == 1 && c.Period == 3);
     }
 
     [Fact]
@@ -3929,7 +5946,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void HandleCrossAddRequested_SameDurationWrongTargetRange_DoesNotCreateManualCrossLink()
+    public void HandleCrossAddRequested_SameDurationCoveredTargetRange_NormalizesAndCreatesManualCrossLink()
     {
         _ws.UpdateCourse(new Course
         {
@@ -3963,10 +5980,9 @@ public class ManualEditViewModelTests : IDisposable
 
         vm.HandleCrossAddRequested(1, 2, 2, targetCell.SubColumnIdx, targetCell.Assignment);
 
-        Assert.Empty(vm.WorkingCrossLinks);
-        Assert.Contains("같은 수업시간", vm.StatusMessage);
-        Assert.Contains(vm.Grid.Cells, c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "X-01");
-        Assert.False(vm.UndoCommand.CanExecute(null));
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        Assert.True(vm.UndoCommand.CanExecute(null));
     }
 
     [Fact]
@@ -4240,7 +6256,8 @@ public class ManualEditViewModelTests : IDisposable
         vm.SelectCell(0, 1, 2, 0, selected);
         vm.HandleCrossAddRequested(1, 1, 2, 0, target);
 
-        Assert.Contains("HC-", vm.StatusMessage);
+        Assert.Contains("교수", vm.StatusMessage);
+        Assert.DoesNotContain("HC-", vm.StatusMessage);
         Assert.Empty(vm.WorkingCrossLinks);
         Assert.Contains(vm.Grid.Cells, c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "X-01");
     }
@@ -4261,13 +6278,14 @@ public class ManualEditViewModelTests : IDisposable
         vm.SelectCell(0, 1, 2, 0, selected);
         vm.HandleCrossAddRequested(0, 1, 2, 1, target);
 
-        Assert.Contains("HC-01", vm.StatusMessage);
+        Assert.Contains("강의실", vm.StatusMessage);
+        Assert.DoesNotContain("HC-01", vm.StatusMessage);
         Assert.Empty(vm.WorkingCrossLinks);
         Assert.Contains(vm.Grid.Cells, c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "X-01");
     }
 
     [Fact]
-    public void HandleCrossAddRequested_ReplacesExistingCrossForSelectedCourse()
+    public void HandleCrossAddRequested_BlocksThirdCrossForSelectedAssignment()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
@@ -4291,12 +6309,12 @@ public class ManualEditViewModelTests : IDisposable
         vm.HandleCrossAddRequested(2, 1, 2, 0, z);
 
         Assert.Single(vm.WorkingCrossLinks);
-        Assert.True(vm.WorkingCrossLinks[0].MatchesPair("X-01", "Z-01"));
-        Assert.Contains("크로스가 변경되었습니다", vm.StatusMessage);
+        Assert.True(vm.WorkingCrossLinks[0].MatchesPair("X-01", "Y-01"));
+        Assert.Contains("이미 다른 수업과 크로스", vm.StatusMessage);
     }
 
     [Fact]
-    public void HandleCrossAddRequested_ReplacesExistingPartnerAndMovesAtomically()
+    public void HandleCrossAddRequested_BlocksThirdCrossAndKeepsExistingPartnerAndPosition()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
@@ -4321,10 +6339,10 @@ public class ManualEditViewModelTests : IDisposable
         vm.HandleCrossAddRequested(2, 1, 2, 0, z);
 
         Assert.Single(vm.WorkingCrossLinks);
-        Assert.True(vm.WorkingCrossLinks[0].MatchesPair("X-01", "Z-01"));
-        Assert.DoesNotContain(vm.WorkingCrossLinks, l => l.MatchesPair("X-01", "Y-01"));
-        Assert.Contains("크로스가 변경되었습니다", vm.StatusMessage);
-        Assert.Contains(vm.Grid.Cells, c => c.Day == 2 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        Assert.True(vm.WorkingCrossLinks[0].MatchesPair("X-01", "Y-01"));
+        Assert.DoesNotContain(vm.WorkingCrossLinks, l => l.MatchesPair("X-01", "Z-01"));
+        Assert.Contains("이미 다른 수업과 크로스", vm.StatusMessage);
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "X-01");
         Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "Y-01");
     }
 
@@ -4354,7 +6372,7 @@ public class ManualEditViewModelTests : IDisposable
 
         Assert.Single(vm.WorkingCrossLinks);
         Assert.True(vm.WorkingCrossLinks[0].MatchesPair("X-01", "Y-01"));
-        Assert.Contains("HC-01", vm.StatusMessage);
+        Assert.Contains("이미 다른 수업과 크로스", vm.StatusMessage);
         Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "X-01");
     }
 
@@ -4410,4 +6428,479 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Empty(vm.WorkingCrossLinks);
         Assert.Contains("3개 이상의 과목", vm.StatusMessage);
     }
+
+    [Fact]
+    public void ManualCross_ProgrammingApplication_AB_DifferentProfessorDifferentRoom_AllowsCross()
+    {
+        var vm = BuildDuplicateProgrammingApplicationVm();
+        var selected = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var target = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+
+        vm.SelectCell(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+
+        var state = vm.EvaluateCrossHover(target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        Assert.True(state.CanCreate, state.Reason);
+    }
+
+    [Fact]
+    public void ManualCross_Render_DuplicateCourseId_DoesNotCollapseDifferentProfessorRoom()
+    {
+        var vm = BuildDuplicateProgrammingApplicationVm();
+
+        var cells = vm.Grid.Cells
+            .Where(c => c.Assignment.CourseId == "PROG-APP")
+            .OrderBy(c => c.Assignment.ProfessorId, StringComparer.Ordinal)
+            .ToList();
+
+        Assert.Equal(2, cells.Count);
+        Assert.Equal(new[] { "P10", "P20" }, cells.Select(c => c.Assignment.ProfessorId));
+        Assert.Contains(cells, c => c.Assignment.Rooms.SequenceEqual(new[] { "D330" }));
+        Assert.Contains(cells, c => c.Assignment.Rooms.SequenceEqual(new[] { "D331" }));
+        Assert.NotEqual(
+            ManualCrossAssignmentKeyFromCell(cells[0]),
+            ManualCrossAssignmentKeyFromCell(cells[1]));
+    }
+
+    [Fact]
+    public void ManualCross_Hover_DuplicateCourseIdDifferentProfessorRoom_AllowsCross()
+    {
+        var vm = BuildDuplicateProgrammingApplicationVm();
+        var selected = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var target = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+        vm.SelectCell(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+
+        var state = vm.EvaluateCrossHover(target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        Assert.True(state.CanCreate, state.Reason);
+    }
+
+    [Fact]
+    public void ManualCross_Add_DuplicateCourseIdDifferentProfessorRoom_CreatesCross()
+    {
+        var vm = BuildDuplicateProgrammingApplicationVm();
+        var selected = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var target = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+        vm.SelectCell(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+
+        vm.HandleCrossAddRequested(target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.True(vm.WorkingCrossLinks[0].MatchesPair(
+            ManualCrossAssignmentKeyFromCell(selected),
+            ManualCrossAssignmentKeyFromCell(target)));
+    }
+
+    [Fact]
+    public void ManualCross_Drop_DuplicateCourseIdDifferentProfessorRoom_CreatesCross()
+    {
+        var vm = BuildDuplicateProgrammingApplicationVm();
+        var source = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var target = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+
+        vm.HandleCrossDrop(
+            source.Day,
+            source.Period,
+            source.Grade,
+            source.SubColumnIdx,
+            source.Assignment,
+            target.Day,
+            target.Period,
+            target.Grade,
+            target.SubColumnIdx,
+            target.Assignment);
+
+        Assert.Single(vm.WorkingCrossLinks);
+    }
+
+    [Fact]
+    public void ManualCrossHover_TwoHourDifferentDayPeriod_TargetStartCell_Allows()
+    {
+        var vm = BuildProgrammingApplicationTwoHourVm(targetStartPeriod: 3);
+        var source = ProgrammingApplicationCell(vm, "P10");
+        var target = ProgrammingApplicationCell(vm, "P20");
+        vm.SelectCell(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+
+        var state = vm.EvaluateCrossHover(target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        Assert.True(state.CanCreate, state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossHover_TwoHourDifferentDayPeriod_TargetCoveredCell_NormalizesToStartAndAllows()
+    {
+        var vm = BuildProgrammingApplicationTwoHourVm(targetStartPeriod: 3);
+        var source = ProgrammingApplicationCell(vm, "P10");
+        var target = ProgrammingApplicationCell(vm, "P20");
+        vm.SelectCell(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+
+        var state = vm.EvaluateCrossHover(target.Day, target.Period + 1, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        Assert.True(state.CanCreate, state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossDrop_TwoHourDifferentDayPeriod_TargetStartCell_Allows()
+    {
+        var vm = BuildProgrammingApplicationTwoHourVm(targetStartPeriod: 3);
+        var source = ProgrammingApplicationCell(vm, "P10");
+        var target = ProgrammingApplicationCell(vm, "P20");
+
+        var state = vm.EvaluateCrossDropHover(
+            source.Day,
+            source.Period,
+            source.Grade,
+            source.SubColumnIdx,
+            source.Assignment,
+            target.Day,
+            target.Period,
+            target.Grade,
+            target.SubColumnIdx,
+            target.Assignment);
+
+        Assert.True(state.CanCreate, state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossDrop_TwoHourDifferentDayPeriod_TargetCoveredCell_NormalizesToStartAndAllows()
+    {
+        var vm = BuildProgrammingApplicationTwoHourVm(targetStartPeriod: 3);
+        var source = ProgrammingApplicationCell(vm, "P10");
+        var target = ProgrammingApplicationCell(vm, "P20");
+
+        var state = vm.EvaluateCrossDropHover(
+            source.Day,
+            source.Period,
+            source.Grade,
+            source.SubColumnIdx,
+            source.Assignment,
+            target.Day,
+            target.Period + 1,
+            target.Grade,
+            target.SubColumnIdx,
+            target.Assignment);
+
+        Assert.True(state.CanCreate, state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossHover_TwoHourInvalidStartPeriod_BlocksWithReason()
+    {
+        var vm = BuildProgrammingApplicationTwoHourVm(targetStartPeriod: 2);
+        var source = ProgrammingApplicationCell(vm, "P10");
+        var target = ProgrammingApplicationCell(vm, "P20");
+        vm.SelectCell(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+
+        var state = vm.EvaluateCrossHover(target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        Assert.False(state.CanCreate);
+        Assert.Contains("2시간 수업", state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossHover_TwoHourDifferentDayPeriod_DoesNotRequireSameSlot()
+    {
+        var vm = BuildProgrammingApplicationTwoHourVm(targetStartPeriod: 6);
+        var source = ProgrammingApplicationCell(vm, "P10");
+        var target = ProgrammingApplicationCell(vm, "P20");
+        Assert.NotEqual(source.Day, target.Day);
+        Assert.NotEqual(source.Period, target.Period);
+        vm.SelectCell(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+
+        var state = vm.EvaluateCrossHover(target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        Assert.True(state.CanCreate, state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossHover_ProgrammingApplication_TwoHourDifferentDayPeriod_AllowsCross()
+    {
+        var vm = BuildProgrammingApplicationTwoHourVm(targetStartPeriod: 3);
+        var source = ProgrammingApplicationCell(vm, "P10");
+        var target = ProgrammingApplicationCell(vm, "P20");
+        vm.SelectCell(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+
+        var state = vm.EvaluateCrossHover(target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        Assert.True(state.CanCreate, state.Reason);
+    }
+
+    [Fact]
+    public void ManualCrossAdd_ProgrammingApplication_TwoHourDifferentDayPeriod_CreatesCross()
+    {
+        var vm = BuildProgrammingApplicationTwoHourVm(targetStartPeriod: 3);
+        var source = ProgrammingApplicationCell(vm, "P10");
+        var target = ProgrammingApplicationCell(vm, "P20");
+        vm.SelectCell(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+
+        vm.HandleCrossAddRequested(target.Day, target.Period + 1, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        Assert.Single(vm.WorkingCrossLinks);
+        Assert.True(vm.WorkingCrossLinks[0].MatchesPair(
+            ManualCrossAssignmentKey(
+                source.Assignment.CourseId,
+                source.Assignment.Section,
+                target.Day,
+                target.Period,
+                source.Assignment.RowSpan,
+                source.Assignment.Rooms),
+            ManualCrossAssignmentKeyFromCell(target)));
+    }
+
+    [Fact]
+    public void ManualCrossDrop_ProgrammingApplication_TwoHourDifferentDayPeriod_CreatesCross()
+    {
+        var vm = BuildProgrammingApplicationTwoHourVm(targetStartPeriod: 3);
+        var source = ProgrammingApplicationCell(vm, "P10");
+        var target = ProgrammingApplicationCell(vm, "P20");
+
+        vm.HandleCrossDrop(
+            source.Day,
+            source.Period,
+            source.Grade,
+            source.SubColumnIdx,
+            source.Assignment,
+            target.Day,
+            target.Period + 1,
+            target.Grade,
+            target.SubColumnIdx,
+            target.Assignment);
+
+        Assert.Single(vm.WorkingCrossLinks);
+    }
+
+    [Fact]
+    public void RoomChangeOptions_DisplaysRoomNames_NotInternalNumericIds()
+    {
+        var vm = BuildRoomOptionVm();
+        var displayNames = vm.AvailableRoomOptions.Select(o => o.DisplayName).ToList();
+
+        Assert.Contains("D330", displayNames);
+        Assert.DoesNotContain("1", displayNames);
+        Assert.DoesNotContain("2", displayNames);
+    }
+
+    [Fact]
+    public void RoomChangeOptions_DeduplicatesRoomIdAndName()
+    {
+        var vm = BuildRoomOptionVm();
+
+        Assert.Single(vm.AvailableRoomOptions.Where(o => o.DisplayName == "D330"));
+    }
+
+    [Fact]
+    public void RoomChangeOptions_UsesRoomIdAsValue_DisplayNameAsText()
+    {
+        var vm = BuildRoomOptionVm();
+
+        var option = Assert.Single(vm.AvailableRoomOptions.Where(o => o.DisplayName == "D330"));
+        Assert.Equal("1", option.RoomId);
+    }
+
+    [Fact]
+    public void RoomChangeOptions_UnknownNumericRoomId_DoesNotDisplayBareNumber()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "9")));
+        var assignment = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01").Assignment;
+        vm.SelectCell(0, 1, 2, 0, assignment);
+
+        var option = Assert.Single(vm.AvailableRoomOptions.Where(o => o.RoomId == "9"));
+        Assert.Equal("알 수 없는 강의실 (9)", option.DisplayName);
+    }
+
+    [Fact]
+    public void InspectorApplyChanges_DisabledWhenNoRoomChange()
+    {
+        var vm = BuildSingleRoomSelectionVm();
+
+        Assert.False(vm.HasPendingInspectorChanges);
+        Assert.False(vm.ApplyRoomChangeCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void InspectorApplyChanges_EnabledWhenRoomChanged()
+    {
+        var vm = BuildSingleRoomSelectionVm();
+
+        vm.NewRoomId = "R2";
+
+        Assert.True(vm.HasPendingInspectorChanges);
+        Assert.True(vm.ApplyRoomChangeCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void InspectorApplyChanges_DisabledWhenRoomChangedBackToOriginal()
+    {
+        var vm = BuildSingleRoomSelectionVm();
+
+        vm.NewRoomId = "R2";
+        vm.NewRoomId = "R1";
+
+        Assert.False(vm.HasPendingInspectorChanges);
+        Assert.False(vm.ApplyRoomChangeCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void InspectorApplyChanges_DisabledAfterApply()
+    {
+        var vm = BuildSingleRoomSelectionVm();
+        vm.NewRoomId = "R2";
+
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.False(vm.HasPendingInspectorChanges);
+        Assert.False(vm.ApplyRoomChangeCommand.CanExecute(null));
+        Assert.Equal(new[] { "R2" }, vm.SelectedAssignment!.Rooms);
+    }
+
+    [Fact]
+    public void ManualEditDisplay_StripsHcCodeFromInspectorMessages()
+    {
+        var text = ManualEditViewModel.StripConstraintCodeForDisplay(
+            "HC-01: 같은 강의실에 동시에 배치할 수 없습니다.");
+
+        Assert.Equal("같은 강의실에 동시에 배치할 수 없습니다.", text);
+    }
+
+    [Fact]
+    public void ManualEditDisplay_StripsScCodeFromInspectorMessages()
+    {
+        var text = ManualEditViewModel.StripConstraintCodeForDisplay(
+            "[SC-03] 선호 시간대가 아닙니다.");
+
+        Assert.Equal("선호 시간대가 아닙니다.", text);
+    }
+
+    [Fact]
+    public void ManualEditDisplay_StripsConstraintCodesFromTooltips()
+    {
+        var text = ManualEditViewModel.StripConstraintCodeForDisplay(
+            "HC-02 - 같은 교수는 동시에 수업할 수 없습니다.");
+
+        Assert.Equal("같은 교수는 동시에 수업할 수 없습니다.", text);
+    }
+
+    [Fact]
+    public void ManualEditDisplay_DoesNotStripInternalConflictCodes()
+    {
+        var row = SavedCross();
+
+        Assert.Equal("HC11_ONLY_EXCEPTION", row.PolicyType);
+    }
+
+    private ManualEditViewModel BuildDuplicateProgrammingApplicationVm()
+    {
+        _ws.Courses.Clear();
+        _ws.Professors.Clear();
+        _ws.Rooms.Clear();
+        _ws.Courses.Add(new Course
+        {
+            Id = "PROG-APP",
+            Name = "프로그래밍 응용",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P10",
+            Section = 1,
+            FixedRooms = new List<string> { "D330" },
+        });
+        _ws.Courses.Add(new Course
+        {
+            Id = "PROG-APP",
+            Name = "프로그래밍 응용",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P20",
+            Section = 1,
+            FixedRooms = new List<string> { "D331" },
+        });
+        _ws.Professors.Add(new Professor { Id = "P10", Name = "김교수" });
+        _ws.Professors.Add(new Professor { Id = "P20", Name = "박교수" });
+        _ws.Rooms.Add(new Room { Id = "D330", Name = "D330" });
+        _ws.Rooms.Add(new Room { Id = "D331", Name = "D331" });
+
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("PROG-APP", 0, 1, "D330"),
+            new SolutionAssignment("PROG-APP", 0, 1, "D331")));
+        return vm;
+    }
+
+    private ManualEditViewModel BuildProgrammingApplicationTwoHourVm(int targetStartPeriod)
+    {
+        _ws.Courses.Clear();
+        _ws.Professors.Clear();
+        _ws.Rooms.Clear();
+        _ws.Courses.Add(new Course
+        {
+            Id = "PROG-APP",
+            Name = "프로그래밍 응용",
+            Grade = 2,
+            HoursPerWeek = 2,
+            ProfessorId = "P10",
+            Section = 1,
+            FixedRooms = new List<string> { "D330" },
+            BlockStructure = new List<int> { 2 },
+        });
+        _ws.Courses.Add(new Course
+        {
+            Id = "PROG-APP",
+            Name = "프로그래밍 응용",
+            Grade = 2,
+            HoursPerWeek = 2,
+            ProfessorId = "P20",
+            Section = 1,
+            FixedRooms = new List<string> { "D331" },
+            BlockStructure = new List<int> { 2 },
+        });
+        _ws.Professors.Add(new Professor { Id = "P10", Name = "김교수" });
+        _ws.Professors.Add(new Professor { Id = "P20", Name = "박교수" });
+        _ws.Rooms.Add(new Room { Id = "D330", Name = "D330" });
+        _ws.Rooms.Add(new Room { Id = "D331", Name = "D331" });
+
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("PROG-APP", 0, 1, "D330"),
+            new SolutionAssignment("PROG-APP", 0, 2, "D330"),
+            new SolutionAssignment("PROG-APP", 1, targetStartPeriod, "D331"),
+            new SolutionAssignment("PROG-APP", 1, targetStartPeriod + 1, "D331")));
+        return vm;
+    }
+
+    private static UnifiedCell ProgrammingApplicationCell(ManualEditViewModel vm, string professorId) =>
+        vm.Grid.Cells.Single(c =>
+            c.Assignment.CourseId == "PROG-APP"
+            && c.Assignment.ProfessorId == professorId
+            && c.Assignment.RowSpan == 2);
+
+    private ManualEditViewModel BuildRoomOptionVm()
+    {
+        _ws.Rooms.Clear();
+        _ws.Rooms.Add(new Room { Id = "1", Name = "D330" });
+        _ws.Rooms.Add(new Room { Id = "2", Name = "D331" });
+        _ws.Rooms.Add(new Room { Id = "D330", Name = "D330" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "1")));
+        var assignment = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01").Assignment;
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        return vm;
+    }
+
+    private ManualEditViewModel BuildSingleRoomSelectionVm()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        var assignment = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01").Assignment;
+        vm.SelectCell(0, 1, 2, 0, assignment);
+        return vm;
+    }
+
+    private static ManualEditViewModel.ManualCrossAssignmentKey ManualCrossAssignmentKeyFromCell(UnifiedCell cell) =>
+        ManualCrossAssignmentKey(
+            cell.Assignment.CourseId,
+            cell.Assignment.Section,
+            cell.Day,
+            cell.Period,
+            cell.Assignment.RowSpan,
+            cell.Assignment.Rooms);
 }

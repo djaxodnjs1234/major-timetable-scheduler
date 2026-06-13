@@ -11,11 +11,11 @@ public partial class UnifiedTimetableControl : UserControl
 {
     private const string DragDataFormat = "TimetableScheduler.UnifiedCellDrag";
     private static readonly Brush EmptyBg = Brushes.White;
-    private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
-    private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xF0));
-    private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC));
-    private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
-    private static readonly Brush CourseBlockBorder = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55));
+    private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xF7, 0xF7, 0xF7));
+    private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
+    private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xE4, 0xE4, 0xE4));
+    private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0xB8, 0xB8, 0xB8));
+    private static readonly Brush CourseBlockBorder = new SolidColorBrush(Color.FromRgb(0xD8, 0xD8, 0xD8));
     private static readonly Brush MoveAllowedBg = new SolidColorBrush(Color.FromRgb(0xE8, 0xF5, 0xE9));
     private static readonly Brush MoveWarningBg = new SolidColorBrush(Color.FromRgb(0xFF, 0xF8, 0xE1));
     private static readonly Brush MoveBlockedBg = new SolidColorBrush(Color.FromRgb(0xFD, 0xE7, 0xE9));
@@ -190,7 +190,7 @@ public partial class UnifiedTimetableControl : UserControl
             if (p == 5)
             {
                 // Single merged lunch row spanning all columns
-                AddBorder("점 심 시 간", row, 0, 1, 2 + totalDayCols, LunchBg, 10, FontWeights.Bold);
+                AddLunchBorder(row, 2 + totalDayCols);
                 continue;
             }
 
@@ -232,10 +232,14 @@ public partial class UnifiedTimetableControl : UserControl
                         else
                         {
                             var bg = GradeToBrushConverter.BrushFor(g);
+                            var crossDisplayKey = UnifiedTimetableViewModel.BuildManualCrossDisplayKey(
+                                match.Assignment,
+                                dg.Day,
+                                p);
                             var border = MakeChipBorder(
                                 match.Assignment,
                                 bg,
-                                vm.CrossLinkLabels.GetValueOrDefault(match.Assignment.CourseId));
+                                vm.CrossLinkLabels.GetValueOrDefault(crossDisplayKey));
                             if (vm.SelectedCell == new UnifiedCellKey(dg.Day, p, g, k))
                             {
                                 border.BorderBrush = SelectedBorder;
@@ -294,45 +298,131 @@ public partial class UnifiedTimetableControl : UserControl
         RootGrid.Children.Add(border);
     }
 
+    private void AddLunchBorder(int row, int colSpan)
+    {
+        var border = new Border
+        {
+            BorderBrush = DayBoundaryBorder,
+            BorderThickness = new Thickness(0, 1, 0, 1),
+            Background = LunchBg,
+            Child = new TextBlock
+            {
+                Text = "점 심 시 간",
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 8,
+                FontWeight = FontWeights.Normal,
+            },
+        };
+        Grid.SetRow(border, row);
+        Grid.SetColumn(border, 0);
+        Grid.SetColumnSpan(border, colSpan);
+        Panel.SetZIndex(border, 30);
+        RootGrid.Children.Add(border);
+    }
+
     private static Border MakeChipBorder(CellAssignment a, Brush bg, string? crossLabel)
     {
-        var panel = new StackPanel { Margin = new Thickness(1) };
+        var content = new StackPanel
+        {
+            Margin = new Thickness(5, 4, 5, 5),
+        };
+
         var nameText = string.IsNullOrEmpty(a.SectionLabel)
             ? a.CourseName
-            : $"{a.CourseName}·{a.SectionLabel}";
-        panel.Children.Add(new TextBlock
+            : $"{a.CourseName} - {a.SectionLabel}분반";
+        if (a.IsFixed)
+            nameText = $"★ {nameText}";
+
+        content.Children.Add(new TextBlock
         {
             Text = nameText,
             FontSize = 9,
-            FontWeight = FontWeights.Bold,
+            FontWeight = FontWeights.SemiBold,
             TextAlignment = TextAlignment.Center,
             TextWrapping = TextWrapping.Wrap,
+            TextTrimming = TextTrimming.None,
         });
         if (!string.IsNullOrEmpty(a.ProfessorLine))
-            panel.Children.Add(new TextBlock
+            content.Children.Add(new TextBlock
             {
                 Text = a.ProfessorLine,
                 FontSize = 8,
+                FontWeight = FontWeights.Normal,
                 TextAlignment = TextAlignment.Center,
-                TextWrapping = TextWrapping.Wrap,
+                TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.None,
+                ClipToBounds = true,
             });
         if (!string.IsNullOrEmpty(a.RoomsLabel))
-            panel.Children.Add(new TextBlock
+            content.Children.Add(new TextBlock
             {
-                Text = a.RoomsLabel,
+                Text = a.RoomsLabel.Replace("\n", ", "),
                 FontSize = 8,
+                FontWeight = FontWeights.Normal,
                 TextAlignment = TextAlignment.Center,
-                TextWrapping = TextWrapping.Wrap,
+                TextWrapping = TextWrapping.NoWrap,
+                TextTrimming = TextTrimming.None,
+                ClipToBounds = true,
                 Foreground = Brushes.DarkSlateGray,
             });
+
+        var card = new Border
+        {
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Background = bg,
+            CornerRadius = new CornerRadius(5),
+            Margin = new Thickness(2),
+            ClipToBounds = true,
+            Child = new Grid
+            {
+                Children =
+                {
+                    new Border
+                    {
+                        Height = 4,
+                        Background = DarkenBrush(bg),
+                        CornerRadius = new CornerRadius(5, 5, 0, 0),
+                        VerticalAlignment = VerticalAlignment.Top,
+                    },
+                    content,
+                },
+            },
+        };
+
+        var overlay = new Grid();
+        overlay.Children.Add(card);
+
         return new Border
         {
-            BorderBrush = CourseBlockBorder,
-            BorderThickness = new Thickness(1.25),
-            Background = bg,
-            Child = panel,
+            BorderBrush = Brushes.Transparent,
+            BorderThickness = new Thickness(0),
+            Background = Brushes.Transparent,
+            CornerRadius = new CornerRadius(6),
+            Child = overlay,
             ToolTip = NullIfBlank(crossLabel) is { } label ? $"크로스: {label}" : null,
         };
+    }
+
+    private static Brush DarkenBrush(Brush brush)
+    {
+        if (brush is SolidColorBrush solid)
+        {
+            var color = solid.Color;
+            var accent = Color.FromRgb(
+                DarkenChannel(color.R),
+                DarkenChannel(color.G),
+                DarkenChannel(color.B));
+            var result = new SolidColorBrush(accent);
+            result.Freeze();
+            return result;
+        }
+
+        return CourseBlockBorder;
+
+        static byte DarkenChannel(byte channel) =>
+            (byte)Math.Max(0, Math.Round(channel * 0.72));
     }
 
     private void AddDayBoundary(int col)
@@ -340,7 +430,7 @@ public partial class UnifiedTimetableControl : UserControl
         var border = new Border
         {
             BorderBrush = DayBoundaryBorder,
-            BorderThickness = new Thickness(2, 0, 0, 0),
+            BorderThickness = new Thickness(1, 0, 0, 0),
             Background = Brushes.Transparent,
             IsHitTestVisible = false,
         };
@@ -434,7 +524,9 @@ public partial class UnifiedTimetableControl : UserControl
                 && target.Assignment != null)
             {
                 if (IsSameCellArgs(source, target))
+                {
                     ClearActiveBadge();
+                }
                 else
                     RefreshDragHoverBadges(border, target, crossState, swapState);
             }
@@ -488,14 +580,24 @@ public partial class UnifiedTimetableControl : UserControl
     private CellClickedEventArgs? TryBuildCurrentArgs(object sender, bool allowEmpty)
     {
         var args = TryBuildArgs(sender);
-        if (args == null) return null;
-        if (!allowEmpty && args.Assignment == null) return null;
-        return IsCurrentCellArgs(args) ? args : null;
+        if (args == null)
+        {
+            return null;
+        }
+        if (!allowEmpty && args.Assignment == null)
+        {
+            return null;
+        }
+        var isCurrent = IsCurrentCellArgs(args);
+        return isCurrent ? args : null;
     }
 
     private bool IsCurrentCellArgs(CellClickedEventArgs args)
     {
-        if (DataContext is not UnifiedTimetableViewModel vm) return false;
+        if (DataContext is not UnifiedTimetableViewModel vm)
+        {
+            return false;
+        }
         var current = vm.Cells.FirstOrDefault(c =>
             c.Day == args.Day
             && c.Period == args.Period
@@ -503,13 +605,22 @@ public partial class UnifiedTimetableControl : UserControl
             && c.SubColumnIdx == args.SubColumnIdx);
 
         if (args.Assignment == null)
-            return current == null && IsRenderedEmptySlot(vm, args);
-        if (current == null) return false;
+        {
+            var emptyCurrent = current == null && IsRenderedEmptySlot(vm, args);
+            return emptyCurrent;
+        }
+        if (current == null)
+        {
+            return false;
+        }
 
         var assignment = current.Assignment;
-        return assignment.CourseId == args.Assignment.CourseId
+        var result = assignment.CourseId == args.Assignment.CourseId
+            && assignment.Section == args.Assignment.Section
+            && assignment.ProfessorId == args.Assignment.ProfessorId
             && assignment.RowSpan == args.Assignment.RowSpan
             && assignment.Rooms.SequenceEqual(args.Assignment.Rooms);
+        return result;
     }
 
     private static bool IsRenderedEmptySlot(UnifiedTimetableViewModel vm, CellClickedEventArgs args)
@@ -545,23 +656,38 @@ public partial class UnifiedTimetableControl : UserControl
         }
 
         var args = TryBuildCurrentArgs(sender, allowEmpty: true);
-        if (args == null) return;
+        if (args == null)
+        {
+            return;
+        }
         CellClicked?.Invoke(this, args);
         e.Handled = true;
     }
 
     private void OnCourseMouseEnter(object sender, System.Windows.Input.MouseEventArgs e)
     {
-        if (sender is not Border border
-            || TryBuildCurrentArgs(sender, allowEmpty: false) is not { } args
-            || args.Assignment == null)
+        if (sender is not Border border)
+        {
             return;
+        }
 
+        if (TryBuildCurrentArgs(sender, allowEmpty: false) is not { } args)
+        {
+            return;
+        }
+
+        if (args.Assignment == null)
+        {
+            return;
+        }
+
+        var crossState = EnableCrossHover ? CrossHoverEvaluator?.Invoke(args) ?? CrossHoverState.Hidden() : CrossHoverState.Hidden();
+        var swapState = EnableSwapHover ? SwapHoverEvaluator?.Invoke(args) ?? SwapHoverState.Hidden() : SwapHoverState.Hidden();
         RefreshCrossSwapBadges(
             border,
             args,
-            EnableCrossHover ? CrossHoverEvaluator?.Invoke(args) ?? CrossHoverState.Hidden() : CrossHoverState.Hidden(),
-            EnableSwapHover ? SwapHoverEvaluator?.Invoke(args) ?? SwapHoverState.Hidden() : SwapHoverState.Hidden(),
+            crossState,
+            swapState,
             isDrag: false);
     }
 
@@ -599,7 +725,10 @@ public partial class UnifiedTimetableControl : UserControl
         SwapHoverState swapState,
         bool isDrag)
     {
-        if (args.Assignment == null) return;
+        if (args.Assignment == null)
+        {
+            return;
+        }
         var kind = BadgeKind(crossState, swapState);
         if (kind == HoverBadgeKind.None)
         {
@@ -608,7 +737,9 @@ public partial class UnifiedTimetableControl : UserControl
         }
 
         if (IsSameActiveBadge(border, args, kind, isDrag))
+        {
             return;
+        }
 
         ClearActiveBadge();
 
@@ -625,7 +756,10 @@ public partial class UnifiedTimetableControl : UserControl
             overlay.Children.Add(sp);
             border.Child = overlay;
         }
-        else return;
+        else
+        {
+            return;
+        }
 
         border.ToolTip = NullIfBlank(crossState.CanCreate ? crossState.Reason : swapState.Reason ?? crossState.Reason);
 
@@ -666,7 +800,10 @@ public partial class UnifiedTimetableControl : UserControl
             _dragHoverBadgeKind = kind;
         }
 
-        if (!crossState.CanCreate) return;
+        if (!crossState.CanCreate)
+        {
+            return;
+        }
 
         var badge = new Button
         {
@@ -860,7 +997,13 @@ public partial class UnifiedTimetableControl : UserControl
             && a.Period == b.Period
             && a.Grade == b.Grade
             && a.SubColumnIdx == b.SubColumnIdx
-            && a.Assignment?.CourseId == b.Assignment?.CourseId;
+            && a.Assignment?.CourseId == b.Assignment?.CourseId
+            && a.Assignment?.Section == b.Assignment?.Section
+            && a.Assignment?.RowSpan == b.Assignment?.RowSpan
+            && ((a.Assignment == null && b.Assignment == null)
+                || (a.Assignment != null
+                    && b.Assignment != null
+                    && a.Assignment.Rooms.SequenceEqual(b.Assignment.Rooms)));
     }
 
     private void SuppressNextClick()
