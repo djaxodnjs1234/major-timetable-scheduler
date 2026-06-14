@@ -10,11 +10,10 @@ namespace TimetableScheduler.Wpf.Controls;
 public partial class TimetableGridControl : UserControl
 {
     private static readonly Brush EmptyBg = Brushes.White;
-    private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xE8, 0xE8, 0xE8));
+    private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xF7, 0xF7, 0xF7));
     private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
-    private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xCC, 0xCC, 0xCC));
-    private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0x66, 0x66, 0x66));
-    private static readonly Brush CourseBlockBorder = new SolidColorBrush(Color.FromRgb(0x55, 0x55, 0x55));
+    private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xEC, 0xEF, 0xF3));
+    private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0xCB, 0xD5, 0xE1));
 
     static TimetableGridControl()
     {
@@ -22,7 +21,6 @@ public partial class TimetableGridControl : UserControl
         HeaderBg.Freeze();
         CellBorder.Freeze();
         DayBoundaryBorder.Freeze();
-        CourseBlockBorder.Freeze();
     }
 
     public TimetableGridControl()
@@ -62,6 +60,7 @@ public partial class TimetableGridControl : UserControl
             BodyGrid.Children.Add(MakeLabel(label, row, 0, HeaderBg));
             BodyGrid.Children.Add(MakeLabel($"{8 + p:D2}:00", row, 1, HeaderBg));
         }
+        AddLunchBorder(row: 4, colSpan: 7);
 
         // Track which cells are covered by RowSpan above
         var covered = new HashSet<(int Row, int Col)>();
@@ -76,7 +75,6 @@ public partial class TimetableGridControl : UserControl
 
                 if (p == 5)
                 {
-                    BodyGrid.Children.Add(MakeCell("점심", row, col, 1, LunchBg, 9, FontWeights.Normal));
                     continue;
                 }
 
@@ -88,16 +86,33 @@ public partial class TimetableGridControl : UserControl
                 }
 
                 int maxRs = cellVm.Items.Max(a => a.RowSpan);
-                var stack = new StackPanel { Orientation = Orientation.Vertical };
-                foreach (var a in cellVm.Items)
-                    stack.Children.Add(MakeAssignmentChip(a));
+                var assignmentHost = new Grid
+                {
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    VerticalAlignment = VerticalAlignment.Stretch,
+                };
+                for (int i = 0; i < cellVm.Items.Count; i++)
+                {
+                    assignmentHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+                    var a = cellVm.Items[i];
+                    var chip = UnifiedTimetableControl.MakeChipBorder(
+                        a,
+                        GradeToBrushConverter.BrushFor(a.Grade),
+                        crossLabel: null);
+                    chip.HorizontalAlignment = HorizontalAlignment.Stretch;
+                    chip.VerticalAlignment = VerticalAlignment.Stretch;
+                    Grid.SetRow(chip, i);
+                    assignmentHost.Children.Add(chip);
+                }
 
                 var border = new Border
                 {
-                    BorderBrush = CourseBlockBorder,
-                    BorderThickness = new Thickness(1.25),
-                    Background = GradeToBrushConverter.BrushFor(cellVm.Items[0].Grade),
-                    Child = stack,
+                    BorderBrush = CellBorder,
+                    BorderThickness = new Thickness(0.5),
+                    Background = EmptyBg,
+                    HorizontalAlignment = HorizontalAlignment.Stretch,
+                    VerticalAlignment = VerticalAlignment.Stretch,
+                    Child = assignmentHost,
                 };
                 Grid.SetRow(border, row);
                 Grid.SetColumn(border, col);
@@ -155,35 +170,27 @@ public partial class TimetableGridControl : UserControl
         return border;
     }
 
-    private static FrameworkElement MakeAssignmentChip(CellAssignment a)
+    private void AddLunchBorder(int row, int colSpan)
     {
-        var panel = new StackPanel { Margin = new Thickness(2) };
-        panel.Children.Add(new TextBlock
+        var border = new Border
         {
-            Text = a.TitleLabel,
-            FontSize = 10,
-            FontWeight = FontWeights.Bold,
-            TextAlignment = TextAlignment.Center,
-            TextWrapping = TextWrapping.Wrap,
-        });
-        if (!string.IsNullOrWhiteSpace(a.ProfessorLine))
-            panel.Children.Add(new TextBlock
+            BorderBrush = DayBoundaryBorder,
+            BorderThickness = new Thickness(0, 1, 0, 1),
+            Background = LunchBg,
+            Child = new TextBlock
             {
-                Text = a.ProfessorLine,
-                FontSize = 9,
-                TextAlignment = TextAlignment.Center,
-                Foreground = Brushes.DimGray,
-                TextWrapping = TextWrapping.Wrap,
-            });
-        if (!string.IsNullOrEmpty(a.RoomsLabel))
-            panel.Children.Add(new TextBlock
-            {
-                Text = a.RoomsLabel,
-                FontSize = 9,
-                TextAlignment = TextAlignment.Center,
-                Foreground = Brushes.DarkSlateGray,
-            });
-        return panel;
+                Text = "점 심 시 간",
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 8,
+                FontWeight = FontWeights.Normal,
+            },
+        };
+        Grid.SetRow(border, row);
+        Grid.SetColumn(border, 0);
+        Grid.SetColumnSpan(border, colSpan);
+        Panel.SetZIndex(border, 30);
+        BodyGrid.Children.Add(border);
     }
 
     private void AddDayBoundary(int col)
@@ -191,7 +198,7 @@ public partial class TimetableGridControl : UserControl
         var border = new Border
         {
             BorderBrush = DayBoundaryBorder,
-            BorderThickness = new Thickness(2, 0, 0, 0),
+            BorderThickness = new Thickness(1, 0, 0, 0),
             Background = Brushes.Transparent,
             IsHitTestVisible = false,
         };

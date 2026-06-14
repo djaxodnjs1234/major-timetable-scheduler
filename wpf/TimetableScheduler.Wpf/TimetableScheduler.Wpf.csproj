@@ -16,6 +16,9 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
     <ApplicationIcon>Assets\app.ico</ApplicationIcon>
+	<AssemblyName>ProfessorTimetableScheduler</AssemblyName>
+	<Product>시간표 스케줄러</Product>
+	<FileDescription>시간표 스케줄러</FileDescription>
   </PropertyGroup>
 
   <ItemGroup>

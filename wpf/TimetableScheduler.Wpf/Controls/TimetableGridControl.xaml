@@ -12,7 +12,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Background="#F0F0F0">
+        <Grid Grid.Row="0" Background="#F8F8F8">
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="44" />
                 <ColumnDefinition Width="56" />
@@ -36,24 +36,24 @@
                        HorizontalAlignment="Center" Padding="4" />
             <TextBlock Grid.Column="6" Text="금" FontWeight="Bold" FontSize="12"
                        HorizontalAlignment="Center" Padding="4" />
-            <Border Grid.Column="2" BorderBrush="#666666" BorderThickness="2,0,0,0" IsHitTestVisible="False" />
-            <Border Grid.Column="3" BorderBrush="#666666" BorderThickness="2,0,0,0" IsHitTestVisible="False" />
-            <Border Grid.Column="4" BorderBrush="#666666" BorderThickness="2,0,0,0" IsHitTestVisible="False" />
-            <Border Grid.Column="5" BorderBrush="#666666" BorderThickness="2,0,0,0" IsHitTestVisible="False" />
-            <Border Grid.Column="6" BorderBrush="#666666" BorderThickness="2,0,0,0" IsHitTestVisible="False" />
+            <Border Grid.Column="2" BorderBrush="#CBD5E1" BorderThickness="1,0,0,0" IsHitTestVisible="False" />
+            <Border Grid.Column="3" BorderBrush="#CBD5E1" BorderThickness="1,0,0,0" IsHitTestVisible="False" />
+            <Border Grid.Column="4" BorderBrush="#CBD5E1" BorderThickness="1,0,0,0" IsHitTestVisible="False" />
+            <Border Grid.Column="5" BorderBrush="#CBD5E1" BorderThickness="1,0,0,0" IsHitTestVisible="False" />
+            <Border Grid.Column="6" BorderBrush="#CBD5E1" BorderThickness="1,0,0,0" IsHitTestVisible="False" />
         </Grid>
 
         <Grid Grid.Row="1" x:Name="BodyGrid">
             <Grid.RowDefinitions>
-                <RowDefinition Height="*" MinHeight="40" />
-                <RowDefinition Height="*" MinHeight="40" />
-                <RowDefinition Height="*" MinHeight="40" />
-                <RowDefinition Height="*" MinHeight="40" />
+                <RowDefinition Height="*" MinHeight="64" />
+                <RowDefinition Height="*" MinHeight="64" />
+                <RowDefinition Height="*" MinHeight="64" />
+                <RowDefinition Height="*" MinHeight="64" />
                 <RowDefinition Height="*" MinHeight="32" />
-                <RowDefinition Height="*" MinHeight="40" />
-                <RowDefinition Height="*" MinHeight="40" />
-                <RowDefinition Height="*" MinHeight="40" />
-                <RowDefinition Height="*" MinHeight="40" />
+                <RowDefinition Height="*" MinHeight="64" />
+                <RowDefinition Height="*" MinHeight="64" />
+                <RowDefinition Height="*" MinHeight="64" />
+                <RowDefinition Height="*" MinHeight="64" />
             </Grid.RowDefinitions>
             <Grid.ColumnDefinitions>
                 <ColumnDefinition Width="44" />

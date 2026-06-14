@@ -1310,7 +1310,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         var rows = _working.Select(a => new TimetableAssignmentRow(a.CourseId, a.Day, a.Period, a.RoomId)).ToList();
         var name = string.IsNullOrWhiteSpace(SaveName) ? "시간표" : SaveName.Trim();
-        FormattedTimetableExporter.Export(name, rows, SessionCourses, SessionProfessors, path);
+        FormattedTimetableExporter.Export(name, rows, SessionCourses, SessionProfessors, path, SessionRooms);
     }
 
     private bool CanExport() => BaseSolution != null;

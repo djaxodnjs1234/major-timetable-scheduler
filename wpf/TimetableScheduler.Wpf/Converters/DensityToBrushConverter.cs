@@ -6,9 +6,9 @@ namespace TimetableScheduler.Wpf.Converters;
 
 public sealed class DensityToBrushConverter : IValueConverter
 {
-    // Low density: #EEF2FF (light indigo) → High density: #1E40AF (deep blue)
-    private static readonly (byte R, byte G, byte B) Low  = (0xEE, 0xF2, 0xFF);
-    private static readonly (byte R, byte G, byte B) High = (0x1E, 0x40, 0xAF);
+    // Low density: #EFE7FF (clean pastel lavender) -> High density: #8D63D8 (clear violet)
+    private static readonly (byte R, byte G, byte B) Low  = (0xEF, 0xE7, 0xFF);
+    private static readonly (byte R, byte G, byte B) High = (0x8D, 0x63, 0xD8);
 
     public object Convert(object value, Type targetType, object parameter, CultureInfo culture)
     {

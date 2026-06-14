@@ -13,9 +13,11 @@ public partial class UnifiedTimetableControl : UserControl
     private static readonly Brush EmptyBg = Brushes.White;
     private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xF7, 0xF7, 0xF7));
     private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
-    private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xE4, 0xE4, 0xE4));
-    private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0xB8, 0xB8, 0xB8));
+    private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xEC, 0xEF, 0xF3));
+    private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0xCB, 0xD5, 0xE1));
     private static readonly Brush CourseBlockBorder = new SolidColorBrush(Color.FromRgb(0xD8, 0xD8, 0xD8));
+    private static readonly Brush CourseTitleText = new SolidColorBrush(Color.FromRgb(0x11, 0x18, 0x27));
+    private static readonly Brush CourseMetaText = new SolidColorBrush(Color.FromRgb(0x4B, 0x55, 0x63));
     private static readonly Brush MoveAllowedBg = new SolidColorBrush(Color.FromRgb(0xE8, 0xF5, 0xE9));
     private static readonly Brush MoveWarningBg = new SolidColorBrush(Color.FromRgb(0xFF, 0xF8, 0xE1));
     private static readonly Brush MoveBlockedBg = new SolidColorBrush(Color.FromRgb(0xFD, 0xE7, 0xE9));
@@ -37,6 +39,8 @@ public partial class UnifiedTimetableControl : UserControl
         CellBorder.Freeze();
         DayBoundaryBorder.Freeze();
         CourseBlockBorder.Freeze();
+        CourseTitleText.Freeze();
+        CourseMetaText.Freeze();
         MoveAllowedBg.Freeze();
         MoveWarningBg.Freeze();
         MoveBlockedBg.Freeze();
@@ -138,7 +142,7 @@ public partial class UnifiedTimetableControl : UserControl
             if (i == 4)
                 RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(22) });
             else
-                RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = 28 });
+                RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = 64 });
         }
 
         // 2 label cols (period, time) + sum of all grade widths
@@ -240,11 +244,7 @@ public partial class UnifiedTimetableControl : UserControl
                                 match.Assignment,
                                 bg,
                                 vm.CrossLinkLabels.GetValueOrDefault(crossDisplayKey));
-                            if (vm.SelectedCell == new UnifiedCellKey(dg.Day, p, g, k))
-                            {
-                                border.BorderBrush = SelectedBorder;
-                                border.BorderThickness = new Thickness(2);
-                            }
+                            var isSelected = vm.SelectedCell == new UnifiedCellKey(dg.Day, p, g, k);
                             border.Tag = (dg.Day, p, g, k, match.Assignment);
                             border.AllowDrop = EnableDragDropMove;
                             border.PreviewMouseLeftButtonDown += OnDragSourceMouseDown;
@@ -263,6 +263,8 @@ public partial class UnifiedTimetableControl : UserControl
                             if (match.Assignment.RowSpan > 1)
                                 Grid.SetRowSpan(border, match.Assignment.RowSpan);
                             RootGrid.Children.Add(border);
+                            if (isSelected)
+                                AddSelectedOverlay(row, targetCol, match.Assignment.RowSpan);
                             for (int dr = 1; dr < match.Assignment.RowSpan; dr++)
                                 covered.Add((row + dr, targetCol));
                         }
@@ -271,6 +273,25 @@ public partial class UnifiedTimetableControl : UserControl
                 }
             }
         }
+    }
+
+    private void AddSelectedOverlay(int row, int column, int rowSpan)
+    {
+        var overlay = new Border
+        {
+            BorderBrush = SelectedBorder,
+            BorderThickness = new Thickness(2),
+            Background = Brushes.Transparent,
+            CornerRadius = new CornerRadius(5),
+            Margin = new Thickness(2),
+            IsHitTestVisible = false,
+        };
+        Grid.SetRow(overlay, row);
+        Grid.SetColumn(overlay, column);
+        if (rowSpan > 1)
+            Grid.SetRowSpan(overlay, rowSpan);
+        Panel.SetZIndex(overlay, 50);
+        RootGrid.Children.Add(overlay);
     }
 
     private void AddBorder(string text, int row, int col, int rowSpan, int colSpan,
@@ -321,57 +342,60 @@ public partial class UnifiedTimetableControl : UserControl
         RootGrid.Children.Add(border);
     }
 
-    private static Border MakeChipBorder(CellAssignment a, Brush bg, string? crossLabel)
+    internal static Border MakeChipBorder(CellAssignment a, Brush bg, string? crossLabel)
     {
         var content = new StackPanel
         {
             Margin = new Thickness(5, 4, 5, 5),
         };
 
-        var nameText = string.IsNullOrEmpty(a.SectionLabel)
+        var sectionText = FormatSectionForCard(a.SectionLabel);
+        var nameText = string.IsNullOrWhiteSpace(sectionText)
             ? a.CourseName
-            : $"{a.CourseName} - {a.SectionLabel}분반";
+            : $"{a.CourseName} - {sectionText}";
         if (a.IsFixed)
             nameText = $"★ {nameText}";
 
         content.Children.Add(new TextBlock
         {
-            Text = nameText,
+            Text = AddWrapHints(nameText),
             FontSize = 9,
             FontWeight = FontWeights.SemiBold,
+            Foreground = CourseTitleText,
             TextAlignment = TextAlignment.Center,
-            TextWrapping = TextWrapping.Wrap,
+            TextWrapping = TextWrapping.WrapWithOverflow,
             TextTrimming = TextTrimming.None,
         });
         if (!string.IsNullOrEmpty(a.ProfessorLine))
             content.Children.Add(new TextBlock
             {
-                Text = a.ProfessorLine,
+                Text = AddWrapHints(a.ProfessorLine),
                 FontSize = 8,
                 FontWeight = FontWeights.Normal,
+                Foreground = CourseMetaText,
                 TextAlignment = TextAlignment.Center,
-                TextWrapping = TextWrapping.NoWrap,
+                TextWrapping = TextWrapping.Wrap,
                 TextTrimming = TextTrimming.None,
-                ClipToBounds = true,
             });
         if (!string.IsNullOrEmpty(a.RoomsLabel))
             content.Children.Add(new TextBlock
             {
-                Text = a.RoomsLabel.Replace("\n", ", "),
+                Text = AddWrapHints(a.RoomsLabel.Replace("\n", ", ")),
                 FontSize = 8,
                 FontWeight = FontWeights.Normal,
                 TextAlignment = TextAlignment.Center,
-                TextWrapping = TextWrapping.NoWrap,
+                TextWrapping = TextWrapping.Wrap,
                 TextTrimming = TextTrimming.None,
-                ClipToBounds = true,
-                Foreground = Brushes.DarkSlateGray,
+                Foreground = CourseMetaText,
             });
 
+        var cardBg = LightenBrush(bg);
+        var accentBg = DarkenBrush(bg);
         var card = new Border
         {
             BorderBrush = Brushes.Transparent,
             BorderThickness = new Thickness(0),
-            Background = bg,
+            Background = cardBg,
             CornerRadius = new CornerRadius(5),
             Margin = new Thickness(2),
             ClipToBounds = true,
@@ -382,7 +406,7 @@ public partial class UnifiedTimetableControl : UserControl
                     new Border
                     {
                         Height = 4,
-                        Background = DarkenBrush(bg),
+                        Background = accentBg,
                         CornerRadius = new CornerRadius(5, 5, 0, 0),
                         VerticalAlignment = VerticalAlignment.Top,
                     },
@@ -405,6 +429,35 @@ public partial class UnifiedTimetableControl : UserControl
         };
     }
 
+    private static string AddWrapHints(string? text)
+    {
+        if (string.IsNullOrWhiteSpace(text))
+            return text ?? string.Empty;
+
+        return text
+            .Replace(" - ", "\u200B - \u200B")
+            .Replace("/", "/\u200B")
+            .Replace("·", "·\u200B")
+            .Replace(",", ",\u200B")
+            .Replace("프로그래밍", "프로그래밍\u200B")
+            .Replace("시스템", "시스템\u200B")
+            .Replace("데이터", "데이터\u200B")
+            .Replace("서버", "서버\u200B")
+            .Replace("소프트웨어", "소프트웨어\u200B")
+            .Replace("컴퓨터", "컴퓨터\u200B")
+            .Replace("알고리즘", "알고리즘\u200B")
+            .Replace("네트워크", "네트워크\u200B")
+            .Replace("데이터베이스", "데이터베이스\u200B");
+    }
+
+    private static string FormatSectionForCard(string? section)
+    {
+        if (string.IsNullOrWhiteSpace(section))
+            return string.Empty;
+
+        return section.Trim().Replace("분반", "").Trim();
+    }
+
     private static Brush DarkenBrush(Brush brush)
     {
         if (brush is SolidColorBrush solid)
@@ -423,6 +476,26 @@ public partial class UnifiedTimetableControl : UserControl
 
         static byte DarkenChannel(byte channel) =>
             (byte)Math.Max(0, Math.Round(channel * 0.72));
+    }
+
+    private static Brush LightenBrush(Brush brush)
+    {
+        if (brush is SolidColorBrush solid)
+        {
+            var color = solid.Color;
+            var softened = Color.FromRgb(
+                LightenChannel(color.R),
+                LightenChannel(color.G),
+                LightenChannel(color.B));
+            var result = new SolidColorBrush(softened);
+            result.Freeze();
+            return result;
+        }
+
+        return brush;
+
+        static byte LightenChannel(byte channel) =>
+            (byte)Math.Min(255, Math.Round(channel + (255 - channel) * 0.20));
     }
 
     private void AddDayBoundary(int col)

@@ -149,6 +149,7 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         var snapshot = SavedTimetableSnapshotResolver.Resolve(SelectedTimetable.SnapshotJson);
         IReadOnlyList<Course> courses = snapshot.Courses.Count > 0 ? snapshot.Courses : _workspace.ExpandedCourses;
         IReadOnlyList<Professor> professors = snapshot.Professors.Count > 0 ? snapshot.Professors : _workspace.Professors;
+        IReadOnlyList<Room> rooms = snapshot.Rooms.Count > 0 ? snapshot.Rooms : _workspace.Rooms;
 
         FormattedTimetableExporter.Export(
             SelectedTimetable.Name,
@@ -156,6 +157,7 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
             courses,
             professors,
             path,
+            rooms,
             expandAllGrades: true);
     }
 

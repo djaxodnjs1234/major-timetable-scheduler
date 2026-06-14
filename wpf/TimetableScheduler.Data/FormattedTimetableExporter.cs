@@ -11,15 +11,22 @@ public static class FormattedTimetableExporter
     private static readonly XLColor[] GradeFills =
     {
         XLColor.NoColor,
-        XLColor.FromHtml("#FFFFCC"), // 1학년: light yellow
-        XLColor.FromHtml("#D6E3BC"), // 2학년: light green
-        XLColor.FromHtml("#DBE5F1"), // 3학년: light blue
-        XLColor.FromHtml("#F2DBDB"), // 4학년: light pink
+        XLColor.FromHtml("#FFF8D8"), // 1학년: soft yellow
+        XLColor.FromHtml("#EAF5DC"), // 2학년: soft green
+        XLColor.FromHtml("#E6F1FA"), // 3학년: soft blue
+        XLColor.FromHtml("#FBE7EA"), // 4학년: soft pink
     };
 
-    private static readonly XLColor HeaderBg  = XLColor.FromHtml("#4F81BD");
-    private static readonly XLColor LunchBg   = XLColor.FromHtml("#F2F2F2");
-    private static readonly XLColor SubHdrBg  = XLColor.FromHtml("#D9D9D9");
+    private static readonly XLColor TitleBg      = XLColor.FromHtml("#6F879F");
+    private static readonly XLColor DayHeaderBg  = XLColor.FromHtml("#E6EEF6");
+    private static readonly XLColor GradeHeaderBg = XLColor.FromHtml("#F8FAFC");
+    private static readonly XLColor LunchBg      = XLColor.FromHtml("#F7F9FC");
+    private static readonly XLColor TextDark     = XLColor.FromHtml("#1F2937");
+    private static readonly XLColor TextMuted    = XLColor.FromHtml("#4B5563");
+    private static readonly XLColor GridLine     = XLColor.FromHtml("#E5EAF0");
+    private static readonly XLColor CardLine     = XLColor.FromHtml("#C7D0DC");
+    private static readonly XLColor OuterLine    = XLColor.FromHtml("#94A3B8");
+    private static readonly XLColor DayGroupLine = XLColor.FromHtml("#8FA3B8");
 
     // Row 4 = day headers, row 5 = grade sub-headers, period 1 starts at row 6
     private static int PeriodRow(int p) => p + 5;
@@ -30,13 +37,15 @@ public static class FormattedTimetableExporter
         IReadOnlyList<Course> courses,
         IReadOnlyList<Professor> professors,
         string path,
+        IReadOnlyList<Room>? rooms = null,
         bool expandAllGrades = false)
     {
         var aList = assignments.ToList();
         var cMap  = courses.ToDictionary(c => c.Id);
         var pMap  = professors.ToDictionary(p => p.Id);
+        var roomNameMap = BuildRoomNameMap(rooms);
 
-        var dayLayouts = BuildDayLayouts(aList, cMap, expandAllGrades);
+        var dayLayouts = BuildDayLayouts(aList, cMap, roomNameMap, expandAllGrades);
 
         // col 1 = A (period label), day columns, last col (period label)
         int[] dayStart = new int[5];
@@ -73,11 +82,11 @@ public static class FormattedTimetableExporter
             hdr.Value = DayNames[d];
             hdr.Style.Font.Bold = true;
             hdr.Style.Font.FontSize = 12;
-            hdr.Style.Font.FontColor = XLColor.White;
-            hdr.Style.Fill.BackgroundColor = HeaderBg;
+            hdr.Style.Font.FontColor = TextDark;
+            hdr.Style.Fill.BackgroundColor = DayHeaderBg;
             hdr.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
             hdr.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
-            ApplyThinBorder(hdr);
+            ApplyHeaderBorder(hdr);
         }
 
         // grade sub-headers (row 5)
@@ -91,10 +100,11 @@ public static class FormattedTimetableExporter
         lunchRange.Value = "점 심 시 간";
         lunchRange.Style.Font.Bold = true;
         lunchRange.Style.Font.FontSize = 11;
+        lunchRange.Style.Font.FontColor = TextMuted;
         lunchRange.Style.Fill.BackgroundColor = LunchBg;
         lunchRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         lunchRange.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
-        ApplyThinBorder(lunchRange);
+        ApplyHeaderBorder(lunchRange);
 
         // empty cell borders
         for (int d = 0; d < 5; d++)
@@ -102,11 +112,12 @@ public static class FormattedTimetableExporter
             {
                 int c2 = dayStart[d] + sub;
                 foreach (int p in ValidPeriods)
-                    ApplyThinBorder(ws.Cell(PeriodRow(p), c2).AsRange());
+                    ApplyGridBorder(ws.Cell(PeriodRow(p), c2).AsRange());
             }
 
         WriteCourses(ws, aList, cMap, pMap, courses, dayStart, dayLayouts);
-        WriteRemarks(ws, aList, cMap, dayStart, dayLayouts, totalCols);
+        WriteRemarks(ws, aList, cMap, roomNameMap, dayStart, dayLayouts, totalCols);
+        ApplyDayGroupBorders(ws, dayStart, dayLayouts);
         WriteLegend(ws);
 
         ws.SheetView.Freeze(5, 1);
@@ -136,6 +147,7 @@ public static class FormattedTimetableExporter
     private static DayLayout[] BuildDayLayouts(
         List<TimetableAssignmentRow> aList,
         Dictionary<string, Course> cMap,
+        IReadOnlyDictionary<string, string> roomNameMap,
         bool expandAllGrades)
     {
         var layouts = new DayLayout[5];
@@ -155,7 +167,10 @@ public static class FormattedTimetableExporter
                         g.Key,
                         g.Min(a => a.Period),
                         g.Max(a => a.Period),
-                        string.Join(", ", g.Select(a => a.RoomId).Distinct())))
+                        string.Join(" / ", g
+                            .Select(a => FormatRoomForExport(a.RoomId, roomNameMap))
+                            .Where(room => !string.IsNullOrWhiteSpace(room))
+                            .Distinct(StringComparer.Ordinal))))
                     .OrderBy(b => b.StartPeriod)
                     .ToList();
 
@@ -199,12 +214,12 @@ public static class FormattedTimetableExporter
     {
         // period label column in row 5
         var left = ws.Cell(5, 1).AsRange();
-        left.Style.Fill.BackgroundColor = SubHdrBg;
-        ApplyThinBorder(left);
+        left.Style.Fill.BackgroundColor = GradeHeaderBg;
+        ApplyHeaderBorder(left);
 
         var right = ws.Cell(5, lastLabelCol).AsRange();
-        right.Style.Fill.BackgroundColor = SubHdrBg;
-        ApplyThinBorder(right);
+        right.Style.Fill.BackgroundColor = GradeHeaderBg;
+        ApplyHeaderBorder(right);
 
         for (int d = 0; d < 5; d++)
         {
@@ -212,8 +227,8 @@ public static class FormattedTimetableExporter
             if (layout.GradeLayouts.Count == 0)
             {
                 var blank = ws.Cell(5, dayStart[d]).AsRange();
-                blank.Style.Fill.BackgroundColor = SubHdrBg;
-                ApplyThinBorder(blank);
+                blank.Style.Fill.BackgroundColor = GradeHeaderBg;
+                ApplyHeaderBorder(blank);
                 continue;
             }
 
@@ -227,10 +242,11 @@ public static class FormattedTimetableExporter
                 gradeRange.Value = $"{gl.Grade}학년";
                 gradeRange.Style.Font.Bold = true;
                 gradeRange.Style.Font.FontSize = 9;
-                gradeRange.Style.Fill.BackgroundColor = GradeFills[gl.Grade];
+                gradeRange.Style.Font.FontColor = TextMuted;
+                gradeRange.Style.Fill.BackgroundColor = GradeHeaderBg;
                 gradeRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                 gradeRange.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
-                ApplyThinBorder(gradeRange);
+                ApplyHeaderBorder(gradeRange);
             }
         }
     }
@@ -270,7 +286,7 @@ public static class FormattedTimetableExporter
                     : XLColor.White;
 
                 string section = multiSectionNames.Contains(course.Id)
-                    ? SectionLabel(course.Section)
+                    ? FormatSectionForExport(SectionLabel(course.Section))
                     : "";
 
                 var profParts = new List<string>();
@@ -288,15 +304,16 @@ public static class FormattedTimetableExporter
                 cellRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
                 cellRange.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
                 cellRange.Style.Font.FontSize        = 9;
-                ApplyThinBorder(cellRange);
+                cellRange.Style.Font.FontColor       = TextDark;
+                ApplyCourseBorder(cellRange);
             }
         }
     }
-
     private static void WriteRemarks(
         IXLWorksheet ws,
         List<TimetableAssignmentRow> aList,
         Dictionary<string, Course> cMap,
+        IReadOnlyDictionary<string, string> roomNameMap,
         int[] dayStart,
         DayLayout[] layouts,
         int totalCols)
@@ -305,6 +322,8 @@ public static class FormattedTimetableExporter
         var remarksCol = ws.Cell(15, 1);
         remarksCol.Value = "비고";
         remarksCol.Style.Font.Bold = true;
+        remarksCol.Style.Font.FontColor = TextMuted;
+        remarksCol.Style.Fill.BackgroundColor = GradeHeaderBg;
         remarksCol.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         remarksCol.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
 
@@ -313,36 +332,41 @@ public static class FormattedTimetableExporter
         {
             if (!cMap.TryGetValue(a.CourseId, out var c)) continue;
             if (c.IsFixed && !string.IsNullOrEmpty(c.Name))
-                notes.Add($"{c.Name} ({DayNames[a.Day]}{a.Period}교시, {a.RoomId})");
+                notes.Add($"{c.Name} ({DayNames[a.Day]}{a.Period}교시, {FormatRoomForExport(a.RoomId, roomNameMap)})");
         }
-
         var notesRange = ws.Range(15, 2, 15, totalCols).Merge();
         if (notes.Count > 0)
-            notesRange.Value = string.Join("  |  ", notes.Distinct());
+            notesRange.Value = string.Join("\n", notes.Distinct().Select(note => $"- {note}"));
         notesRange.Style.Alignment.WrapText = true;
         notesRange.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
         notesRange.Style.Font.FontSize      = 9;
-        ApplyThinBorder(ws.Range(15, 1, 15, totalCols));
+        notesRange.Style.Font.FontColor = TextMuted;
+        ApplyHeaderBorder(ws.Range(15, 1, 15, totalCols));
     }
 
     private static void WriteLegend(IXLWorksheet ws)
     {
-        ws.Cell(17, 1).Value = "범례";
-        ws.Cell(17, 1).Style.Font.Bold = true;
+        const int row = 17;
+        ws.Cell(row, 1).Value = "범례";
+        ws.Cell(row, 1).Style.Font.Bold = true;
+        ws.Cell(row, 1).Style.Font.FontColor = TextMuted;
+        ws.Cell(row, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
         string[] gradeLabels = { "1학년", "2학년", "3학년", "4학년" };
         for (int i = 0; i < 4; i++)
         {
-            int row = 18 + i;
-            var swatch = ws.Range(row, 2, row, 3).Merge();
+            int swatchCol = 2 + (i * 2);
+            var swatch = ws.Cell(row, swatchCol).AsRange();
             swatch.Style.Fill.BackgroundColor = GradeFills[i + 1];
-            ApplyThinBorder(swatch);
+            ApplyCourseBorder(swatch);
 
-            var label = ws.Cell(row, 4);
+            var label = ws.Cell(row, swatchCol + 1);
             label.Value = gradeLabels[i];
-            label.Style.Font.Bold = true;
+            label.Style.Font.FontSize = 9;
+            label.Style.Font.FontColor = TextMuted;
+            label.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;
         }
-    }
+        }
 
     private static void WriteTitleRow(IXLWorksheet ws, string title, int totalCols)
     {
@@ -352,7 +376,7 @@ public static class FormattedTimetableExporter
         titleRange.Style.Font.FontSize  = 16;
         titleRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
         titleRange.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
-        titleRange.Style.Fill.BackgroundColor = HeaderBg;
+        titleRange.Style.Fill.BackgroundColor = TitleBg;
         titleRange.Style.Font.FontColor       = XLColor.White;
     }
 
@@ -367,16 +391,20 @@ public static class FormattedTimetableExporter
             var left = ws.Cell(r, 1);
             left.Value = label;
             left.Style.Font.Bold = true;
+            left.Style.Font.FontColor = TextMuted;
+            left.Style.Fill.BackgroundColor = GradeHeaderBg;
             left.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
             left.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
-            ApplyThinBorder(left.AsRange());
+            ApplyHeaderBorder(left.AsRange());
 
             var right = ws.Cell(r, lastLabelCol);
             right.Value = label;
             right.Style.Font.Bold = true;
+            right.Style.Font.FontColor = TextMuted;
+            right.Style.Fill.BackgroundColor = GradeHeaderBg;
             right.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
             right.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
-            ApplyThinBorder(right.AsRange());
+            ApplyHeaderBorder(right.AsRange());
         }
     }
 
@@ -401,19 +429,66 @@ public static class FormattedTimetableExporter
         ws.Row(4).Height  = 22;  // day headers
         ws.Row(5).Height  = 14;  // grade sub-headers
         ws.Row(10).Height = 22;  // lunch (period 5)
-        ws.Row(15).Height = 40;  // 비고
+        ws.Row(15).Height = 54;  // 비고
+        ws.Row(17).Height = 18;  // 범례
         foreach (int p in new[] { 1, 2, 3, 4, 6, 7, 8, 9 })
             ws.Row(PeriodRow(p)).Height = 72;
     }
-
     private static string BuildCellText(string name, string section, string profStr, string rooms)
     {
         var sb = new System.Text.StringBuilder();
         sb.Append(name);
-        if (!string.IsNullOrEmpty(section)) { sb.Append('\n'); sb.Append(section); }
-        if (!string.IsNullOrEmpty(profStr)) { sb.Append('\n'); sb.Append(profStr); }
-        if (!string.IsNullOrEmpty(rooms))   { sb.Append('\n'); sb.Append(rooms); }
+
+        var middleParts = new[] { section, profStr }
+            .Where(part => !string.IsNullOrWhiteSpace(part));
+        var middle = string.Join(" · ", middleParts);
+        if (!string.IsNullOrWhiteSpace(middle)) { sb.Append('\n'); sb.Append(middle); }
+        if (!string.IsNullOrWhiteSpace(rooms)) { sb.Append('\n'); sb.Append(rooms); }
+
         return sb.ToString();
+    }
+
+    public static string FormatSectionForExport(string? section)
+    {
+        var value = (section ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            return string.Empty;
+
+        value = value.TrimEnd('.').Trim();
+
+        if (value.EndsWith("분반", StringComparison.Ordinal))
+            return value;
+
+        return $"{value}분반";
+    }
+
+    private static Dictionary<string, string> BuildRoomNameMap(IReadOnlyList<Room>? rooms)
+    {
+        if (rooms == null || rooms.Count == 0)
+            return new Dictionary<string, string>(StringComparer.Ordinal);
+
+        return rooms
+            .Where(r => !string.IsNullOrWhiteSpace(r.Id))
+            .GroupBy(r => r.Id.Trim(), StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g =>
+                {
+                    var room = g.First();
+                    return string.IsNullOrWhiteSpace(room.Name) ? g.Key : room.Name.Trim();
+                },
+                StringComparer.Ordinal);
+    }
+
+    private static string FormatRoomForExport(string? roomId, IReadOnlyDictionary<string, string> roomNameMap)
+    {
+        var id = (roomId ?? string.Empty).Trim();
+        if (string.IsNullOrWhiteSpace(id))
+            return string.Empty;
+
+        return roomNameMap.TryGetValue(id, out var name) && !string.IsNullOrWhiteSpace(name)
+            ? name
+            : id;
     }
 
     private static string SectionLabel(int section) => section switch
@@ -425,18 +500,48 @@ public static class FormattedTimetableExporter
         _ => section.ToString(),
     };
 
-    private static void ApplyThinBorder(IXLRange range)
+    private static void ApplyDayGroupBorders(
+        IXLWorksheet ws,
+        int[] dayStart,
+        DayLayout[] layouts)
+    {
+        for (int d = 0; d < DayNames.Length - 1; d++)
+        {
+            int endColumn = dayStart[d] + layouts[d].SubColCount - 1;
+            var boundary = ws.Range(4, endColumn, 15, endColumn);
+            boundary.Style.Border.RightBorder = XLBorderStyleValues.Medium;
+            boundary.Style.Border.RightBorderColor = DayGroupLine;
+        }
+    }
+
+    private static void ApplyGridBorder(IXLRange range)
     {
         range.Style.Border.OutsideBorder      = XLBorderStyleValues.Thin;
         range.Style.Border.InsideBorder       = XLBorderStyleValues.Thin;
-        range.Style.Border.OutsideBorderColor = XLColor.Black;
-        range.Style.Border.InsideBorderColor  = XLColor.Black;
+        range.Style.Border.OutsideBorderColor = GridLine;
+        range.Style.Border.InsideBorderColor  = GridLine;
+    }
+
+    private static void ApplyHeaderBorder(IXLRange range)
+    {
+        range.Style.Border.OutsideBorder      = XLBorderStyleValues.Thin;
+        range.Style.Border.InsideBorder       = XLBorderStyleValues.Thin;
+        range.Style.Border.OutsideBorderColor = OuterLine;
+        range.Style.Border.InsideBorderColor  = GridLine;
+    }
+
+    private static void ApplyCourseBorder(IXLRange range)
+    {
+        range.Style.Border.OutsideBorder      = XLBorderStyleValues.Thin;
+        range.Style.Border.InsideBorder       = XLBorderStyleValues.Thin;
+        range.Style.Border.OutsideBorderColor = CardLine;
+        range.Style.Border.InsideBorderColor  = CardLine;
     }
 
     private static void ApplyOuterBorder(IXLRange range)
     {
         range.Style.Border.OutsideBorder      = XLBorderStyleValues.Medium;
-        range.Style.Border.OutsideBorderColor = XLColor.Black;
+        range.Style.Border.OutsideBorderColor = OuterLine;
     }
 
     // ── inner types ──────────────────────────────────────────────────────────
