@@ -632,9 +632,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 selectedDay,
                 selectedPeriod))
         {
-            var selectedCourseId = SelectedAssignment.CourseId;
-            if (TryMoveSelectedTo(day, period, grade, subColumnIdx))
-                RemoveCrossForCourse(selectedCourseId, "이동으로 기존 크로스가 해제되었습니다.", recordUndo: false);
+            SelectCell(day, period, grade, subColumnIdx, assignment);
             return;
         }
 
