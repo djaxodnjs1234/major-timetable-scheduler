@@ -362,7 +362,6 @@ public class DataInputViewTests
 
                 var vm = new DataInputViewModel(workspace, null!);
                 var group = vm.CourseGroups.Single();
-                group.IsEditing = true;
 
                 var view = new DataInputView { DataContext = vm };
                 var window = new Window
@@ -387,11 +386,11 @@ public class DataInputViewTests
                 Assert.NotNull(unavailablePicker);
                 Assert.NotNull(fixedPicker);
                 Assert.NotNull(allButton);
-                Assert.NotEqual(Visibility.Visible, allButton!.Visibility);
+                Assert.False(allButton!.IsVisible);
 
                 group.IsEditing = true;
                 view.UpdateLayout();
-                Assert.Equal(Visibility.Visible, allButton.Visibility);
+                Assert.True(allButton.IsVisible);
 
                 var unavailableItems = ((IEnumerable<CheckListItem>)unavailablePicker!.DataContext).ToList();
                 var fixedItems = ((IEnumerable<CheckListItem>)fixedPicker!.DataContext).ToList();
@@ -443,13 +442,16 @@ public class DataInputViewTests
 
     private static void EnsureApplicationResources()
     {
-        if (Application.Current != null) return;
-
-        var app = new App
+        lock (typeof(App))
         {
-            ShutdownMode = ShutdownMode.OnExplicitShutdown,
-        };
-        app.InitializeComponent();
+            if (Application.Current != null) return;
+
+            var app = new App
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown,
+            };
+            app.InitializeComponent();
+        }
     }
 
     private static T? FindDescendant<T>(DependencyObject root, Func<T, bool>? predicate = null)

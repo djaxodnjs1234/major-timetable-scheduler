@@ -632,6 +632,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 selectedDay,
                 selectedPeriod))
         {
+            if (HasOccupiedTargetRangeConflict(SelectedAssignment, selectedDay, selectedPeriod, day, period, grade, subColumnIdx))
+            {
+                StatusMessage = BlockRangeOverlapBlockedReason;
+                Grid.SetEditState(_selectedGridCell, BuildMoveStates(SelectedAssignment, selectedDay, selectedPeriod));
+                return;
+            }
+
             SelectCell(day, period, grade, subColumnIdx, assignment);
             return;
         }
@@ -2111,6 +2118,53 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .Where(a => blockedCourseIds.Contains(a.CourseId))
             .Where(a => a.Day == targetDay)
             .ToList();
+    }
+
+    private bool HasOccupiedTargetRangeConflict(
+        CellAssignment assignment,
+        int sourceDay,
+        int sourcePeriod,
+        int targetDay,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx)
+    {
+        var movingAssignments = _working
+            .Where(a => IsSameMovingAssignment(a, assignment, sourceDay, sourcePeriod))
+            .OrderBy(a => a.Period)
+            .ToList();
+        if (movingAssignments.Count <= 1)
+        {
+            var rooms = assignment.Rooms.ToHashSet(StringComparer.Ordinal);
+            movingAssignments = _working
+                .Where(a => a.CourseId == assignment.CourseId
+                    && a.Day == sourceDay
+                    && a.Period >= sourcePeriod
+                    && a.Period < sourcePeriod + assignment.HoursPerWeek
+                    && rooms.Contains(a.RoomId))
+                .OrderBy(a => a.Period)
+                .ToList();
+        }
+        var effectiveRowSpan = Math.Max(assignment.RowSpan, assignment.HoursPerWeek);
+        if (movingAssignments.Count <= 1 && effectiveRowSpan <= 1)
+            return false;
+
+        var targetPeriods = movingAssignments.Count > 1
+            ? movingAssignments
+                .Select(a => targetPeriod + (a.Period - sourcePeriod))
+                .ToList()
+            : GetOccupiedPeriods(targetPeriod, effectiveRowSpan);
+
+        return GetBlockingAssignments(
+                assignment,
+                sourceDay,
+                sourcePeriod,
+                targetDay,
+                targetPeriods,
+                targetGrade,
+                targetSubColumnIdx,
+                allowManualCrossOverlap: false)
+            .Count > 0;
     }
 
     private List<SolutionAssignment> BuildMovedCandidate(

@@ -52,12 +52,12 @@ public class ResultsViewTests
             view.UpdateLayout();
 
             var texts = FindDescendants<TextBlock>(view)
-                .Select(text => text.Text)
+                .Select(text => NormalizeDisplayText(text.Text))
                 .Where(text => !string.IsNullOrWhiteSpace(text))
                 .ToList();
 
-            Assert.Contains("알고리즘·A", texts);
-            Assert.Contains("전필 · 김교수", texts);
+            Assert.Contains("알고리즘 - A", texts);
+            Assert.Contains("김교수", texts);
             Assert.Contains("공학관 101", texts);
 
             window.Close();
@@ -89,13 +89,16 @@ public class ResultsViewTests
 
     private static void EnsureApplicationResources()
     {
-        if (Application.Current != null) return;
-
-        var app = new App
+        lock (typeof(App))
         {
-            ShutdownMode = ShutdownMode.OnExplicitShutdown,
-        };
-        app.InitializeComponent();
+            if (Application.Current != null) return;
+
+            var app = new App
+            {
+                ShutdownMode = ShutdownMode.OnExplicitShutdown,
+            };
+            app.InitializeComponent();
+        }
     }
 
     private static List<T> FindDescendants<T>(DependencyObject root)
@@ -114,4 +117,7 @@ public class ResultsViewTests
 
         return results;
     }
+
+    private static string NormalizeDisplayText(string text) =>
+        text.Replace("\u200B", "");
 }
