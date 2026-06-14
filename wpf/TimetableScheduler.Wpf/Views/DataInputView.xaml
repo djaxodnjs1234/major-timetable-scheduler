@@ -833,47 +833,44 @@
                                     </Grid.ColumnDefinitions>
 
                                     <StackPanel Grid.Column="0">
-                                        <TextBlock Text="등록된 Cross"
-                                                   FontSize="11" FontWeight="Bold"
-                                                   Foreground="{StaticResource OnSurfaceVariant}"
-                                                   Margin="0,0,0,6" />
-                                        <ListBox ItemsSource="{Binding CrossGroupItems}"
-                                                 SelectedItem="{Binding SelectedCrossGroup, Mode=TwoWay}"
-                                                 DisplayMemberPath="Display"
-                                                 MinHeight="96" MaxHeight="140" />
-                                        <Button Content="선택 Cross 삭제"
-                                                Command="{Binding DeleteCrossCommand}"
-                                                CommandParameter="{Binding SelectedCrossGroup}"
-                                                Padding="10,5" Margin="0,8,0,0"
-                                                HorizontalAlignment="Left"
-                                                Background="#BA1A1A" Foreground="White" />
-                                    </StackPanel>
-
-                                    <StackPanel Grid.Column="2">
-                                        <TextBlock Text="새 Cross 추가"
-                                                   FontSize="11" FontWeight="Bold"
-                                                   Foreground="{StaticResource OnSurfaceVariant}"
-                                                   Margin="0,0,0,4" />
-                                        <TextBlock Text="묶을 과목을 정확히 2개 선택하세요. 분반 수와 총 시수가 같아야 합니다."
-                                                    FontSize="11" Foreground="{StaticResource OnSurfaceVariant}"
-                                                    TextWrapping="Wrap" Margin="0,0,0,8" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,0,0,12">
+                                            <TextBlock Text="새 Cross 추가"
+                                            FontSize="11" FontWeight="Bold"
+                                            Foreground="{StaticResource OnSurfaceVariant}"
+                                            Margin="0,0,0,4" />
+                                            <TextBlock Text=" (?)" FontSize="12" Foreground="{StaticResource PrimaryBrush}"
+                                            ToolTip="묶을 과목을 정확히 2개 선택하세요.&#x0a;분반 수와 총 시수가 같아야 합니다." />
+                                        </StackPanel>
                                         <ItemsControl ItemsSource="{Binding CrossCandidateGradeGroups}">
                                             <ItemsControl.ItemTemplate>
                                                 <DataTemplate DataType="{x:Type vm:CrossCandidateGradeGroup}">
-                                                    <Expander Header="{Binding Header}" IsExpanded="False" Margin="0,0,0,8">
+                                                    <Expander Header="{Binding Header}" IsExpanded="False" Margin="0,0,0,8" Padding="0,4">
                                                         <ctrl:CheckListPickerControl DataContext="{Binding Items}" />
                                                     </Expander>
                                                 </DataTemplate>
                                             </ItemsControl.ItemTemplate>
                                         </ItemsControl>
-                                        <StackPanel Orientation="Horizontal" Margin="0,8,0,0">
-                                            <Button Content="+ 선택 과목으로 Cross 추가"
-                                                    Command="{Binding AddCrossCommand}"
-                                                    Padding="10,5"
-                                                    Background="{StaticResource PrimaryBrush}" Foreground="White" />
-                                            <TextBlock Text="{Binding CrossStatusMessage}"
-                                                       Margin="12,0,0,0" VerticalAlignment="Center"
-                                                       FontSize="11" Foreground="{StaticResource OnSurfaceVariant}" />
+                                    </StackPanel>
+                                    <StackPanel Grid.Column="2">
+                                        <TextBlock Text="등록된 Cross"
+                                                FontSize="11" FontWeight="Bold"
+                                                Foreground="{StaticResource OnSurfaceVariant}"
+                                                Margin="0,0,0,6" />
+                                        <ListBox ItemsSource="{Binding CrossGroupItems}"
+                                                SelectedItem="{Binding SelectedCrossGroup, Mode=TwoWay}"
+                                                DisplayMemberPath="Display"
+                                                MinHeight="96" MaxHeight="140" />
+                                        <StackPanel  Orientation="Horizontal"  Margin="0,8,0,0">
+                                            <Button Content="Cross 추가"
+                                            Command="{Binding AddCrossCommand}"
+                                            Padding="10,5"
+                                            Background="{StaticResource PrimaryBrush}" Foreground="White" />
+                                            <Button Content="Cross 삭제"
+                                            Command="{Binding DeleteCrossCommand}"
+                                            CommandParameter="{Binding SelectedCrossGroup}"
+                                            Padding="10,5" Margin="8,0,0,0"
+                                            HorizontalAlignment="Left"
+                                            Background="#BA1A1A" Foreground="White" />
                                         </StackPanel>
                                     </StackPanel>
                                 </Grid>
