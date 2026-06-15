@@ -150,7 +150,7 @@ public class TimetableSelectionViewModelTests : IDisposable
     }
 
     [Fact]
-    public void FirstScreenExport_UsesSnapshot_AndShowsAllGradeHeaders()
+    public void FirstScreenExport_UsesSnapshot_AndShowsGradeHeadersOnUnifiedAndGradeSheets()
     {
         var workspace = new WorkspaceService(_repo);
         workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor One" });
@@ -198,13 +198,12 @@ public class TimetableSelectionViewModelTests : IDisposable
             vm.ExportXlsxCommand.Execute(path);
 
             using var workbook = new XLWorkbook(path);
-            var sheet = workbook.Worksheet(1);
+            var unifiedSheet = workbook.Worksheet("통합 시간표");
+            var gradeOneSheet = workbook.Worksheet("학년별_1학년");
 
-            Assert.Contains("1", sheet.Cell(5, 2).GetString());
-            Assert.Contains("2", sheet.Cell(5, 3).GetString());
-            Assert.Contains("3", sheet.Cell(5, 4).GetString());
-            Assert.Contains("4", sheet.Cell(5, 5).GetString());
-            Assert.Contains(sheet.CellsUsed(), cell => cell.GetString().Contains("Grade Four Course", StringComparison.Ordinal));
+            Assert.Contains("1학년", unifiedSheet.Row(5).CellsUsed().Select(cell => cell.GetString()));
+            Assert.Contains("1학년", gradeOneSheet.Row(5).CellsUsed().Select(cell => cell.GetString()));
+            Assert.Contains(unifiedSheet.CellsUsed(), cell => cell.GetString().Contains("Grade Four Course", StringComparison.Ordinal));
         }
         finally
         {

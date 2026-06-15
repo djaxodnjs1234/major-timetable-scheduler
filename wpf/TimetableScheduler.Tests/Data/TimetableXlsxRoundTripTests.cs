@@ -189,6 +189,340 @@ public class TimetableXlsxRoundTripTests
             });
     }
 
+    [Fact]
+    public void ExcelExport_RemovesExamplePrefixFromSheetNamesAndTitles()
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"example_prefix_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            FormattedTimetableExporter.Export(
+                "예시-김교수",
+                new List<TimetableAssignmentRow> { new("C1", 0, 1, "R1") },
+                new List<Course>
+                {
+                    new() { Id = "C1", Name = "자료구조", Grade = 1, Section = 1, ProfessorId = "P1" },
+                },
+                new List<Professor> { new() { Id = "P1", Name = "예시-김교수" } },
+                path,
+                new List<Room> { new() { Id = "R1", Name = "예시-101호" } });
+
+            using var wb = new XLWorkbook(path);
+            var sheetNames = wb.Worksheets.Select(ws => ws.Name).ToList();
+            var visibleTitles = wb.Worksheets
+                .Where(ws => ws.Visibility == XLWorksheetVisibility.Visible)
+                .Select(ws => ws.Cell(1, 1).GetString())
+                .ToList();
+
+            Assert.DoesNotContain(sheetNames, name => name.Contains("예시-", StringComparison.Ordinal));
+            Assert.DoesNotContain(visibleTitles, title => title.Contains("예시-", StringComparison.Ordinal));
+            Assert.Contains("교수별_김교수", sheetNames);
+            Assert.Contains("강의실별_101호", sheetNames);
+            Assert.Contains("김교수", visibleTitles);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void ExcelExport_CourseBlockBordersAreSlightlyDarker()
+    {
+        ExportAndInspectWorksheet(
+            new List<TimetableAssignmentRow> { new("C1", 0, 1, "R1") },
+            new List<Course> { new() { Id = "C1", Name = "자료구조", Grade = 2, Section = 1 } },
+            ws =>
+            {
+                var border = ws.Cell(6, 2).Style.Border;
+
+                Assert.Equal(XLBorderStyleValues.Thin, border.TopBorder);
+                Assert.Equal("#AAB7C6", ColorHex(border.TopBorderColor));
+            });
+    }
+
+    [Fact]
+    public void ExcelExport_CreatesMultiSheetWorkbook_WithSafeVisibleSheetNames()
+    {
+        var rows = new List<TimetableAssignmentRow>
+        {
+            new("COURSE-ID-1", 0, 1, "ROOM-ID-1"),
+            new("COURSE-ID-2", 1, 3, "ROOM-ID-2"),
+            new("COURSE-ID-3", 2, 6, "ROOM-ID-3"),
+        };
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "COURSE-ID-1",
+                Name = "자료구조",
+                Grade = 1,
+                Section = 1,
+                ProfessorId = "PROF-ID-1",
+                CoteachProfs = new List<string> { "PROF-ID-1", "PROF-ID-2" },
+            },
+            new()
+            {
+                Id = "COURSE-ID-2",
+                Name = "운영체제",
+                Grade = 2,
+                Section = 1,
+                ProfessorId = "PROF-ID-3",
+            },
+            new()
+            {
+                Id = "COURSE-ID-3",
+                Name = "컴퓨터구조",
+                Grade = 3,
+                Section = 1,
+                ProfessorId = "PROF-ID-4",
+            },
+        };
+        var professors = new List<Professor>
+        {
+            new() { Id = "PROF-ID-1", Name = "김/교수님:아주긴이름아주긴이름아주긴이름" },
+            new() { Id = "PROF-ID-2", Name = "이교수" },
+            new() { Id = "PROF-ID-3", Name = "동명이교수" },
+            new() { Id = "PROF-ID-4", Name = "동명이교수" },
+        };
+        var rooms = new List<Room>
+        {
+            new() { Id = "ROOM-ID-1", Name = "101/강의실:아주긴이름아주긴이름아주긴이름" },
+            new() { Id = "ROOM-ID-2", Name = "공용강의실" },
+            new() { Id = "ROOM-ID-3", Name = "공용강의실" },
+        };
+
+        var path = Path.Combine(Path.GetTempPath(), $"multi_sheet_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            FormattedTimetableExporter.Export("테스트", rows, courses, professors, path, rooms);
+
+            using var wb = new XLWorkbook(path);
+            var sheetNames = wb.Worksheets.Select(ws => ws.Name).ToList();
+
+            Assert.Contains("통합 시간표", sheetNames);
+            Assert.Contains(sheetNames, name => name.StartsWith("학년별_1학년", StringComparison.Ordinal));
+            Assert.Contains(sheetNames, name => name.StartsWith("교수별_", StringComparison.Ordinal));
+            Assert.Contains(sheetNames, name => name.StartsWith("강의실별_", StringComparison.Ordinal));
+            Assert.True(wb.Worksheets.TryGetWorksheet("데이터", out var dataSheet));
+            Assert.Equal(XLWorksheetVisibility.Hidden, dataSheet.Visibility);
+
+            Assert.All(sheetNames, name => Assert.True(name.Length <= 31, $"{name} is too long."));
+            Assert.DoesNotContain(sheetNames, name => name.Any(ch => "\\/?*[]:".Contains(ch)));
+            Assert.Contains(sheetNames, name => name.StartsWith("교수별_동명이교수(", StringComparison.Ordinal));
+            Assert.Contains(sheetNames, name => name.StartsWith("강의실별_공용강의실(", StringComparison.Ordinal));
+
+            var visibleText = string.Join(
+                "\n",
+                wb.Worksheets
+                    .Where(ws => ws.Visibility == XLWorksheetVisibility.Visible)
+                    .SelectMany(ws => ws.CellsUsed().Select(cell => cell.GetString())));
+
+            Assert.DoesNotContain("COURSE-ID", visibleText);
+            Assert.DoesNotContain("ROOM-ID", visibleText);
+            Assert.DoesNotContain("PROF-ID", visibleText);
+            Assert.DoesNotContain("SectionId", visibleText);
+            Assert.Contains("김/교수님:아주긴이름아주긴이름아주긴이름, 이교수", visibleText);
+            Assert.DoesNotContain("김/교수님:아주긴이름아주긴이름아주긴이름, 김/교수님:아주긴이름아주긴이름아주긴이름", visibleText);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void ExcelExport_VisibleSheetsUseUnknownLabelsInsteadOfFallbackIds()
+    {
+        var rows = new List<TimetableAssignmentRow>
+        {
+            new("COURSE-ID-1", 0, 1, "ROOM-ID-1"),
+            new("MISSING-COURSE-ID", 1, 2, "ROOM-ID-1"),
+        };
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "COURSE-ID-1",
+                Name = "자료구조",
+                Grade = 1,
+                Section = 1,
+                ProfessorId = "PROF-ID-1",
+                CoteachProfs = new List<string> { "PROF-ID-2" },
+            },
+        };
+        var professors = new List<Professor>
+        {
+            new() { Id = "PROF-ID-1", Name = "" },
+            new() { Id = "PROF-ID-2", Name = "" },
+        };
+        var rooms = new List<Room> { new() { Id = "ROOM-ID-1", Name = "" } };
+
+        var path = Path.Combine(Path.GetTempPath(), $"unknown_labels_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            FormattedTimetableExporter.Export("테스트", rows, courses, professors, path, rooms);
+
+            using var wb = new XLWorkbook(path);
+            var visibleText = string.Join(
+                "\n",
+                wb.Worksheets
+                    .Where(ws => ws.Visibility == XLWorksheetVisibility.Visible)
+                    .SelectMany(ws => ws.CellsUsed().Select(cell => cell.GetString())));
+            var visibleSheetNames = string.Join("\n", wb.Worksheets
+                .Where(ws => ws.Visibility == XLWorksheetVisibility.Visible)
+                .Select(ws => ws.Name));
+            var dataText = string.Join("\n", wb.Worksheet("데이터").CellsUsed().Select(cell => cell.GetString()));
+
+            Assert.Contains("알 수 없는 교수", visibleText);
+            Assert.Contains("알 수 없는 강의실", visibleText);
+            Assert.Contains("알 수 없는 수업", visibleText);
+            Assert.Contains("교수별_알 수 없는 교수", visibleSheetNames);
+            Assert.Contains("강의실별_알 수 없는 강의실", visibleSheetNames);
+            Assert.DoesNotContain("PROF-ID", visibleText);
+            Assert.DoesNotContain("ROOM-ID", visibleText);
+            Assert.DoesNotContain("MISSING-COURSE-ID", visibleText);
+            Assert.DoesNotContain("PROF-ID", visibleSheetNames);
+            Assert.DoesNotContain("ROOM-ID", visibleSheetNames);
+
+            Assert.Contains("COURSE-ID-1", dataText);
+            Assert.Contains("MISSING-COURSE-ID", dataText);
+            Assert.Contains("ROOM-ID-1", dataText);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void ExcelExport_BreakdownSheetsContainOnlyMatchingAssignments()
+    {
+        var rows = new List<TimetableAssignmentRow>
+        {
+            new("G1-P1-R1", 0, 1, "R1"),
+            new("G2-P2-R2-COTEACH-P1", 0, 3, "R2"),
+            new("G1-P3-R1", 1, 6, "R1"),
+        };
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "G1-P1-R1",
+                Name = "1학년대표교수수업",
+                Grade = 1,
+                Section = 1,
+                ProfessorId = "P1",
+            },
+            new()
+            {
+                Id = "G2-P2-R2-COTEACH-P1",
+                Name = "2학년팀티칭수업",
+                Grade = 2,
+                Section = 1,
+                ProfessorId = "P2",
+                CoteachProfs = new List<string> { "P1" },
+            },
+            new()
+            {
+                Id = "G1-P3-R1",
+                Name = "1학년다른교수수업",
+                Grade = 1,
+                Section = 1,
+                ProfessorId = "P3",
+            },
+        };
+        var professors = new List<Professor>
+        {
+            new() { Id = "P1", Name = "김교수" },
+            new() { Id = "P2", Name = "이교수" },
+            new() { Id = "P3", Name = "박교수" },
+        };
+        var rooms = new List<Room>
+        {
+            new() { Id = "R1", Name = "101호" },
+            new() { Id = "R2", Name = "202호" },
+        };
+
+        var path = Path.Combine(Path.GetTempPath(), $"breakdown_filter_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            FormattedTimetableExporter.Export("테스트", rows, courses, professors, path, rooms);
+
+            using var wb = new XLWorkbook(path);
+            var unified = SheetText(wb.Worksheet("통합 시간표"));
+            var grade1 = SheetText(wb.Worksheet("학년별_1학년"));
+            var professor1 = SheetText(wb.Worksheet("교수별_김교수"));
+            var room1 = SheetText(wb.Worksheet("강의실별_101호"));
+
+            Assert.Contains("1학년대표교수수업", unified);
+            Assert.Contains("2학년팀티칭수업", unified);
+            Assert.Contains("1학년다른교수수업", unified);
+
+            Assert.Contains("1학년대표교수수업", grade1);
+            Assert.Contains("1학년다른교수수업", grade1);
+            Assert.DoesNotContain("2학년팀티칭수업", grade1);
+
+            Assert.Contains("1학년대표교수수업", professor1);
+            Assert.Contains("2학년팀티칭수업", professor1);
+            Assert.DoesNotContain("1학년다른교수수업", professor1);
+
+            Assert.Contains("1학년대표교수수업", room1);
+            Assert.Contains("1학년다른교수수업", room1);
+            Assert.DoesNotContain("2학년팀티칭수업", room1);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
+    [Fact]
+    public void ExcelExport_UnifiedAndGradeSheetsUseGradeColumnGroupsOnly()
+    {
+        var rows = new List<TimetableAssignmentRow>
+        {
+            new("G1", 0, 1, "R1"),
+            new("G2", 0, 1, "R2"),
+        };
+        var courses = new List<Course>
+        {
+            new() { Id = "G1", Name = "1학년수업", Grade = 1, Section = 1, ProfessorId = "P1" },
+            new() { Id = "G2", Name = "2학년수업", Grade = 2, Section = 1, ProfessorId = "P2" },
+        };
+        var professors = new List<Professor>
+        {
+            new() { Id = "P1", Name = "김교수" },
+            new() { Id = "P2", Name = "이교수" },
+        };
+        var rooms = new List<Room>
+        {
+            new() { Id = "R1", Name = "101호" },
+            new() { Id = "R2", Name = "202호" },
+        };
+
+        var path = Path.Combine(Path.GetTempPath(), $"grade_columns_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            FormattedTimetableExporter.Export("테스트", rows, courses, professors, path, rooms);
+
+            using var wb = new XLWorkbook(path);
+            var unifiedHeader = RowText(wb.Worksheet("통합 시간표"), 5);
+            var professorHeader = RowText(wb.Worksheet("교수별_김교수"), 5);
+            var roomHeader = RowText(wb.Worksheet("강의실별_101호"), 5);
+            var gradeHeader = RowText(wb.Worksheet("학년별_1학년"), 5);
+
+            Assert.Contains("1학년", unifiedHeader);
+            Assert.Contains("2학년", unifiedHeader);
+            Assert.DoesNotContain("1학년", professorHeader);
+            Assert.DoesNotContain("1학년", roomHeader);
+            Assert.Contains("1학년", gradeHeader);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
     private static string ExportAndReadVisibleText(
         IReadOnlyList<TimetableAssignmentRow> rows,
         IReadOnlyList<Course> courses,
@@ -207,7 +541,7 @@ public class TimetableXlsxRoundTripTests
                 rooms);
 
             using var wb = new XLWorkbook(path);
-            var ws = wb.Worksheet("시간표");
+            var ws = wb.Worksheet("통합 시간표");
             return string.Join("\n", ws.CellsUsed().Select(c => c.GetString()));
         }
         finally
@@ -233,7 +567,7 @@ public class TimetableXlsxRoundTripTests
                 new List<Room> { new() { Id = "R1", Name = "강의실 1" } });
 
             using var wb = new XLWorkbook(path);
-            inspect(wb.Worksheet("시간표"));
+            inspect(wb.Worksheet("통합 시간표"));
         }
         finally
         {
@@ -243,4 +577,10 @@ public class TimetableXlsxRoundTripTests
 
     private static string ColorHex(XLColor color) =>
         $"#{color.Color.ToArgb() & 0x00FFFFFF:X6}";
+
+    private static string SheetText(IXLWorksheet worksheet) =>
+        string.Join("\n", worksheet.CellsUsed().Select(cell => cell.GetString()));
+
+    private static string RowText(IXLWorksheet worksheet, int row) =>
+        string.Join("\n", worksheet.Row(row).CellsUsed().Select(cell => cell.GetString()));
 }

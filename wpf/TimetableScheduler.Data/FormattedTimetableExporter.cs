@@ -24,9 +24,15 @@ public static class FormattedTimetableExporter
     private static readonly XLColor TextDark     = XLColor.FromHtml("#1F2937");
     private static readonly XLColor TextMuted    = XLColor.FromHtml("#4B5563");
     private static readonly XLColor GridLine     = XLColor.FromHtml("#E5EAF0");
-    private static readonly XLColor CardLine     = XLColor.FromHtml("#C7D0DC");
+    private static readonly XLColor CardLine     = XLColor.FromHtml("#AAB7C6");
     private static readonly XLColor OuterLine    = XLColor.FromHtml("#94A3B8");
     private static readonly XLColor DayGroupLine = XLColor.FromHtml("#8FA3B8");
+    private const int MaxSheetNameLength = 31;
+    private const string DataSheetName = "데이터";
+    private const string UnknownCourseName = "알 수 없는 수업";
+    private const string UnknownProfessorName = "알 수 없는 교수";
+    private const string UnknownRoomName = "알 수 없는 강의실";
+    private static readonly char[] InvalidSheetNameChars = { '\\', '/', '?', '*', '[', ']', ':' };
 
     // Row 4 = day headers, row 5 = grade sub-headers, period 1 starts at row 6
     private static int PeriodRow(int p) => p + 5;
@@ -41,11 +47,144 @@ public static class FormattedTimetableExporter
         bool expandAllGrades = false)
     {
         var aList = assignments.ToList();
-        var cMap  = courses.ToDictionary(c => c.Id);
+        var cMap = BuildCourseMap(aList, courses);
+
+        using var wb = new XLWorkbook();
+        var sheetNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { DataSheetName };
+
+        AddTimetableSheet(
+            wb,
+            sheetNames,
+            "통합 시간표",
+            timetableName,
+            aList,
+            courses,
+            professors,
+            rooms,
+            expandAllGrades,
+            splitByGrade: true);
+
+        foreach (var grade in new[] { 1, 2, 3, 4 })
+        {
+            var gradeRows = aList
+                .Where(a => cMap.TryGetValue(a.CourseId, out var course) && course.Grade == grade)
+                .ToList();
+            if (gradeRows.Count == 0) continue;
+
+            AddTimetableSheet(
+                wb,
+                sheetNames,
+                $"학년별_{grade}학년",
+                $"{timetableName} - {grade}학년",
+                gradeRows,
+                courses,
+                professors,
+                rooms,
+                expandAllGrades: false,
+                splitByGrade: true);
+        }
+
+        foreach (var professor in professors)
+        {
+            var professorRows = aList
+                .Where(a => cMap.TryGetValue(a.CourseId, out var course) && IsCourseTaughtBy(course, professor.Id))
+                .ToList();
+            if (professorRows.Count == 0) continue;
+
+            var professorName = string.IsNullOrWhiteSpace(professor.Name)
+                ? UnknownProfessorName
+                : professor.Name.Trim();
+            AddTimetableSheet(
+                wb,
+                sheetNames,
+                $"교수별_{professorName}",
+                $"{timetableName} - {professorName}",
+                professorRows,
+                courses,
+                professors,
+                rooms,
+                expandAllGrades: false,
+                splitByGrade: false);
+        }
+
+        foreach (var room in rooms ?? Array.Empty<Room>())
+        {
+            var roomRows = aList
+                .Where(a => string.Equals(NormalizeId(a.RoomId), NormalizeId(room.Id), StringComparison.Ordinal))
+                .ToList();
+            if (roomRows.Count == 0) continue;
+
+            var roomName = string.IsNullOrWhiteSpace(room.Name) ? UnknownRoomName : room.Name.Trim();
+            AddTimetableSheet(
+                wb,
+                sheetNames,
+                $"강의실별_{roomName}",
+                $"{timetableName} - {roomName}",
+                roomRows,
+                courses,
+                professors,
+                rooms,
+                expandAllGrades: false,
+                splitByGrade: false);
+        }
+
+        WriteDataSheet(wb, aList);
+
+        wb.SaveAs(path);
+    }
+
+    private static void WriteDataSheet(XLWorkbook wb, List<TimetableAssignmentRow> aList)
+    {
+        var dataWs = wb.AddWorksheet(DataSheetName);
+        dataWs.Cell(1, 1).Value = "과목ID";
+        dataWs.Cell(1, 2).Value = "요일번호";
+        dataWs.Cell(1, 3).Value = "교시";
+        dataWs.Cell(1, 4).Value = "강의실ID";
+        int dr = 2;
+        foreach (var row in aList)
+        {
+            dataWs.Cell(dr, 1).Value = row.CourseId;
+            dataWs.Cell(dr, 2).Value = row.Day;
+            dataWs.Cell(dr, 3).Value = row.Period;
+            dataWs.Cell(dr, 4).Value = row.RoomId;
+            dr++;
+        }
+        dataWs.Visibility = XLWorksheetVisibility.Hidden;
+    }
+
+    // ── helpers ──────────────────────────────────────────────────────────────
+
+    private static void AddTimetableSheet(
+        XLWorkbook wb,
+        HashSet<string> sheetNames,
+        string requestedSheetName,
+        string timetableName,
+        List<TimetableAssignmentRow> assignments,
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<Professor> professors,
+        IReadOnlyList<Room>? rooms,
+        bool expandAllGrades,
+        bool splitByGrade)
+    {
+        var ws = wb.AddWorksheet(MakeUniqueSheetName(RemoveExamplePrefix(requestedSheetName), sheetNames));
+        WriteTimetableSheet(ws, RemoveExamplePrefix(timetableName), assignments, courses, professors, rooms, expandAllGrades, splitByGrade);
+    }
+
+    private static void WriteTimetableSheet(
+        IXLWorksheet ws,
+        string timetableName,
+        List<TimetableAssignmentRow> assignments,
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<Professor> professors,
+        IReadOnlyList<Room>? rooms,
+        bool expandAllGrades,
+        bool splitByGrade)
+    {
+        var cMap  = BuildCourseMap(assignments, courses);
         var pMap  = professors.ToDictionary(p => p.Id);
         var roomNameMap = BuildRoomNameMap(rooms);
 
-        var dayLayouts = BuildDayLayouts(aList, cMap, roomNameMap, expandAllGrades);
+        var dayLayouts = BuildDayLayouts(assignments, cMap, roomNameMap, expandAllGrades, splitByGrade);
 
         // col 1 = A (period label), day columns, last col (period label)
         int[] dayStart = new int[5];
@@ -57,9 +196,6 @@ public static class FormattedTimetableExporter
         }
         int lastLabelCol = col;
         int totalCols    = lastLabelCol;
-
-        using var wb = new XLWorkbook();
-        var ws = wb.AddWorksheet("시간표");
 
         SetColumnWidths(ws, dayStart, dayLayouts, lastLabelCol);
         SetRowHeights(ws);
@@ -115,40 +251,47 @@ public static class FormattedTimetableExporter
                     ApplyGridBorder(ws.Cell(PeriodRow(p), c2).AsRange());
             }
 
-        WriteCourses(ws, aList, cMap, pMap, courses, dayStart, dayLayouts);
-        WriteRemarks(ws, aList, cMap, roomNameMap, dayStart, dayLayouts, totalCols);
+        WriteCourses(ws, assignments, cMap, pMap, courses, dayStart, dayLayouts);
+        WriteRemarks(ws, assignments, cMap, roomNameMap, dayStart, dayLayouts, totalCols);
         ApplyDayGroupBorders(ws, dayStart, dayLayouts);
         WriteLegend(ws);
 
         ws.SheetView.Freeze(5, 1);
-
-        // Hidden data sheet for round-trip import
-        var dataWs = wb.AddWorksheet("데이터");
-        dataWs.Cell(1, 1).Value = "과목ID";
-        dataWs.Cell(1, 2).Value = "요일번호";
-        dataWs.Cell(1, 3).Value = "교시";
-        dataWs.Cell(1, 4).Value = "강의실ID";
-        int dr = 2;
-        foreach (var row in aList)
-        {
-            dataWs.Cell(dr, 1).Value = row.CourseId;
-            dataWs.Cell(dr, 2).Value = row.Day;
-            dataWs.Cell(dr, 3).Value = row.Period;
-            dataWs.Cell(dr, 4).Value = row.RoomId;
-            dr++;
-        }
-        dataWs.Visibility = XLWorksheetVisibility.Hidden;
-
-        wb.SaveAs(path);
     }
 
-    // ── helpers ──────────────────────────────────────────────────────────────
+    private static Dictionary<string, Course> BuildCourseMap(
+        List<TimetableAssignmentRow> assignments,
+        IReadOnlyList<Course> courses)
+    {
+        var map = courses
+            .Where(c => !string.IsNullOrWhiteSpace(c.Id))
+            .GroupBy(c => c.Id, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+
+        foreach (var assignment in assignments)
+        {
+            var courseId = (assignment.CourseId ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(courseId) || map.ContainsKey(courseId))
+                continue;
+
+            map[courseId] = new Course
+            {
+                Id = courseId,
+                Name = UnknownCourseName,
+                Grade = 1,
+                Section = 0,
+            };
+        }
+
+        return map;
+    }
 
     private static DayLayout[] BuildDayLayouts(
         List<TimetableAssignmentRow> aList,
         Dictionary<string, Course> cMap,
         IReadOnlyDictionary<string, string> roomNameMap,
-        bool expandAllGrades)
+        bool expandAllGrades,
+        bool splitByGrade)
     {
         var layouts = new DayLayout[5];
         for (int d = 0; d < 5; d++)
@@ -158,19 +301,34 @@ public static class FormattedTimetableExporter
             var courseSubColGlobal = new Dictionary<string, int>();
             int globalOffset = 0;
 
+            if (!splitByGrade)
+            {
+                var blocks = BuildCourseBlocks(dayA, cMap, roomNameMap)
+                    .OrderBy(b => b.StartPeriod)
+                    .ThenBy(b => cMap.TryGetValue(b.CourseId, out var course) ? course.Grade : int.MaxValue)
+                    .ThenBy(b => cMap.TryGetValue(b.CourseId, out var course) ? course.Section : int.MaxValue)
+                    .ThenBy(b => b.CourseId, StringComparer.Ordinal)
+                    .ToList();
+
+                var endPeriods = new List<int>();
+                foreach (var block in blocks)
+                {
+                    int sub = endPeriods.FindIndex(end => end < block.StartPeriod);
+                    if (sub < 0) { sub = endPeriods.Count; endPeriods.Add(0); }
+                    courseSubColGlobal[block.CourseId] = sub;
+                    endPeriods[sub] = block.EndPeriod;
+                }
+
+                gradeLayouts.Add(new GradeLayout(0, 0, Math.Max(1, endPeriods.Count), blocks));
+                layouts[d] = new DayLayout(Math.Max(1, endPeriods.Count), gradeLayouts, courseSubColGlobal);
+                continue;
+            }
+
             foreach (int grade in new[] { 1, 2, 3, 4 })
             {
-                var gradeBlocks = dayA
+                var gradeBlocks = BuildCourseBlocks(dayA
                     .Where(a => cMap.TryGetValue(a.CourseId, out var c) && c.Grade == grade)
-                    .GroupBy(a => a.CourseId)
-                    .Select(g => new CourseBlock(
-                        g.Key,
-                        g.Min(a => a.Period),
-                        g.Max(a => a.Period),
-                        string.Join(" / ", g
-                            .Select(a => FormatRoomForExport(a.RoomId, roomNameMap))
-                            .Where(room => !string.IsNullOrWhiteSpace(room))
-                            .Distinct(StringComparer.Ordinal))))
+                    .ToList(), cMap, roomNameMap)
                     .OrderBy(b => b.StartPeriod)
                     .ToList();
 
@@ -206,6 +364,22 @@ public static class FormattedTimetableExporter
         return layouts;
     }
 
+    private static IEnumerable<CourseBlock> BuildCourseBlocks(
+        IEnumerable<TimetableAssignmentRow> assignments,
+        Dictionary<string, Course> cMap,
+        IReadOnlyDictionary<string, string> roomNameMap) =>
+        assignments
+            .Where(a => cMap.ContainsKey(a.CourseId))
+            .GroupBy(a => a.CourseId)
+            .Select(g => new CourseBlock(
+                g.Key,
+                g.Min(a => a.Period),
+                g.Max(a => a.Period),
+                string.Join(" / ", g
+                    .Select(a => FormatRoomForExport(a.RoomId, roomNameMap))
+                    .Where(room => !string.IsNullOrWhiteSpace(room))
+                    .Distinct(StringComparer.Ordinal))));
+
     private static void WriteGradeHeaders(
         IXLWorksheet ws,
         int[] dayStart,
@@ -239,7 +413,7 @@ public static class FormattedTimetableExporter
                 var gradeRange = gl.SubColCount > 1
                     ? ws.Range(5, sc, 5, ec).Merge()
                     : ws.Cell(5, sc).AsRange();
-                gradeRange.Value = $"{gl.Grade}학년";
+                gradeRange.Value = gl.Grade > 0 ? $"{gl.Grade}학년" : "";
                 gradeRange.Style.Font.Bold = true;
                 gradeRange.Style.Font.FontSize = 9;
                 gradeRange.Style.Font.FontColor = TextMuted;
@@ -365,7 +539,7 @@ public static class FormattedTimetableExporter
     private static void WriteTitleRow(IXLWorksheet ws, string title, int totalCols)
     {
         var titleRange = ws.Range(1, 1, 1, totalCols).Merge();
-        titleRange.Value = title;
+        titleRange.Value = RemoveExamplePrefix(title);
         titleRange.Style.Font.Bold      = true;
         titleRange.Style.Font.FontSize  = 16;
         titleRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
@@ -462,7 +636,7 @@ public static class FormattedTimetableExporter
 
             var label = professors.TryGetValue(id, out var professor) && !string.IsNullOrWhiteSpace(professor.Name)
                 ? professor.Name.Trim()
-                : id;
+                : UnknownProfessorName;
             if (!seenLabels.Add(label))
                 return;
 
@@ -497,7 +671,7 @@ public static class FormattedTimetableExporter
                 g =>
                 {
                     var room = g.First();
-                    return string.IsNullOrWhiteSpace(room.Name) ? g.Key : room.Name.Trim();
+                    return string.IsNullOrWhiteSpace(room.Name) ? UnknownRoomName : room.Name.Trim();
                 },
                 StringComparer.Ordinal);
     }
@@ -510,8 +684,46 @@ public static class FormattedTimetableExporter
 
         return roomNameMap.TryGetValue(id, out var name) && !string.IsNullOrWhiteSpace(name)
             ? name
-            : id;
+            : UnknownRoomName;
     }
+
+    private static string MakeUniqueSheetName(string requestedName, HashSet<string> usedNames)
+    {
+        var baseName = SanitizeSheetName(RemoveExamplePrefix(requestedName));
+        var name = TruncateSheetName(baseName);
+        var suffix = 2;
+        while (usedNames.Contains(name))
+        {
+            var marker = $"({suffix++})";
+            name = $"{TruncateSheetName(baseName, MaxSheetNameLength - marker.Length)}{marker}";
+        }
+
+        usedNames.Add(name);
+        return name;
+    }
+
+    private static string SanitizeSheetName(string value)
+    {
+        var sanitized = value.Trim();
+        foreach (var ch in InvalidSheetNameChars)
+            sanitized = sanitized.Replace(ch, '_');
+
+        sanitized = sanitized.Trim('\'').Trim();
+        return string.IsNullOrWhiteSpace(sanitized) ? "Sheet" : sanitized;
+    }
+
+    private static string TruncateSheetName(string value, int maxLength = MaxSheetNameLength) =>
+        value.Length <= maxLength ? value : value[..maxLength];
+
+    private static string RemoveExamplePrefix(string value) =>
+        value.Replace("예시-", "", StringComparison.Ordinal);
+
+    private static bool IsCourseTaughtBy(Course course, string professorId) =>
+        string.Equals(course.ProfessorId, professorId, StringComparison.Ordinal)
+        || course.CoteachProfs.Contains(professorId);
+
+    private static string NormalizeId(string? id) =>
+        string.IsNullOrWhiteSpace(id) ? "" : id.Trim();
 
     private static string SectionLabel(int section) => section switch
     {
