@@ -418,11 +418,17 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 sec.ProfessorId = rep.ProfessorId;
                 sec.Department = rep.Department;
                 sec.IsFixed = rep.IsFixed;
+                if (!sec.IsFixed)
+                    sec.FixedSlots.Clear();
                 sec.FixedRooms = new List<string>(rep.FixedRooms);
                 sec.UnavailableRooms = new List<string>(rep.UnavailableRooms);
                 sec.BlockStructure = new List<int>(rep.BlockStructure);
                 sec.CoteachProfs = new List<string>(rep.CoteachProfs);
                 // FixedSlots intentionally not copied — each section has its own slots
+            }
+            else if (!sec.IsFixed)
+            {
+                sec.FixedSlots.Clear();
             }
             _workspace.UpdateCourse(sec);
         }
@@ -849,17 +855,19 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void RebuildRoomItems()
     {
         RoomItems.Clear();
-        var importedRoomIds = _workspace.Courses
-            .SelectMany(c => c.FixedRooms)
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .ToHashSet();
+        var importedRoomIds = _workspace.ImportedRoomIds.Count > 0
+            ? _workspace.ImportedRoomIds.ToHashSet(StringComparer.Ordinal)
+            : _workspace.Courses
+                .SelectMany(c => c.FixedRooms)
+                .Where(id => !string.IsNullOrWhiteSpace(id))
+                .ToHashSet();
 
         foreach (var room in _workspace.Rooms.OrderBy(r => SortNumericFirst(r.Id)))
         {
             RoomItems.Add(new RoomItem
             {
                 Room = room,
-                IsImportedFromExcel = importedRoomIds.Contains(room.Id),
+                IsImportedFromExcel = room.IsImportedFromExcel || importedRoomIds.Contains(room.Id),
             });
         }
     }
@@ -1107,7 +1115,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private static string FormatFixedTimes(IEnumerable<Course> sections)
     {
         var labels = sections
-            .Where(s => s.FixedSlots.Count > 0)
+            .Where(s => s.IsFixed && s.FixedSlots.Count > 0)
             .Select(s => $"{SectionLetter(s.Section)}분반 {FormatSlotRuns(s.FixedSlots)}")
             .ToList();
         return labels.Count == 0 ? "" : string.Join(" / ", labels);

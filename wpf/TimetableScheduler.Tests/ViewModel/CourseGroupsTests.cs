@@ -1,3 +1,4 @@
+using ClosedXML.Excel;
 using TimetableScheduler.Data;
 using TimetableScheduler.Domain;
 using TimetableScheduler.ViewModel;
@@ -33,6 +34,28 @@ public class CourseGroupsTests : IDisposable
 
     private DataInputViewModel MakeVm() =>
         new(_workspace, null!);
+
+    private static string CreateWorkbookWithRooms(params (string Grade, string Type, string Name, string Hours, string Code, string Professor, string Department, string Schedule)[] rows)
+    {
+        var path = Path.Combine(Path.GetTempPath(), $"{Guid.NewGuid():N}.xlsx");
+        using var workbook = new XLWorkbook();
+        var sheet = workbook.AddWorksheet("Sheet1");
+        for (var index = 0; index < rows.Length; index++)
+        {
+            var row = rows[index];
+            var excelRow = index + 1;
+            sheet.Cell(excelRow, "E").Value = row.Grade;
+            sheet.Cell(excelRow, "F").Value = row.Type;
+            sheet.Cell(excelRow, "G").Value = row.Name;
+            sheet.Cell(excelRow, "H").Value = row.Hours;
+            sheet.Cell(excelRow, "I").Value = row.Code;
+            sheet.Cell(excelRow, "Q").Value = row.Professor;
+            sheet.Cell(excelRow, "R").Value = row.Department;
+            sheet.Cell(excelRow, "S").Value = row.Schedule;
+        }
+        workbook.SaveAs(path);
+        return path;
+    }
 
     [Fact]
     public void SolverAdvancedPerAttemptTime_DefaultsDisabledAndFiveSeconds()
@@ -170,6 +193,31 @@ public class CourseGroupsTests : IDisposable
 
         Assert.True(vm.RoomItems.Single(r => r.Room.Id == "R1").IsImportedFromExcel);
         Assert.False(vm.RoomItems.Single(r => r.Room.Id == "R2").IsImportedFromExcel);
+    }
+
+    [Fact]
+    public void RoomRows_UseImportedRoomSetAfterXlsxImport()
+    {
+        var path = CreateWorkbookWithRooms(
+            ("2", "필수", "자료구조", "3", "GA1004", "홍길동", "컴퓨터", "월23/A101"),
+            ("2", "필수", "운영체제", "3", "GA1005", "홍길동", "컴퓨터", "화23/B202"));
+        try
+        {
+            _workspace.ImportFromXlsx(path);
+            var importedRoomId = _workspace.Rooms.First(r => r.Name == "B202").Id;
+            _workspace.Courses.Single(c => c.Name == "운영체제").FixedRooms.Clear();
+            _workspace.Reload();
+            _workspace.AddRoom(new Room { Id = "manual", Name = "수동강의실" });
+
+            var vm = MakeVm();
+
+            Assert.True(vm.RoomItems.Single(r => r.Room.Id == importedRoomId).IsImportedFromExcel);
+            Assert.False(vm.RoomItems.Single(r => r.Room.Id == "manual").IsImportedFromExcel);
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
     }
 
     [Fact]
@@ -364,6 +412,28 @@ public class CourseGroupsTests : IDisposable
         Assert.Equal("없음", group.ReadOnlyFixedRooms);
         Assert.Equal("없음", group.ReadOnlyCoteachProfessors);
         Assert.Equal("없음", group.ReadOnlyFixedTimes);
+    }
+
+    [Fact]
+    public void SaveGroup_WhenUnfixed_ClearsFixedSlotsAndReadOnlyText()
+    {
+        var first = MakeCourse("GA1005-01", 1, isFixed: true);
+        var second = MakeCourse("GA1005-02", 2, isFixed: true);
+        first.FixedSlots = new List<TimeSlot> { new(0, 1), new(0, 2), new(1, 1) };
+        second.FixedSlots = new List<TimeSlot> { new(2, 1), new(2, 2), new(3, 1) };
+        _workspace.AddCourse(first);
+        _workspace.AddCourse(second);
+
+        var vm = MakeVm();
+        var item = vm.CourseGroups.Single();
+        item.Sections[0].IsFixed = false;
+
+        vm.SaveGroupCommand.Execute(item);
+
+        var saved = _workspace.Courses.OrderBy(c => c.Section).ToList();
+        Assert.All(saved, section => Assert.False(section.IsFixed));
+        Assert.All(saved, section => Assert.Empty(section.FixedSlots));
+        Assert.Equal("없음", vm.CourseGroups.Single().ReadOnlyFixedTimes);
     }
 
     [Fact]

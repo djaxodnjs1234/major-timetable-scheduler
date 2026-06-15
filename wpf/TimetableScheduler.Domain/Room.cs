@@ -6,4 +6,5 @@ public class Room
     public string Name { get; set; } = "";
     public bool IsLab { get; set; }
     public int Capacity { get; set; }
+    public bool IsImportedFromExcel { get; set; }
 }

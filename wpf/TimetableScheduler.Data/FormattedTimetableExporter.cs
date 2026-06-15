@@ -289,13 +289,7 @@ public static class FormattedTimetableExporter
                     ? FormatSectionForExport(SectionLabel(course.Section))
                     : "";
 
-                var profParts = new List<string>();
-                if (!string.IsNullOrEmpty(course.ProfessorId))
-                    profParts.Add(pMap.TryGetValue(course.ProfessorId, out var mp) ? mp.Name : course.ProfessorId);
-                foreach (var pid in course.CoteachProfs)
-                    if (!string.IsNullOrEmpty(pid))
-                        profParts.Add(pMap.TryGetValue(pid, out var cp) ? cp.Name : pid);
-                var profStr = string.Join(", ", profParts);
+                var profStr = FormatProfessorsForExport(course, pMap);
 
                 cellRange.Value = BuildCellText(course.Name, section, profStr, block.Rooms);
 
@@ -446,6 +440,34 @@ public static class FormattedTimetableExporter
         if (!string.IsNullOrWhiteSpace(rooms)) { sb.Append('\n'); sb.Append(rooms); }
 
         return sb.ToString();
+    }
+
+    private static string FormatProfessorsForExport(Course course, IReadOnlyDictionary<string, Professor> professors)
+    {
+        var labels = new List<string>();
+        var seenIds = new HashSet<string>(StringComparer.Ordinal);
+        var seenLabels = new HashSet<string>(StringComparer.Ordinal);
+
+        Add(course.ProfessorId);
+        foreach (var professorId in course.CoteachProfs)
+            Add(professorId);
+
+        return string.Join(", ", labels);
+
+        void Add(string? professorId)
+        {
+            var id = (professorId ?? string.Empty).Trim();
+            if (string.IsNullOrWhiteSpace(id) || !seenIds.Add(id))
+                return;
+
+            var label = professors.TryGetValue(id, out var professor) && !string.IsNullOrWhiteSpace(professor.Name)
+                ? professor.Name.Trim()
+                : id;
+            if (!seenLabels.Add(label))
+                return;
+
+            labels.Add(label);
+        }
     }
 
     public static string FormatSectionForExport(string? section)

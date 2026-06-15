@@ -200,7 +200,7 @@ public static class XlsxLoader
             .ToList();
         var rooms = roomIdsByName
             .OrderBy(pair => int.Parse(pair.Value))
-            .Select(pair => new Room { Id = pair.Value, Name = pair.Key })
+            .Select(pair => new Room { Id = pair.Value, Name = pair.Key, IsImportedFromExcel = true })
             .ToList();
 
         return new XlsxLoadResult(courses, professors, rooms);

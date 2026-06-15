@@ -80,6 +80,8 @@ public sealed class SqliteRepository
             conn.Execute("ALTER TABLE Rooms ADD COLUMN IsLab INTEGER NOT NULL DEFAULT 0");
         if (!columns.Contains("Capacity"))
             conn.Execute("ALTER TABLE Rooms ADD COLUMN Capacity INTEGER NOT NULL DEFAULT 0");
+        if (!columns.Contains("IsImportedFromExcel"))
+            conn.Execute("ALTER TABLE Rooms ADD COLUMN IsImportedFromExcel INTEGER NOT NULL DEFAULT 0");
     }
 
     private static void MigrateCoursePkIfNeeded(SqliteConnection conn)
@@ -114,7 +116,7 @@ public sealed class SqliteRepository
 
         var courses = conn.Query<CourseRow>("SELECT * FROM Courses").Select(ToCourse).ToList();
         var profs = conn.Query<ProfessorRow>("SELECT * FROM Professors").Select(ToProf).ToList();
-        var rooms = conn.Query<Room>("SELECT Id, Name, IsLab, Capacity FROM Rooms").ToList();
+        var rooms = conn.Query<Room>("SELECT Id, Name, IsLab, Capacity, IsImportedFromExcel FROM Rooms").ToList();
         var crosses = conn.Query<CrossRow>("SELECT * FROM CrossGroups").Select(ToCross).ToList();
         var retakes = conn.Query<RetakeScenario>(
             "SELECT CurrentGrade, RetakeBaseId FROM RetakeScenarios").ToList();
@@ -145,7 +147,7 @@ public sealed class SqliteRepository
                 FromProf(p), tx);
 
         foreach (var r in data.Rooms)
-            conn.Execute("INSERT INTO Rooms (Id,Name,IsLab,Capacity) VALUES (@Id,@Name,@IsLab,@Capacity)", r, tx);
+            conn.Execute("INSERT INTO Rooms (Id,Name,IsLab,Capacity,IsImportedFromExcel) VALUES (@Id,@Name,@IsLab,@Capacity,@IsImportedFromExcel)", r, tx);
 
         foreach (var g in data.CrossGroups)
             conn.Execute("INSERT INTO CrossGroups (Id,BaseIdsJson) VALUES (@Id,@BaseIdsJson)",

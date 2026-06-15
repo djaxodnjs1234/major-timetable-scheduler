@@ -16,6 +16,8 @@ public sealed class WorkspaceService
     public ObservableCollection<CrossGroup> CrossGroups { get; } = new();
     public ObservableCollection<RetakeScenario> RetakeScenarios { get; } = new();
     public ObservableCollection<SavedTimetableRecord> SavedTimetables { get; } = new();
+    private readonly HashSet<string> _importedRoomIds = new(StringComparer.Ordinal);
+    public IReadOnlySet<string> ImportedRoomIds => _importedRoomIds;
 
     /// <summary>True for a session workspace (snapshot-backed, no DB persistence).</summary>
     public bool IsSession => _repo == null;
@@ -49,6 +51,7 @@ public sealed class WorkspaceService
         foreach (var p in data.Professors) Professors.Add(p);
         Rooms.Clear();
         foreach (var r in data.Rooms) Rooms.Add(r);
+        _importedRoomIds.Clear();
         CrossGroups.Clear();
         foreach (var g in data.CrossGroups) CrossGroups.Add(g);
         RetakeScenarios.Clear();
@@ -66,6 +69,7 @@ public sealed class WorkspaceService
         foreach (var p in data.Professors) Professors.Add(p);
         Rooms.Clear();
         foreach (var r in data.Rooms) Rooms.Add(r);
+        _importedRoomIds.Clear();
         CrossGroups.Clear();
         foreach (var g in data.CrossGroups) CrossGroups.Add(g);
         RetakeScenarios.Clear();
@@ -122,6 +126,11 @@ public sealed class WorkspaceService
         foreach (var p in loaded.Professors) Professors.Add(p);
         Rooms.Clear();
         foreach (var r in loaded.Rooms) Rooms.Add(r);
+        _importedRoomIds.Clear();
+        foreach (var room in loaded.Rooms)
+            room.IsImportedFromExcel = true;
+        foreach (var roomId in loaded.Rooms.Select(r => r.Id).Where(id => !string.IsNullOrWhiteSpace(id)))
+            _importedRoomIds.Add(roomId);
         CrossGroups.Clear();
         RetakeScenarios.Clear();
         Persist();

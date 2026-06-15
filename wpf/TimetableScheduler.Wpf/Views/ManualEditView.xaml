@@ -81,7 +81,8 @@
                         <Separator Width="1" Margin="16,4" Background="#AAA" />
 
                         <Grid Width="180" Height="34" VerticalAlignment="Center">
-                            <TextBox Padding="10,0"
+                            <TextBox x:Name="SaveNameTextBox"
+                                 Padding="10,0"
                                  Height="34"
                                  VerticalContentAlignment="Center"
                                  Text="{Binding SaveName, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
@@ -90,18 +91,8 @@
                                    VerticalAlignment="Center"
                                    Foreground="#8A8A8A"
                                    FontSize="12"
-                                   IsHitTestVisible="False">
-                                <TextBlock.Style>
-                                    <Style TargetType="{x:Type TextBlock}">
-                                        <Setter Property="Visibility" Value="Collapsed" />
-                                        <Style.Triggers>
-                                            <DataTrigger Binding="{Binding SaveName}" Value="">
-                                                <Setter Property="Visibility" Value="Visible" />
-                                            </DataTrigger>
-                                        </Style.Triggers>
-                                    </Style>
-                                </TextBlock.Style>
-                            </TextBlock>
+                                   IsHitTestVisible="False"
+                                   Visibility="{Binding Text, ElementName=SaveNameTextBox, Converter={StaticResource StringNullOrWhiteSpaceToVisibility}}" />
                         </Grid>
 
                         <Button Content="💾 저장"

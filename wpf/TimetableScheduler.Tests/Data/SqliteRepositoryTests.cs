@@ -68,7 +68,7 @@ public class SqliteRepositoryTests : IDisposable
                     UnavailableRooms = new List<string> { "R2" },
                 },
             },
-            Rooms: new List<Room> { new() { Id = "R1", Name = "강의실1", IsLab = true, Capacity = 40 } },
+            Rooms: new List<Room> { new() { Id = "R1", Name = "강의실1", IsLab = true, Capacity = 40, IsImportedFromExcel = true } },
             CrossGroups: new List<CrossGroup>
             {
                 new() { Id = "G1", BaseIds = new List<string> { "B1", "B2" } },
@@ -103,12 +103,35 @@ public class SqliteRepositoryTests : IDisposable
         Assert.Equal("R1", loaded.Rooms[0].Id);
         Assert.True(loaded.Rooms[0].IsLab);
         Assert.Equal(40, loaded.Rooms[0].Capacity);
+        Assert.True(loaded.Rooms[0].IsImportedFromExcel);
 
         Assert.Single(loaded.CrossGroups);
         Assert.Equal(new[] { "B1", "B2" }, loaded.CrossGroups[0].BaseIds);
 
         Assert.Single(loaded.RetakeScenarios);
         Assert.Equal(3, loaded.RetakeScenarios[0].CurrentGrade);
+    }
+
+    [Fact]
+    public void EnsureCreated_OnOldRoomSchema_AddsImportedFlagDefaultFalse()
+    {
+        using (var conn = new Microsoft.Data.Sqlite.SqliteConnection(
+                   new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = _dbPath }.ToString()))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                "CREATE TABLE Rooms (Id TEXT PRIMARY KEY, Name TEXT NOT NULL, IsLab INTEGER NOT NULL DEFAULT 0, Capacity INTEGER NOT NULL DEFAULT 0);" +
+                "INSERT INTO Rooms (Id, Name, IsLab, Capacity) VALUES ('R1', '기존강의실', 0, 30);";
+            cmd.ExecuteNonQuery();
+        }
+
+        var repo = new SqliteRepository(_dbPath);
+        repo.EnsureCreated();
+
+        var room = Assert.Single(repo.LoadAll().Rooms);
+        Assert.Equal("R1", room.Id);
+        Assert.False(room.IsImportedFromExcel);
     }
 
     [Fact]

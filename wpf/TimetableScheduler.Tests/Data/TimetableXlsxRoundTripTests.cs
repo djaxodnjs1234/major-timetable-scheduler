@@ -121,6 +121,35 @@ public class TimetableXlsxRoundTripTests
     }
 
     [Fact]
+    public void ExcelExport_CoteachProfessor_DoesNotDuplicatePrimaryProfessor()
+    {
+        var text = ExportAndReadVisibleText(
+            new List<TimetableAssignmentRow> { new("C-A", 0, 1, "R1") },
+            new List<Course>
+            {
+                new()
+                {
+                    Id = "C-A",
+                    Name = "운영체제",
+                    Grade = 3,
+                    Section = 1,
+                    ProfessorId = "P1",
+                    CoteachProfs = new List<string> { "P1", "P2" },
+                },
+                new() { Id = "C-B", Name = "운영체제", Grade = 3, Section = 2 },
+            },
+            professors: new List<Professor>
+            {
+                new() { Id = "P1", Name = "김교수" },
+                new() { Id = "P2", Name = "이교수" },
+            },
+            rooms: new List<Room> { new() { Id = "R1", Name = "A관 302호" } });
+
+        Assert.Contains("A분반 · 김교수, 이교수", text);
+        Assert.DoesNotContain("김교수, 김교수", text);
+    }
+
+    [Fact]
     public void ExcelExport_HeaderColors_AreLowSaturation()
     {
         ExportAndInspectWorksheet(

@@ -99,6 +99,13 @@ public sealed partial class FixedSlotEditorViewModel : ObservableObject
 
     public void ApplyTo(CourseGroupItem item)
     {
+        if (!IsFixed)
+        {
+            foreach (var section in item.Sections)
+                section.FixedSlots.Clear();
+            return;
+        }
+
         for (int si = 0; si < Math.Min(item.Sections.Count, SectionEditors.Count); si++)
             item.Sections[si].FixedSlots = SectionEditors[si].ToFixedSlots();
     }

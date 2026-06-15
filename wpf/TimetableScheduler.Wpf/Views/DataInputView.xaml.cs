@@ -176,6 +176,11 @@ public partial class DataInputView : UserControl
         if (item == null) return;
         var expander = FindAncestor<Expander>(dep);
         if (expander == null) return;
+        if (!item.Sections[0].IsFixed)
+        {
+            foreach (var section in item.Sections)
+                section.FixedSlots.Clear();
+        }
         item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, item.Sections[0].IsFixed);
     }
 

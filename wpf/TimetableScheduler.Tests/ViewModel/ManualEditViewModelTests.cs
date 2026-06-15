@@ -525,8 +525,8 @@ public class ManualEditViewModelTests : IDisposable
 
         Assert.DoesNotContain("X-01", labels.Keys);
         Assert.DoesNotContain("Y-01", labels.Keys);
-        Assert.Equal("기타", labels[ManualCrossDisplayKey(courseId: "X-01", section: 1, rooms: new[] { "R1" })]);
-        Assert.Equal("테스트", labels[ManualCrossDisplayKey(courseId: "Y-01", section: 1, rooms: new[] { "R2" })]);
+        Assert.Equal("기타 A분반", labels[ManualCrossDisplayKey(courseId: "X-01", section: 1, rooms: new[] { "R1" })]);
+        Assert.Equal("테스트 A분반", labels[ManualCrossDisplayKey(courseId: "Y-01", section: 1, rooms: new[] { "R2" })]);
     }
 
     [Fact]
@@ -607,8 +607,8 @@ public class ManualEditViewModelTests : IDisposable
         var labels = CrossLinkLabels(vm);
         var order = CrossParallelOrder(vm);
 
-        Assert.Equal("기타", labels[ManualCrossDisplayKey(courseId: "X-01", section: 1, rooms: new[] { "R1" })]);
-        Assert.Equal("테스트", labels[ManualCrossDisplayKey(courseId: "Y-01", section: 1, rooms: new[] { "R2" })]);
+        Assert.Equal("기타 A분반", labels[ManualCrossDisplayKey(courseId: "X-01", section: 1, rooms: new[] { "R1" })]);
+        Assert.Equal("테스트 A분반", labels[ManualCrossDisplayKey(courseId: "Y-01", section: 1, rooms: new[] { "R2" })]);
         Assert.Equal(1, order[ManualCrossDisplayKey(courseId: "X-01", section: 1, rooms: new[] { "R1" })]);
         Assert.Equal(0, order[ManualCrossDisplayKey(courseId: "Y-01", section: 1, rooms: new[] { "R2" })]);
     }
@@ -2560,7 +2560,7 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Equal("예 (강의실1, 강의실2)", vm.SelectedMultiRoomText);
         Assert.Equal("강의실1, 강의실2", vm.SelectedAllowedRoomsText);
         Assert.Equal("이동 불가", vm.SelectedMoveStateText);
-        Assert.Contains("고정 시간표", vm.SelectedBlockedReasonText);
+        Assert.Contains("고정된 수업", vm.SelectedBlockedReasonText);
         Assert.DoesNotContain("HC-13", vm.SelectedBlockedReasonText);
         Assert.True(vm.HasBlockingReasons);
         Assert.False(vm.HasWarningReasons);
@@ -2760,12 +2760,62 @@ public class ManualEditViewModelTests : IDisposable
             new SolutionAssignment("OTHER-01", 0, 3, "R1")));
 
         var conflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.RoomConflict));
-        Assert.Contains("MISSING-01", conflict.DisplayTitle);
+        Assert.Contains("알 수 없는 수업", conflict.DisplayTitle);
+        Assert.DoesNotContain("MISSING-01", conflict.DisplayTitle);
         Assert.Contains("월 3교시", conflict.DisplayTitle);
     }
 
     [Fact]
-    public void ConflictDisplayTitle_KeepsConstraintNameInDetails()
+    public void SelectionStatus_UsesCourseNameAndSection_NotInternalCourseId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course
+        {
+            Id = "1-02",
+            Name = "자료구조",
+            Grade = 2,
+            HoursPerWeek = 1,
+            Section = 2,
+            ProfessorId = "P1",
+        });
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("1-02", 0, 1, "R1")));
+        var assignment = AssignmentAt(vm, 0, 1, "1-02");
+
+        vm.HandleCellClick(0, 1, 2, 0, assignment);
+
+        Assert.Contains("선택: 자료구조 B분반", vm.StatusMessage);
+        Assert.DoesNotContain("1-02", vm.StatusMessage);
+        Assert.DoesNotContain("CourseId", vm.StatusMessage);
+        Assert.DoesNotContain("SectionId", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void MoveStatus_UsesCourseNameAndSection_NotInternalCourseId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course
+        {
+            Id = "1-02",
+            Name = "자료구조",
+            Grade = 2,
+            HoursPerWeek = 1,
+            Section = 2,
+            ProfessorId = "P1",
+        });
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("1-02", 0, 1, "R1")));
+        var assignment = AssignmentAt(vm, 0, 1, "1-02");
+
+        vm.HandleCellClick(0, 1, 2, 0, assignment);
+        vm.HandleCellClick(1, 3, 2, 0, null);
+
+        Assert.Contains("자료구조 B분반 이동 완료", vm.StatusMessage);
+        Assert.DoesNotContain("1-02", vm.StatusMessage);
+        Assert.DoesNotContain("CourseId", vm.StatusMessage);
+        Assert.DoesNotContain("SectionId", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void ConflictDisplayDetails_UseUserFacingConstraintName()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
 
@@ -2775,8 +2825,67 @@ public class ManualEditViewModelTests : IDisposable
 
         var conflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.RoomConflict));
         Assert.DoesNotContain(conflict.Type.ToString(), conflict.DisplayTitle);
-        Assert.Contains(conflict.Type.ToString(), conflict.DisplayDescription);
-        Assert.Contains("제약조건:", conflict.DisplayDescription);
+        Assert.DoesNotContain(conflict.Type.ToString(), conflict.DisplayDescription);
+        Assert.DoesNotContain("HC-", conflict.DisplayDescription);
+        Assert.Contains("강의실 시간 중복", conflict.DisplayDescription);
+    }
+
+    [Fact]
+    public void FixedRoomConflictDisplay_UsesRoomNames()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var course = _ws.Courses.Single(c => c.Id == "X-01");
+        course.FixedRooms = new List<string> { "R1" };
+
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R2")));
+
+        var conflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.FixedRoomViolation));
+        Assert.Contains("강의실1", conflict.DisplayDescription);
+        Assert.Contains("강의실2", conflict.DisplayDescription);
+        Assert.DoesNotContain("FixedRoomViolation", conflict.DisplayDescription);
+        Assert.DoesNotContain("HC-", conflict.DisplayDescription);
+    }
+
+    [Fact]
+    public void ProfessorConflictDisplay_HidesUnknownProfessorId()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "운영체제", Grade = 2, HoursPerWeek = 1, ProfessorId = "P404" });
+        _ws.AddCourse(new Course { Id = "Z-01", Name = "컴파일러", Grade = 3, HoursPerWeek = 1, ProfessorId = "P404" });
+
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("Y-01", 0, 1, "R1"),
+            new SolutionAssignment("Z-01", 0, 1, "R2")));
+
+        var conflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.ProfessorConflict));
+        Assert.Contains("알 수 없는 교수", conflict.DisplayDescription);
+        Assert.DoesNotContain("P404", conflict.DisplayDescription);
+    }
+
+    [Fact]
+    public void SameCourseSameDayDisplay_UsesCourseNameAndSectionLabel()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course
+        {
+            Id = "DS-01",
+            Name = "자료구조",
+            Grade = 2,
+            HoursPerWeek = 2,
+            Section = 1,
+            ProfessorId = "P1",
+            BlockStructure = new List<int> { 1, 1 },
+        });
+
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("DS-01", 0, 1, "R1"),
+            new SolutionAssignment("DS-01", 0, 3, "R1")));
+
+        var conflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.SameCourseSameDayConflict));
+        Assert.Contains("자료구조 A분반이 같은 요일에 중복 배치되었습니다.", conflict.DisplayDescription);
+        Assert.DoesNotContain("DS-01", conflict.DisplayDescription);
+        Assert.DoesNotContain("HC-", conflict.DisplayDescription);
     }
 
     [Fact]
@@ -2825,7 +2934,8 @@ public class ManualEditViewModelTests : IDisposable
 
         var targetKey = new TimetableScheduler.ViewModel.Grid.UnifiedCellKey(0, 3, 2, 0);
         Assert.Equal(TimetableScheduler.ViewModel.Grid.ManualMoveCellState.Blocked, vm.Grid.EditStates[targetKey].State);
-        Assert.Contains("동일 교과목", vm.Grid.EditStates[targetKey].Reason);
+        Assert.Contains("같은 과목/분반/교수가 같은 요일에 중복 배치됩니다.", vm.Grid.EditStates[targetKey].Reason);
+        Assert.DoesNotContain("위반", vm.Grid.EditStates[targetKey].Reason);
         Assert.DoesNotContain("HC-20", vm.Grid.EditStates[targetKey].Reason);
     }
 
@@ -4151,7 +4261,7 @@ public class ManualEditViewModelTests : IDisposable
         vm.NewRoomId = "R2";
         vm.ApplyRoomChangeCommand.Execute(null);
 
-        Assert.Contains("변경할 배정 항목을 찾지 못했습니다.", vm.RoomChangeStatusMessage);
+        Assert.Contains("강의실 배정 정보를 찾지 못했습니다.", vm.RoomChangeStatusMessage);
     }
 
     [Fact]
@@ -4295,7 +4405,7 @@ public class ManualEditViewModelTests : IDisposable
 
         Assert.Equal(new[] { "R1" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
         Assert.False(vm.UndoCommand.CanExecute(null));
-        Assert.Contains("변경할 배정 항목", vm.StatusMessage);
+        Assert.Contains("강의실 배정 정보를 찾지 못했습니다.", vm.StatusMessage);
     }
 
     [Fact]
@@ -4345,7 +4455,7 @@ public class ManualEditViewModelTests : IDisposable
         vm.ApplyRoomChangeCommand.Execute(null);
 
         Assert.DoesNotContain("변경 0건", vm.StatusMessage);
-        Assert.Contains("변경할 배정 항목을 찾지 못했습니다.", vm.StatusMessage);
+        Assert.Contains("강의실 배정 정보를 찾지 못했습니다.", vm.StatusMessage);
         Assert.Equal(new[] { "R1" }, AssignmentAt(vm, 0, 1, "X-01").Rooms);
     }
 
@@ -4475,7 +4585,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void RoomChange_ChangedZero_ReportsDiagnosticState()
+    public void RoomChange_ChangedZero_ReportsUserFacingMessage()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
@@ -4486,14 +4596,14 @@ public class ManualEditViewModelTests : IDisposable
         vm.NewRoomId = "R2";
         vm.ApplyRoomChangeCommand.Execute(null);
 
-        Assert.Contains("CourseId=X-01", vm.StatusMessage);
-        Assert.Contains("Day=0", vm.StatusMessage);
-        Assert.Contains("SelectedPeriod=1", vm.StatusMessage);
-        Assert.Contains("RowSpan=1", vm.StatusMessage);
-        Assert.Contains("OldRoomId=R9", vm.StatusMessage);
-        Assert.Contains("NewRoomId=R2", vm.StatusMessage);
-        Assert.Contains("SameCourseDay=1", vm.StatusMessage);
-        Assert.Contains("SameCourseDayRoom=0", vm.StatusMessage);
+        Assert.Contains("테스트 A분반의 강의실 배정 정보를 찾지 못했습니다.", vm.StatusMessage);
+        Assert.DoesNotContain("CourseId=", vm.StatusMessage);
+        Assert.DoesNotContain("Day=", vm.StatusMessage);
+        Assert.DoesNotContain("SelectedPeriod=", vm.StatusMessage);
+        Assert.DoesNotContain("RowSpan=", vm.StatusMessage);
+        Assert.DoesNotContain("OldRoomId=", vm.StatusMessage);
+        Assert.DoesNotContain("NewRoomId=", vm.StatusMessage);
+        Assert.DoesNotContain("R9", vm.StatusMessage);
     }
 
     [Fact]
@@ -6706,7 +6816,8 @@ public class ManualEditViewModelTests : IDisposable
         vm.SelectCell(0, 1, 2, 0, assignment);
 
         var option = Assert.Single(vm.AvailableRoomOptions.Where(o => o.RoomId == "9"));
-        Assert.Equal("알 수 없는 강의실 (9)", option.DisplayName);
+        Assert.Equal("알 수 없는 강의실", option.DisplayName);
+        Assert.DoesNotContain("9", option.DisplayName);
     }
 
     [Fact]

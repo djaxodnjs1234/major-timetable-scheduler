@@ -8,6 +8,7 @@
         <ResourceDictionary>
             <conv:OccupiedToBgConverter x:Key="OccupiedToBgConverter" />
             <conv:BoolToVisibilityConverter x:Key="BoolToVisibility" />
+            <conv:StringNullOrWhiteSpaceToVisibilityConverter x:Key="StringNullOrWhiteSpaceToVisibility" />
             <conv:GradeToBrushConverter x:Key="GradeToBrush" />
             <conv:IntListToCsvConverter x:Key="IntListToCsv" />
 

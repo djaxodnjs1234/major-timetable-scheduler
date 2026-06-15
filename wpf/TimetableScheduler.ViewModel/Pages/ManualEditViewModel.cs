@@ -318,9 +318,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     public string SelectedProfessorName => SelectedCourse == null
         ? "-"
-        : SessionProfessors.FirstOrDefault(p => p.Id == SelectedCourse.ProfessorId)?.Name
-            ?? SelectedCourse.ProfessorId
-            ?? "-";
+        : ProfessorDisplayName(SelectedCourse.ProfessorId);
 
     public string SelectedLocationText => SelectedAssignment == null
         ? "-"
@@ -410,7 +408,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     public string SelectedBlockedReasonText => SelectedAssignment == null
         ? "-"
         : SelectedAssignment.IsFixed
-            ? "고정 시간표 보존 위반: 고정된 수업은 이동할 수 없습니다."
+            ? "고정된 수업은 이동할 수 없습니다."
             : "없음";
 
     public bool HasBlockingReasons => SelectedAssignment?.IsFixed == true;
@@ -963,7 +961,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             NewRoomId = assignment.Rooms.FirstOrDefault() ?? "";
             SelectedOldRoomId = NewRoomId;
             SelectedReplacementRoomId = ReplacementRoomCandidates.FirstOrDefault() ?? "";
-            StatusMessage = $"선택: {assignment.CourseName} ({assignment.CourseId}) — "
+            StatusMessage = $"선택: {CourseSectionDisplayName(assignment)} — "
                 + $"{DayName(day)} {period}교시";
             Grid.SetEditState(_selectedGridCell, BuildMoveStates(assignment, day, period));
         }
@@ -1127,7 +1125,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
 
         _working = candidate;
-        if (!TryCommitChange(snapshot, $"{cid}의 강의실 {oldRoomId} → {replacementRoomId} (변경 {changed}건)"))
+        if (!TryCommitChange(snapshot, $"{CourseDisplayName(cid)}의 강의실 {RoomDisplayName(oldRoomId)} → {RoomDisplayName(replacementRoomId)} (변경 {changed}건)"))
         {
             return false;
         }
@@ -1202,12 +1200,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         string oldRoomId,
         string newRoomId)
     {
-        var sameCourseDayCount = _working.Count(a => a.CourseId == courseId && a.Day == day);
-        var sameCourseDayRoomCount = _working.Count(a => a.CourseId == courseId && a.Day == day && a.RoomId == oldRoomId);
-        return "변경 불가 — 변경할 배정 항목을 찾지 못했습니다. "
-            + $"CourseId={courseId}, Day={day}, SelectedPeriod={selectedPeriod}, RowSpan={rowSpan}, "
-            + $"OldRoomId={oldRoomId}, NewRoomId={newRoomId}, "
-            + $"SameCourseDay={sameCourseDayCount}, SameCourseDayRoom={sameCourseDayRoomCount}";
+        return $"변경 불가 — {CourseDisplayName(courseId)}의 강의실 배정 정보를 찾지 못했습니다. 시간표를 새로고침한 뒤 다시 시도하세요.";
     }
 
     private void RefreshSelectionAfterRoomChange(string courseId, int day, int selectedPeriod)
@@ -1349,7 +1342,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
 
         var snapshot = CaptureSnapshot();
-        var movedCourseId = SelectedAssignment.CourseId;
+        var movedCourseName = CourseSectionDisplayName(SelectedAssignment);
         _working = candidate;
         MarkUserEditedAfterLoad();
         var removedLinks = RemoveInvalidCrossesAfterMove(refreshLabels: false);
@@ -1358,10 +1351,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         PushUndoSnapshot(snapshot);
         var warning = GetSoftWarning(targetDay, targetPeriod);
         StatusMessage = removedLinks > 0
-            ? $"{movedCourseId} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시. 수업 식별 또는 학년 조건 변경으로 크로스 관계가 해제되었습니다."
+            ? $"{movedCourseName} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시. 수업 또는 학년 조건 변경으로 크로스 관계가 해제되었습니다."
             : warning == null
-            ? $"{movedCourseId} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시"
-            : $"{movedCourseId} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시. {warning}";
+            ? $"{movedCourseName} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시"
+            : $"{movedCourseName} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시. {warning}";
         ClearSelectionCore();
         return true;
     }
@@ -1387,13 +1380,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
 
         var snapshot = CaptureSnapshot();
-        var selectedCourseId = SelectedAssignment.CourseId;
-        var targetCourseId = target.CourseId;
+        var selectedCourseName = CourseSectionDisplayName(SelectedAssignment);
+        var targetCourseName = CourseSectionDisplayName(target);
         var candidate = BuildSwappedCandidate(SelectedAssignment, selectedDay, selectedPeriod, target, targetDay, targetPeriod);
         var newConflicts = DetectNewConflicts(_working, candidate)
             .Concat(BuildSwapSoftWarnings(SelectedAssignment, selectedDay, selectedPeriod, target, targetDay, targetPeriod))
             .ToList();
-        if (newConflicts.Count > 0 && !_dialog.ConfirmDespiteConflicts(newConflicts))
+        if (newConflicts.Count > 0 && !_dialog.ConfirmDespiteConflicts(newConflicts.Select(BuildUserConflictItem).ToList()))
         {
             reason = "교환이 취소되었습니다.";
             return false;
@@ -1404,8 +1397,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         Rerender();
         PushUndoSnapshot(snapshot);
         var removedLinks = RemoveInvalidCrossesAfterMove();
-        StatusMessage = $"{selectedCourseId} ↔ {targetCourseId} 위치를 교환했습니다."
-            + (removedLinks > 0 ? " 수업 식별 또는 학년 조건 변경으로 크로스 관계가 해제되었습니다." : "");
+        StatusMessage = $"{selectedCourseName} ↔ {targetCourseName} 위치를 교환했습니다."
+            + (removedLinks > 0 ? " 수업 또는 학년 조건 변경으로 크로스 관계가 해제되었습니다." : "");
         ClearSelectionCore();
         return true;
     }
@@ -1420,7 +1413,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .ToList();
     }
 
-    private static IReadOnlyList<ConflictItem> BuildSwapSoftWarnings(
+    private IReadOnlyList<ConflictItem> BuildSwapSoftWarnings(
         CellAssignment selected,
         int selectedDay,
         int selectedPeriod,
@@ -1440,7 +1433,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             warnings.Add(new ConflictItem(
                 ConflictType.GradeConflict,
                 ConflictSeverity.Warning,
-                $"{assignment.CourseName}({assignment.CourseId}) 교환 후 주의 시간대: {warning}",
+                $"{CourseSectionDisplayName(assignment)} 교환 후 주의 시간대: {warning}",
                 day,
                 period));
         }
@@ -1467,7 +1460,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (selectedCourse == null || targetCourse == null)
             return "수업 정보를 확인할 수 없습니다.";
         if (selectedCourse.IsFixed || targetCourse.IsFixed)
-            return "고정 시간표 보존 위반: 고정된 수업은 교환할 수 없습니다.";
+            return "고정된 수업은 교환할 수 없습니다.";
         if (!HasSameSwapDuration(selected, target))
             return "블록 시간이 같은 수업끼리만 교환할 수 있습니다.";
 
@@ -1476,7 +1469,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (selectedAtTarget.Concat(targetAtSelected).Any(p => !Constants.Periods.Contains(p)))
             return "수업 블록이 시간표 범위를 벗어납니다.";
         if (selectedAtTarget.Concat(targetAtSelected).Contains(Constants.LunchPeriod))
-            return "점심시간 보장 위반: 점심시간에는 수업을 배정할 수 없습니다.";
+            return "점심시간에는 수업을 배정할 수 없습니다.";
 
         var candidate = BuildSwappedCandidate(selected, selectedDay, selectedPeriod, target, targetDay, targetPeriod);
         if (WouldCreateOneHourAboveMultiHourPattern(candidate, new[] { selected.CourseId, target.CourseId }))
@@ -1570,7 +1563,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 targetDay,
                 targetPeriod)).ToList();
 
-        if (!_dialog.ConfirmDespiteConflicts(dialogItems))
+        if (!_dialog.ConfirmDespiteConflicts(dialogItems.Select(BuildUserConflictItem).ToList()))
         {
             StatusMessage = "강제 이동이 취소되었습니다.";
             return false;
@@ -1584,7 +1577,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         PushUndoSnapshot(snapshot);
         var errorCount = Conflicts.Count(c => c.Severity == ConflictSeverity.Error);
         var warningCount = Conflicts.Count(c => c.Severity == ConflictSeverity.Warning);
-        StatusMessage = $"제약조건 위반 상태로 강제 이동했습니다. Error {errorCount}건, Warning {warningCount}건이 남아 있습니다. Error가 남아 있으면 저장할 수 없습니다."
+        StatusMessage = $"제약조건이 남은 상태로 강제 이동했습니다. Error {errorCount}건, Warning {warningCount}건이 남아 있습니다. Error가 남아 있으면 저장할 수 없습니다."
             + (removedLinks > 0 ? " 수업 식별 또는 학년 조건 변경으로 크로스 관계가 해제되었습니다." : "");
         ClearSelectionCore();
         return true;
@@ -1694,13 +1687,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
         var course = ResolveCourseForCellAssignment(assignment) ?? SessionCourses.First(c => c.Id == assignment.CourseId);
         if (course.IsFixed)
-            return new[] { "고정 시간표 보존 위반: 고정된 수업은 이동할 수 없습니다." };
+            return new[] { "고정된 수업은 이동할 수 없습니다." };
 
         var targetPeriods = GetOccupiedPeriods(targetPeriod, assignment.RowSpan);
         if (targetPeriods.Any(p => !Constants.Periods.Contains(p)))
             return new[] { "수업 블록이 시간표 범위를 벗어납니다." };
         if (targetPeriods.Contains(Constants.LunchPeriod))
-            return new[] { "점심시간 보장 위반: 점심시간에는 수업을 배정할 수 없습니다." };
+            return new[] { "점심시간에는 수업을 배정할 수 없습니다." };
         if (!allowCrossDisplayColumn && IsCrossDisplayOnlyColumn(targetDay, targetPeriod, targetGrade, targetSubColumnIdx))
             return new[] { CrossDisplayColumnBlockedReason };
         if (WouldCreateOneHourAboveMultiHourPattern(
@@ -1713,7 +1706,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 targetSubColumnIdx))
             return new[] { OneHourAboveTwoHourBlockedReason };
         if (assignment.RowSpan == 2 && !Constants.Len2StartPeriods.Contains(targetPeriod))
-            return new[] { "블록 시작 교시 위반: 2시간 수업은 1, 3, 6, 8교시에만 시작할 수 있습니다." };
+            return new[] { "2시간 수업은 1, 3, 6, 8교시에만 시작할 수 있습니다." };
 
         var blockingAssignments = GetBlockingAssignments(
             assignment,
@@ -1732,7 +1725,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 .Cast<Course>()
                 .ToList();
             if (blockingCourses.Any(c => c.IsFixed))
-                return new[] { "고정 시간표 보존 위반: 고정 수업 위로 이동할 수 없습니다." };
+                return new[] { "고정 수업이 있는 시간으로는 이동할 수 없습니다." };
 
             return new[] { BlockRangeOverlapBlockedReason };
         }
@@ -2219,7 +2212,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
         if (newOnes.Count > 0)
         {
-            bool proceed = _dialog.ConfirmDespiteConflicts(newOnes.Select(c => c.Conflict).ToList());
+            bool proceed = _dialog.ConfirmDespiteConflicts(newOnes.Select(c => BuildUserConflictItem(c.Conflict)).ToList());
             if (!proceed)
             {
                 RestoreSnapshot(snapshot);
@@ -2257,11 +2250,192 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private ConflictDisplayItem BuildConflictDisplayItem(ConflictItem conflict)
     {
         var title = BuildConflictDisplayTitle(conflict);
-        var description = StripConstraintCodeForDisplay(conflict.Description);
+        var label = ConflictDisplayLabel(conflict.Type);
+        var description = BuildUserConflictDescription(conflict);
         var detail = string.IsNullOrWhiteSpace(description)
-            ? $"제약조건: {conflict.Type}"
-            : $"제약조건: {conflict.Type} · {description}";
+            ? label
+            : $"{label}: {description}";
         return new ConflictDisplayItem(conflict, title, detail);
+    }
+
+    private ConflictItem BuildUserConflictItem(ConflictItem conflict) =>
+        conflict with { Description = BuildUserConflictDescription(conflict) };
+
+    private string BuildUserConflictDescription(ConflictItem conflict) => conflict.Type switch
+    {
+        ConflictType.RoomConflict => BuildRoomConflictDescription(conflict),
+        ConflictType.ProfessorConflict => BuildProfessorConflictDescription(conflict),
+        ConflictType.ProfUnavailable => BuildProfessorUnavailableDescription(conflict),
+        ConflictType.FixedRoomViolation => BuildFixedRoomViolationDescription(conflict),
+        ConflictType.CourseUnavailableRoomViolation => BuildCourseUnavailableRoomDescription(conflict),
+        ConflictType.ProfAllowedRoomViolation => BuildProfessorRoomRestrictionDescription(conflict),
+        ConflictType.ProfRoomInconsistent => BuildProfessorRoomInconsistentDescription(conflict),
+        ConflictType.SameCourseSameDayConflict => BuildSameCourseSameDayDescription(conflict),
+        _ => SanitizeConflictDescription(conflict.Description),
+    };
+
+    private static string ConflictDisplayLabel(ConflictType type) => type switch
+    {
+        ConflictType.RoomConflict => "강의실 시간 중복",
+        ConflictType.ProfessorConflict => "교수 시간 중복",
+        ConflictType.ProfUnavailable => "교수 불가능 시간",
+        ConflictType.SectionConflict => "분반 시간 중복",
+        ConflictType.GradeConflict => "학년 시간 중복",
+        ConflictType.LunchConflict => "점심시간 배치",
+        ConflictType.FixedTimeViolation => "고정 시간 위반",
+        ConflictType.FixedRoomViolation => "고정 강의실 위반",
+        ConflictType.CourseUnavailableRoomViolation => "불가 강의실 위반",
+        ConflictType.BlockStartViolation => "블록 시작 교시 위반",
+        ConflictType.SameCourseSameDayConflict => "같은 요일 중복 배치",
+        ConflictType.ProfAllowedRoomViolation => "교수 강의실 제한",
+        ConflictType.ProfRoomInconsistent => "교수 강의실 일관성",
+        _ => "제약조건 위반",
+    };
+
+    private string BuildRoomConflictDescription(ConflictItem conflict)
+    {
+        var conflictingRooms = _working
+            .Where(a => a.Day == conflict.Day && a.Period == conflict.Period)
+            .GroupBy(a => a.RoomId)
+            .Where(g => g.Select(a => a.CourseId).Distinct().Count() > 1)
+            .ToList();
+        var group = conflictingRooms.FirstOrDefault();
+        if (group == null)
+            return SanitizeConflictDescription(conflict.Description);
+
+        var courses = group
+            .Select(a => BuildConflictCourseLabel(ResolveCourseForAssignment(a), a.CourseId))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        return $"{RoomDisplayName(group.Key)} / {FormatConflictTimeLabel(conflict.Day, conflict.Period, conflict.Period)} / {string.Join(", ", courses)}";
+    }
+
+    private string BuildProfessorConflictDescription(ConflictItem conflict)
+    {
+        var slot = _working
+            .Where(a => a.Day == conflict.Day && a.Period == conflict.Period)
+            .Select(a => (Assignment: a, Course: ResolveCourseForAssignment(a)))
+            .Where(x => x.Course != null)
+            .ToList();
+
+        var professorGroups = new Dictionary<string, List<(SolutionAssignment Assignment, Course Course)>>(StringComparer.Ordinal);
+        foreach (var item in slot)
+        {
+            foreach (var professorId in DomainHelpers.CourseProfIds(item.Course!))
+            {
+                if (!professorGroups.TryGetValue(professorId, out var list))
+                    professorGroups[professorId] = list = new List<(SolutionAssignment, Course)>();
+                list.Add((item.Assignment, item.Course!));
+            }
+        }
+
+        var conflictGroup = professorGroups
+            .FirstOrDefault(g => g.Value.Select(x => x.Course.Id).Distinct().Count() > 1);
+        if (string.IsNullOrWhiteSpace(conflictGroup.Key))
+            return SanitizeConflictDescription(conflict.Description);
+
+        var courses = conflictGroup.Value
+            .Select(x => BuildConflictCourseLabel(x.Course, x.Assignment.CourseId))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        return $"{ProfessorDisplayName(conflictGroup.Key)} / {FormatConflictTimeLabel(conflict.Day, conflict.Period, conflict.Period)} / {string.Join(", ", courses)}";
+    }
+
+    private string BuildProfessorUnavailableDescription(ConflictItem conflict)
+    {
+        var representative = ResolveRepresentativeConflictAssignment(conflict);
+        if (representative == null)
+            return SanitizeConflictDescription(conflict.Description);
+
+        var (assignment, course) = representative.Value;
+        var professorName = course == null
+            ? ProfessorDisplayName(assignment.CourseId)
+            : string.Join(", ", DomainHelpers.CourseProfIds(course).Select(ProfessorDisplayName));
+        return $"{BuildConflictCourseLabel(course, assignment.CourseId)} / {professorName} / {FormatConflictTimeLabel(conflict.Day, conflict.Period, conflict.Period)}";
+    }
+
+    private string BuildFixedRoomViolationDescription(ConflictItem conflict)
+    {
+        var representative = ResolveRepresentativeConflictAssignment(conflict);
+        if (representative == null)
+            return SanitizeConflictDescription(conflict.Description);
+
+        var (assignment, course) = representative.Value;
+        if (course == null || course.FixedRooms.Count == 0)
+            return SanitizeConflictDescription(conflict.Description);
+
+        var allowedRooms = string.Join(", ", course.FixedRooms.Select(RoomDisplayName));
+        return $"{BuildConflictCourseLabel(course, assignment.CourseId)}은 지정된 강의실만 사용할 수 있습니다. 지정 강의실: {allowedRooms}. 현재 강의실: {RoomDisplayName(assignment.RoomId)}";
+    }
+
+    private string BuildCourseUnavailableRoomDescription(ConflictItem conflict)
+    {
+        var representative = ResolveRepresentativeConflictAssignment(conflict);
+        if (representative == null)
+            return SanitizeConflictDescription(conflict.Description);
+
+        var (assignment, course) = representative.Value;
+        if (course == null || course.UnavailableRooms.Count == 0)
+            return SanitizeConflictDescription(conflict.Description);
+
+        var unavailableRooms = string.Join(", ", course.UnavailableRooms.Select(RoomDisplayName));
+        return $"{BuildConflictCourseLabel(course, assignment.CourseId)}은 사용할 수 없는 강의실에 배정되었습니다. 불가 강의실: {unavailableRooms}. 현재 강의실: {RoomDisplayName(assignment.RoomId)}";
+    }
+
+    private string BuildProfessorRoomRestrictionDescription(ConflictItem conflict)
+    {
+        var representative = ResolveRepresentativeConflictAssignment(conflict);
+        if (representative == null)
+            return SanitizeConflictDescription(conflict.Description);
+
+        var (assignment, course) = representative.Value;
+        var professorId = course?.ProfessorId ?? "";
+        return $"{BuildConflictCourseLabel(course, assignment.CourseId)}은 {ProfessorDisplayName(professorId)} 교수님의 사용할 수 없는 강의실에 배정되었습니다. 현재 강의실: {RoomDisplayName(assignment.RoomId)}";
+    }
+
+    private string BuildProfessorRoomInconsistentDescription(ConflictItem conflict)
+    {
+        var description = SanitizeConflictDescription(conflict.Description);
+        foreach (var professor in SessionProfessors.Concat(_workspace.Professors))
+            description = ReplaceToken(description, professor.Id, ProfessorDisplayName(professor.Id));
+        foreach (var room in SessionRooms.Concat(_workspace.Rooms))
+            description = ReplaceToken(description, room.Id, RoomDisplayName(room.Id));
+        return description.Contains("교수 강의실 일관성", StringComparison.Ordinal)
+            ? description
+            : $"교수 강의실 일관성: {description}";
+    }
+
+    private string BuildSameCourseSameDayDescription(ConflictItem conflict)
+    {
+        var representative = ResolveRepresentativeConflictAssignment(conflict);
+        if (representative == null)
+            return SanitizeConflictDescription(conflict.Description);
+
+        var (assignment, course) = representative.Value;
+        var range = ResolveConflictPeriodRange(assignment, conflict);
+        return $"{BuildConflictCourseLabel(course, assignment.CourseId)}이 같은 요일에 중복 배치되었습니다. 시간: {FormatConflictTimeLabel(conflict.Day, range.Start, range.End)}";
+    }
+
+    private string SanitizeConflictDescription(string? description)
+    {
+        var value = StripConstraintCodeForDisplay(description ?? "");
+        foreach (var course in SessionCourses)
+            value = value.Replace($"({course.Id})", "", StringComparison.Ordinal);
+        foreach (var professor in SessionProfessors.Concat(_workspace.Professors))
+            value = ReplaceToken(value, professor.Id, ProfessorDisplayName(professor.Id));
+        foreach (var room in SessionRooms.Concat(_workspace.Rooms))
+            value = ReplaceToken(value, room.Id, RoomDisplayName(room.Id));
+        return value.Trim();
+    }
+
+    private static string ReplaceToken(string text, string token, string replacement)
+    {
+        if (string.IsNullOrWhiteSpace(token) || string.IsNullOrWhiteSpace(replacement))
+            return text;
+        return Regex.Replace(
+            text,
+            $@"(?<![\p{{L}}\p{{N}}_-]){Regex.Escape(token)}(?![\p{{L}}\p{{N}}_-])",
+            replacement);
     }
 
     private string BuildConflictDisplayTitle(ConflictItem conflict)
@@ -2289,9 +2463,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             ? FormatConflictTimeLabel(conflict.Day, conflict.Period, conflict.Period)
             : "";
         if (!string.IsNullOrWhiteSpace(fallbackCourseId) && !string.IsNullOrWhiteSpace(fallbackTime))
-            return $"{fallbackCourseId} / {fallbackTime}";
+            return $"알 수 없는 수업 / {fallbackTime}";
         if (!string.IsNullOrWhiteSpace(fallbackCourseId))
-            return fallbackCourseId;
+            return "알 수 없는 수업";
         if (!string.IsNullOrWhiteSpace(conflict.Type.ToString()))
             return conflict.Type.ToString();
         return "제약조건 위반";
@@ -2364,13 +2538,16 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private static string BuildConflictCourseLabel(Course? course, string courseId)
     {
-        var label = string.IsNullOrWhiteSpace(course?.Name) ? courseId : course.Name.Trim();
-        if (string.IsNullOrWhiteSpace(label))
-            label = courseId;
-        if (course?.Section > 0)
-            label += $" {course.Section}분반";
-        return string.IsNullOrWhiteSpace(label) ? "제약조건 위반" : label;
+        if (course == null)
+            return "알 수 없는 수업";
+        return CourseSectionDisplayName(course);
     }
+
+    private static string SectionDisplayName(int section) =>
+        section <= 0 ? "" : $"{SectionLetter(section)}분반";
+
+    private static string SectionLetter(int section) =>
+        section >= 1 && section <= 26 ? ((char)('A' + section - 1)).ToString() : section.ToString();
 
     private static string FormatConflictTimeLabel(int day, int startPeriod, int endPeriod)
     {
@@ -2509,7 +2686,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     }
 
     private string ProfessorDisplayName(string id) =>
-        SessionProfessors.FirstOrDefault(p => p.Id == id)?.Name ?? id;
+        SessionProfessors.FirstOrDefault(p => p.Id == id)?.Name
+        ?? _workspace.Professors.FirstOrDefault(p => p.Id == id)?.Name
+        ?? UnknownProfessorDisplayName(id);
 
     private static bool IsSameProfessorId(string? left, string? right) =>
         string.Equals(left?.Trim(), right?.Trim(), StringComparison.Ordinal);
@@ -2566,7 +2745,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private string RoomDisplayName(string id) =>
         _workspace.Rooms.FirstOrDefault(r => r.Id == id)?.Name
         ?? _sessionData?.Rooms.FirstOrDefault(r => r.Id == id)?.Name
-        ?? id;
+        ?? UnknownRoomDisplayName(id);
 
     private IReadOnlyList<RoomOption> BuildRoomOptions(
         IEnumerable<string> roomIds,
@@ -2625,7 +2804,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         roomId.All(char.IsDigit);
 
     private static string UnknownRoomDisplayName(string roomId) =>
-        IsBareNumericRoomId(roomId) ? $"알 수 없는 강의실 ({roomId})" : roomId;
+        "알 수 없는 강의실";
+
+    private static string UnknownProfessorDisplayName(string professorId) =>
+        "알 수 없는 교수";
 
     private static string NormalizeRoomId(string? roomId) =>
         string.IsNullOrWhiteSpace(roomId) ? "" : roomId.Trim();
@@ -2826,8 +3008,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         OnPropertyChanged(nameof(SelectedSlotDisplayText));
         NotifySelectionDetailChanged();
         Grid.SetEditState(_selectedGridCell, BuildMoveStates(selected, day, targetPeriod));
-        StatusMessage = $"크로스가 설정되었습니다: {selected.CourseName} ({selected.CourseId}) ↔ "
-            + $"{target.CourseName} ({target.CourseId})";
+        StatusMessage = $"크로스가 설정되었습니다: {CourseSectionDisplayName(selected)} ↔ {CourseSectionDisplayName(target)}";
         ClearSelectionCore();
         reason = "";
         return true;
@@ -3297,7 +3478,25 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         $"{CourseDisplayName(link.CourseIdA)} ↔ {CourseDisplayName(link.CourseIdB)}";
 
     private string CourseDisplayName(string id) =>
-        SessionCourses.FirstOrDefault(c => c.Id == id)?.Name ?? id;
+        CourseSectionDisplayName(SessionCourses.FirstOrDefault(c => c.Id == id), id);
+
+    private string CourseSectionDisplayName(CellAssignment? assignment)
+    {
+        if (assignment == null)
+            return "알 수 없는 수업";
+        var course = ResolveCourseForCellAssignment(assignment);
+        return CourseSectionDisplayName(course, assignment.CourseId);
+    }
+
+    private string CourseSectionDisplayName(Course? course, string fallbackCourseId) =>
+        course == null ? "알 수 없는 수업" : CourseSectionDisplayName(course);
+
+    private static string CourseSectionDisplayName(Course course)
+    {
+        var name = string.IsNullOrWhiteSpace(course.Name) ? "알 수 없는 수업" : course.Name.Trim();
+        var section = SectionDisplayName(course.Section);
+        return string.IsNullOrWhiteSpace(section) ? name : $"{name} {section}";
+    }
 
     private Course? FindCourseForManualCrossKey(ManualCrossAssignmentKey key)
     {
@@ -3498,23 +3697,57 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private static string KeyOf(ConflictItem c) =>
         $"{c.Type}|{c.Day}|{c.Period}|{c.Description}";
 
-    private static string ToUserReason(ConflictItem c) => StripConstraintCodeForDisplay(c.Type switch
+    private string ToUserReason(ConflictItem c)
     {
-        ConflictType.RoomConflict => $"강의실 단일 배정 위반: {c.Description}",
-        ConflictType.ProfessorConflict => $"교수 단일 배정 위반: {c.Description}",
-        ConflictType.ProfUnavailable => $"교수 불가능 시간 위반: {c.Description}",
-        ConflictType.SectionConflict => $"분반 중복 금지 위반: {c.Description}",
-        ConflictType.GradeConflict => $"학년 내 과목 충돌 위반: {c.Description}",
-        ConflictType.LunchConflict => $"점심시간 보장 위반: {c.Description}",
-        ConflictType.FixedTimeViolation => $"고정 시간표 보존 위반: {c.Description}",
-        ConflictType.FixedRoomViolation => $"고정 강의실 위반: {c.Description}",
-        ConflictType.CourseUnavailableRoomViolation => $"불가 강의실 위반: {c.Description}",
-        ConflictType.BlockStartViolation => $"블록 시작 교시 위반: {c.Description}",
-        ConflictType.SameCourseSameDayConflict => $"동일 교과목·분반·교수 동일 요일 중복 배치 위반: {c.Description}",
-        ConflictType.ProfAllowedRoomViolation => $"허용 강의실 위반: {c.Description}",
-        ConflictType.ProfRoomInconsistent => $"교수 강의실 일관성 위반: {c.Description}",
-        _ => c.Description,
-    });
+        var sentence = BuildMoveWarningSentence(c);
+        if (!string.IsNullOrWhiteSpace(sentence))
+            return sentence;
+
+        var description = BuildUserConflictDescription(c);
+        return string.IsNullOrWhiteSpace(description) ? ConflictDisplayLabel(c.Type) : description;
+    }
+
+    private string BuildMoveWarningSentence(ConflictItem c) => c.Type switch
+    {
+        ConflictType.FixedRoomViolation => BuildFixedRoomMoveWarning(c),
+        ConflictType.CourseUnavailableRoomViolation => BuildCourseUnavailableRoomMoveWarning(c),
+        ConflictType.ProfAllowedRoomViolation => BuildProfessorRoomRestrictionMoveWarning(c),
+        ConflictType.ProfessorConflict => "해당 교수님의 다른 수업과 시간이 겹칩니다.",
+        ConflictType.RoomConflict => "해당 강의실의 다른 수업과 시간이 겹칩니다.",
+        ConflictType.GradeConflict => "같은 학년의 다른 수업과 시간이 겹칩니다.",
+        ConflictType.SameCourseSameDayConflict => "같은 과목/분반/교수가 같은 요일에 중복 배치됩니다.",
+        ConflictType.SectionConflict => "같은 과목의 다른 분반과 시간이 겹칩니다.",
+        ConflictType.LunchConflict => "점심시간에는 수업을 배치할 수 없습니다.",
+        ConflictType.FixedTimeViolation => "고정된 시간표를 벗어날 수 없습니다.",
+        ConflictType.ProfUnavailable => "해당 교수님의 불가능 시간과 겹칩니다.",
+        ConflictType.BlockStartViolation => "이 수업 블록은 해당 교시에 시작할 수 없습니다.",
+        _ => "",
+    };
+
+    private string BuildFixedRoomMoveWarning(ConflictItem c)
+    {
+        var representative = ResolveRepresentativeConflictAssignment(c);
+        if (representative?.Course == null || representative.Value.Course.FixedRooms.Count == 0)
+            return "지정된 강의실이 아닙니다.";
+        var rooms = string.Join(", ", representative.Value.Course.FixedRooms.Select(RoomDisplayName));
+        return $"지정된 강의실이 아닙니다. 지정 강의실: {rooms}.";
+    }
+
+    private string BuildCourseUnavailableRoomMoveWarning(ConflictItem c)
+    {
+        var representative = ResolveRepresentativeConflictAssignment(c);
+        if (representative?.Course == null)
+            return "사용할 수 없는 강의실입니다.";
+        return $"{BuildConflictCourseLabel(representative.Value.Course, representative.Value.Assignment.CourseId)}은 이 강의실을 사용할 수 없습니다.";
+    }
+
+    private string BuildProfessorRoomRestrictionMoveWarning(ConflictItem c)
+    {
+        var representative = ResolveRepresentativeConflictAssignment(c);
+        if (representative?.Course == null)
+            return "해당 교수님이 사용할 수 없는 강의실입니다.";
+        return $"{ProfessorDisplayName(representative.Value.Course.ProfessorId)} 교수님이 사용할 수 없는 강의실입니다.";
+    }
 
     private static string DayName(int d) => d switch
     {

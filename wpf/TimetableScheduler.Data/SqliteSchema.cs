@@ -30,10 +30,11 @@ CREATE TABLE IF NOT EXISTS Professors (
 );
 
 CREATE TABLE IF NOT EXISTS Rooms (
-    Id       TEXT PRIMARY KEY,
-    Name     TEXT NOT NULL,
-    IsLab    INTEGER NOT NULL DEFAULT 0,
-    Capacity INTEGER NOT NULL DEFAULT 0
+    Id                  TEXT PRIMARY KEY,
+    Name                TEXT NOT NULL,
+    IsLab               INTEGER NOT NULL DEFAULT 0,
+    Capacity            INTEGER NOT NULL DEFAULT 0,
+    IsImportedFromExcel INTEGER NOT NULL DEFAULT 0
 );
 
 CREATE TABLE IF NOT EXISTS CrossGroups (

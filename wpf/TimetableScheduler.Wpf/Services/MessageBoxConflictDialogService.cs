@@ -34,19 +34,19 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
 
     private static string KoreanLabel(ConflictType type) => type switch
     {
-        ConflictType.RoomConflict => "HC-01 강의실 중복",
-        ConflictType.ProfessorConflict => "HC-02 교수 중복",
-        ConflictType.ProfUnavailable => "HC-03 교수 불가시간",
-        ConflictType.LunchConflict => "HC-12 점심시간 금지",
-        ConflictType.SectionConflict => "HC-08 분반 중복",
-        ConflictType.GradeConflict => "HC-11 학년 충돌",
-        ConflictType.FixedRoomViolation => "HC-14 고정 강의실 위반",
-        ConflictType.CourseUnavailableRoomViolation => "HC-14 불가 강의실 위반",
-        ConflictType.FixedTimeViolation => "HC-13 고정 시간표",
-        ConflictType.BlockStartViolation => "HC-19 블록 시작 교시",
-        ConflictType.SameCourseSameDayConflict => "HC-20 동일 수업 동일 요일",
-        ConflictType.ProfAllowedRoomViolation => "HC-21 허용 강의실",
-        ConflictType.ProfRoomInconsistent => "HC-21 교수 강의실 일관성",
-        _ => type.ToString(),
+        ConflictType.RoomConflict => "강의실 시간 중복",
+        ConflictType.ProfessorConflict => "교수 시간 중복",
+        ConflictType.ProfUnavailable => "교수 불가시간",
+        ConflictType.LunchConflict => "점심시간 배치",
+        ConflictType.SectionConflict => "분반 시간 중복",
+        ConflictType.GradeConflict => "학년 시간 중복",
+        ConflictType.FixedRoomViolation => "고정 강의실 위반",
+        ConflictType.CourseUnavailableRoomViolation => "불가 강의실 위반",
+        ConflictType.FixedTimeViolation => "고정 시간 위반",
+        ConflictType.BlockStartViolation => "블록 시작 교시",
+        ConflictType.SameCourseSameDayConflict => "같은 요일 중복 배치",
+        ConflictType.ProfAllowedRoomViolation => "교수 강의실 제한",
+        ConflictType.ProfRoomInconsistent => "교수 강의실 일관성",
+        _ => "제약조건 위반",
     };
 }
