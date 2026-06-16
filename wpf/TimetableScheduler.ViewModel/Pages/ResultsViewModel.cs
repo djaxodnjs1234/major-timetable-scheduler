@@ -68,7 +68,7 @@ public sealed partial class ResultsViewModel : PageViewModelBase
         if (card is null)
             return;
 
-        var name = $"Kept Solution {DateTime.Now:yyyy-MM-dd HH:mm:ss}";
+        var name = $"Solution {DateTime.Now:yyyy-MM-dd HH:mm:ss}";
         _workspace.SaveTimetable(
             name,
             card.Solution.Assignment,

@@ -12,36 +12,7 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
 
-        <Grid Grid.Row="0" Background="#F8F8F8">
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="44" />
-                <ColumnDefinition Width="56" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
-            <TextBlock Grid.Column="0" Text="교시" FontWeight="Bold" FontSize="11"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" Padding="2,4" />
-            <TextBlock Grid.Column="1" Text="시간" FontWeight="Bold" FontSize="11"
-                       HorizontalAlignment="Center" VerticalAlignment="Center" Padding="2,4" />
-            <TextBlock Grid.Column="2" Text="월" FontWeight="Bold" FontSize="12"
-                       HorizontalAlignment="Center" Padding="4" />
-            <TextBlock Grid.Column="3" Text="화" FontWeight="Bold" FontSize="12"
-                       HorizontalAlignment="Center" Padding="4" />
-            <TextBlock Grid.Column="4" Text="수" FontWeight="Bold" FontSize="12"
-                       HorizontalAlignment="Center" Padding="4" />
-            <TextBlock Grid.Column="5" Text="목" FontWeight="Bold" FontSize="12"
-                       HorizontalAlignment="Center" Padding="4" />
-            <TextBlock Grid.Column="6" Text="금" FontWeight="Bold" FontSize="12"
-                       HorizontalAlignment="Center" Padding="4" />
-            <Border Grid.Column="2" BorderBrush="#CBD5E1" BorderThickness="1,0,0,0" IsHitTestVisible="False" />
-            <Border Grid.Column="3" BorderBrush="#CBD5E1" BorderThickness="1,0,0,0" IsHitTestVisible="False" />
-            <Border Grid.Column="4" BorderBrush="#CBD5E1" BorderThickness="1,0,0,0" IsHitTestVisible="False" />
-            <Border Grid.Column="5" BorderBrush="#CBD5E1" BorderThickness="1,0,0,0" IsHitTestVisible="False" />
-            <Border Grid.Column="6" BorderBrush="#CBD5E1" BorderThickness="1,0,0,0" IsHitTestVisible="False" />
-        </Grid>
+        <Grid Grid.Row="0" x:Name="HeaderGrid" Background="#F8F8F8" />
 
         <Grid Grid.Row="1" x:Name="BodyGrid">
             <Grid.RowDefinitions>
@@ -55,15 +26,6 @@
                 <RowDefinition Height="*" MinHeight="64" />
                 <RowDefinition Height="*" MinHeight="64" />
             </Grid.RowDefinitions>
-            <Grid.ColumnDefinitions>
-                <ColumnDefinition Width="44" />
-                <ColumnDefinition Width="56" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-                <ColumnDefinition Width="*" />
-            </Grid.ColumnDefinitions>
         </Grid>
 
     </Grid>

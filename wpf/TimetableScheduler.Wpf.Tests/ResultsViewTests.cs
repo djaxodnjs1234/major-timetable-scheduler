@@ -64,6 +64,101 @@ public class ResultsViewTests
         });
     }
 
+    [Fact]
+    public void TimetableGridChip_RendersSameSlotAssignmentsSideBySide()
+    {
+        RunSta(() =>
+        {
+            EnsureApplicationResources();
+
+            var vm = new TimetableGridViewModel();
+            vm.Render(
+                new[]
+                {
+                    new SolutionAssignment("C-01", 0, 1, "R1"),
+                    new SolutionAssignment("C-02", 0, 1, "R2"),
+                },
+                new[]
+                {
+                    new Course { Id = "C-01", Name = "알고리즘", Grade = 2, Section = 1, HoursPerWeek = 1 },
+                    new Course { Id = "C-02", Name = "자료구조", Grade = 2, Section = 2, HoursPerWeek = 1 },
+                },
+                rooms: new[]
+                {
+                    new Room { Id = "R1", Name = "101호" },
+                    new Room { Id = "R2", Name = "102호" },
+                });
+
+            var view = ShowGrid(vm);
+            try
+            {
+                var bodyGrid = FindDescendants<Grid>(view)
+                    .Single(grid => grid.Name == "BodyGrid");
+                var assignmentBorders = FindDescendants<Border>(bodyGrid)
+                    .Where(border => border.Child is Border)
+                    .Where(border => Grid.GetRow(border) == 0)
+                    .ToList();
+
+                Assert.True(bodyGrid.ColumnDefinitions.Count >= 8);
+                Assert.Equal(new[] { 2, 3 }, assignmentBorders.Select(Grid.GetColumn).Order().ToArray());
+                Assert.All(assignmentBorders, border =>
+                {
+                    Assert.Equal(HorizontalAlignment.Stretch, border.HorizontalAlignment);
+                    Assert.Equal(VerticalAlignment.Stretch, border.VerticalAlignment);
+                });
+            }
+            finally
+            {
+                Window.GetWindow(view)?.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void TimetableGridChip_PreservesMultiHourRowSpan()
+    {
+        RunSta(() =>
+        {
+            EnsureApplicationResources();
+
+            var vm = new TimetableGridViewModel();
+            vm.Render(
+                new[]
+                {
+                    new SolutionAssignment("TWO", 0, 1, "R1"),
+                    new SolutionAssignment("TWO", 0, 2, "R1"),
+                    new SolutionAssignment("THREE", 1, 6, "R2"),
+                    new SolutionAssignment("THREE", 1, 7, "R2"),
+                    new SolutionAssignment("THREE", 1, 8, "R2"),
+                },
+                new[]
+                {
+                    new Course { Id = "TWO", Name = "2시간수업", Grade = 2, Section = 1, HoursPerWeek = 2 },
+                    new Course { Id = "THREE", Name = "3시간수업", Grade = 3, Section = 1, HoursPerWeek = 3 },
+                },
+                rooms: new[]
+                {
+                    new Room { Id = "R1", Name = "101호" },
+                    new Room { Id = "R2", Name = "102호" },
+                });
+
+            var view = ShowGrid(vm);
+            try
+            {
+                var rowSpans = FindDescendants<Border>(view)
+                    .Select(Grid.GetRowSpan)
+                    .ToList();
+
+                Assert.Contains(2, rowSpans);
+                Assert.Contains(3, rowSpans);
+            }
+            finally
+            {
+                Window.GetWindow(view)?.Close();
+            }
+        });
+    }
+
     private static void RunSta(Action action)
     {
         Exception? error = null;
@@ -99,6 +194,23 @@ public class ResultsViewTests
             };
             app.InitializeComponent();
         }
+    }
+
+    private static TimetableGridControl ShowGrid(TimetableGridViewModel vm)
+    {
+        var view = new TimetableGridControl { DataContext = vm };
+        var window = new Window
+        {
+            Width = 900,
+            Height = 700,
+            Content = view,
+            ShowInTaskbar = false,
+            WindowStyle = WindowStyle.None,
+        };
+
+        window.Show();
+        view.UpdateLayout();
+        return view;
     }
 
     private static List<T> FindDescendants<T>(DependencyObject root)

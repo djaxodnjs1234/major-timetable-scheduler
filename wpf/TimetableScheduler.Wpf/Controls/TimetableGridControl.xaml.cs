@@ -49,8 +49,16 @@ public partial class TimetableGridControl : UserControl
 
     private void Rebuild()
     {
+        HeaderGrid.Children.Clear();
+        HeaderGrid.ColumnDefinitions.Clear();
         BodyGrid.Children.Clear();
+        BodyGrid.ColumnDefinitions.Clear();
         if (DataContext is not TimetableGridViewModel vm) return;
+
+        var layout = BuildParallelLayout(vm);
+        BuildColumns(HeaderGrid, layout.DayWidths);
+        BuildColumns(BodyGrid, layout.DayWidths);
+        BuildHeader(layout);
 
         // Row labels (period + time)
         for (int p = 1; p <= 9; p++)
@@ -60,7 +68,7 @@ public partial class TimetableGridControl : UserControl
             BodyGrid.Children.Add(MakeLabel(label, row, 0, HeaderBg));
             BodyGrid.Children.Add(MakeLabel($"{8 + p:D2}:00", row, 1, HeaderBg));
         }
-        AddLunchBorder(row: 4, colSpan: 7);
+        AddLunchBorder(row: 4, colSpan: 2 + layout.DayWidths.Sum());
 
         // Track which cells are covered by RowSpan above
         var covered = new HashSet<(int Row, int Col)>();
@@ -70,62 +78,141 @@ public partial class TimetableGridControl : UserControl
             for (int p = 1; p <= 9; p++)
             {
                 int row = p - 1;
-                int col = 2 + d;
-                if (covered.Contains((row, col))) continue;
 
                 if (p == 5)
                 {
                     continue;
                 }
 
-                var cellVm = vm.CellAt(d, p);
-                if (cellVm.Items.Count == 0)
+                var placements = layout.Placements
+                    .Where(a => a.Day == d && a.Period == p)
+                    .ToList();
+                foreach (var placement in placements)
+                    AddAssignmentBorder(placement, layout.DayStart[d]);
+
+                for (int sub = 0; sub < layout.DayWidths[d]; sub++)
                 {
-                    BodyGrid.Children.Add(MakeCell("", row, col, 1, EmptyBg, 0, FontWeights.Normal));
-                    continue;
+                    var subCol = layout.DayStart[d] + sub;
+                    if (covered.Contains((row, subCol)))
+                        continue;
+
+                    var placement = placements.FirstOrDefault(a => a.SubColumn == sub);
+                    if (placement != null)
+                    {
+                        for (int k = 1; k < placement.Assignment.RowSpan; k++)
+                            covered.Add((row + k, subCol));
+                        continue;
+                    }
+
+                    BodyGrid.Children.Add(MakeCell("", row, subCol, 1, EmptyBg, 0, FontWeights.Normal));
                 }
-
-                int maxRs = cellVm.Items.Max(a => a.RowSpan);
-                var assignmentHost = new Grid
-                {
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    VerticalAlignment = VerticalAlignment.Stretch,
-                };
-                for (int i = 0; i < cellVm.Items.Count; i++)
-                {
-                    assignmentHost.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-                    var a = cellVm.Items[i];
-                    var chip = UnifiedTimetableControl.MakeChipBorder(
-                        a,
-                        GradeToBrushConverter.BrushFor(a.Grade),
-                        crossLabel: null);
-                    chip.HorizontalAlignment = HorizontalAlignment.Stretch;
-                    chip.VerticalAlignment = VerticalAlignment.Stretch;
-                    Grid.SetRow(chip, i);
-                    assignmentHost.Children.Add(chip);
-                }
-
-                var border = new Border
-                {
-                    BorderBrush = CellBorder,
-                    BorderThickness = new Thickness(0.5),
-                    Background = EmptyBg,
-                    HorizontalAlignment = HorizontalAlignment.Stretch,
-                    VerticalAlignment = VerticalAlignment.Stretch,
-                    Child = assignmentHost,
-                };
-                Grid.SetRow(border, row);
-                Grid.SetColumn(border, col);
-                if (maxRs > 1) Grid.SetRowSpan(border, maxRs);
-                BodyGrid.Children.Add(border);
-
-                for (int k = 1; k < maxRs; k++)
-                    covered.Add((row + k, col));
             }
         }
 
-        for (int col = 2; col <= 6; col++)
-            AddDayBoundary(col);
+        foreach (var start in layout.DayStart)
+            AddDayBoundary(start);
+    }
+
+    private void BuildHeader(GridLayout layout)
+    {
+        HeaderGrid.Children.Add(MakeHeaderText("교시", 0, 1, 11));
+        HeaderGrid.Children.Add(MakeHeaderText("시간", 1, 1, 11));
+
+        for (var d = 0; d < 5; d++)
+        {
+            var dayText = MakeHeaderText(DayName(d), layout.DayStart[d], layout.DayWidths[d], 12);
+            HeaderGrid.Children.Add(dayText);
+            AddHeaderDayBoundary(layout.DayStart[d]);
+        }
+    }
+
+    private static TextBlock MakeHeaderText(string text, int col, int colSpan, double fontSize)
+    {
+        var block = new TextBlock
+        {
+            Text = text,
+            FontWeight = FontWeights.Bold,
+            FontSize = fontSize,
+            HorizontalAlignment = HorizontalAlignment.Center,
+            VerticalAlignment = VerticalAlignment.Center,
+            Padding = new Thickness(4),
+        };
+        Grid.SetColumn(block, col);
+        if (colSpan > 1) Grid.SetColumnSpan(block, colSpan);
+        return block;
+    }
+
+    private static void BuildColumns(Grid grid, IReadOnlyList<int> dayWidths)
+    {
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
+        grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
+        foreach (var width in dayWidths)
+            for (var i = 0; i < width; i++)
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 76 });
+    }
+
+    private GridLayout BuildParallelLayout(TimetableGridViewModel vm)
+    {
+        var placementsByDay = Enumerable.Range(0, 5).Select(_ => new List<AssignmentPlacement>()).ToList();
+        var dayWidths = Enumerable.Range(0, 5).Select(_ => 1).ToList();
+
+        for (var d = 0; d < 5; d++)
+        {
+            var active = new List<AssignmentPlacement>();
+            foreach (var cell in vm.Cells
+                         .Where(c => c.Day == d && c.IsOccupied)
+                         .OrderBy(c => c.Period))
+            {
+                active.RemoveAll(p => p.EndPeriod < cell.Period);
+                foreach (var assignment in cell.Items)
+                {
+                    var sub = 0;
+                    while (active.Any(p => p.SubColumn == sub && p.EndPeriod >= cell.Period))
+                        sub++;
+
+                    var placement = new AssignmentPlacement(d, cell.Period, sub, assignment);
+                    placementsByDay[d].Add(placement);
+                    active.Add(placement);
+                    dayWidths[d] = Math.Max(dayWidths[d], sub + 1);
+                }
+            }
+        }
+
+        var dayStart = new int[5];
+        var col = 2;
+        for (var d = 0; d < 5; d++)
+        {
+            dayStart[d] = col;
+            col += dayWidths[d];
+        }
+
+        return new GridLayout(dayWidths, dayStart, placementsByDay.SelectMany(p => p).ToList());
+    }
+
+    private void AddAssignmentBorder(AssignmentPlacement placement, int dayStart)
+    {
+        var chip = UnifiedTimetableControl.MakeChipBorder(
+            placement.Assignment,
+            GradeToBrushConverter.BrushFor(placement.Assignment.Grade),
+            crossLabel: null);
+        chip.HorizontalAlignment = HorizontalAlignment.Stretch;
+        chip.VerticalAlignment = VerticalAlignment.Stretch;
+
+        var border = new Border
+        {
+            BorderBrush = CellBorder,
+            BorderThickness = new Thickness(0.5),
+            Background = EmptyBg,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+            Child = chip,
+        };
+
+        Grid.SetRow(border, placement.Period - 1);
+        Grid.SetColumn(border, dayStart + placement.SubColumn);
+        if (placement.Assignment.RowSpan > 1)
+            Grid.SetRowSpan(border, placement.Assignment.RowSpan);
+        BodyGrid.Children.Add(border);
     }
 
     private static Border MakeLabel(string text, int row, int col, Brush bg)
@@ -208,4 +295,42 @@ public partial class TimetableGridControl : UserControl
         Panel.SetZIndex(border, 20);
         BodyGrid.Children.Add(border);
     }
+
+    private void AddHeaderDayBoundary(int col)
+    {
+        var border = new Border
+        {
+            BorderBrush = DayBoundaryBorder,
+            BorderThickness = new Thickness(1, 0, 0, 0),
+            Background = Brushes.Transparent,
+            IsHitTestVisible = false,
+        };
+        Grid.SetColumn(border, col);
+        Panel.SetZIndex(border, 20);
+        HeaderGrid.Children.Add(border);
+    }
+
+    private static string DayName(int day) => day switch
+    {
+        0 => "월",
+        1 => "화",
+        2 => "수",
+        3 => "목",
+        4 => "금",
+        _ => "",
+    };
+
+    private sealed record AssignmentPlacement(
+        int Day,
+        int Period,
+        int SubColumn,
+        CellAssignment Assignment)
+    {
+        public int EndPeriod => Period + Assignment.RowSpan - 1;
+    }
+
+    private sealed record GridLayout(
+        IReadOnlyList<int> DayWidths,
+        IReadOnlyList<int> DayStart,
+        IReadOnlyList<AssignmentPlacement> Placements);
 }
