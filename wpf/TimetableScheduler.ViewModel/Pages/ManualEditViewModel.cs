@@ -44,11 +44,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             || (CourseIdA == right && CourseIdB == left);
 
         public bool MatchesPair(ManualCrossAssignmentKey left, ManualCrossAssignmentKey right) =>
-            (SourceKey == left && TargetKey == right)
-            || (SourceKey == right && TargetKey == left);
+            (ManualCrossAssignmentMatches(SourceKey, left) && ManualCrossAssignmentMatches(TargetKey, right))
+            || (ManualCrossAssignmentMatches(SourceKey, right) && ManualCrossAssignmentMatches(TargetKey, left));
 
         public bool Contains(ManualCrossAssignmentKey key) =>
-            SourceKey == key || TargetKey == key;
+            ManualCrossAssignmentMatches(SourceKey, key) || ManualCrossAssignmentMatches(TargetKey, key);
 
         public bool Covers(string left, string right, int day, int period) =>
             CoversOrdered(SourceKey, TargetKey, left, right, day, period)
@@ -72,13 +72,26 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             period >= start && period < start + span;
     }
 
+    private static bool ManualCrossAssignmentMatches(
+        ManualCrossAssignmentKey left,
+        ManualCrossAssignmentKey right) =>
+        !string.IsNullOrWhiteSpace(left.AssignmentId) && !string.IsNullOrWhiteSpace(right.AssignmentId)
+            ? string.Equals(left.AssignmentId, right.AssignmentId, StringComparison.Ordinal)
+            : left.CourseId == right.CourseId
+                && left.Section == right.Section
+                && left.Day == right.Day
+                && left.Period == right.Period
+                && left.RowSpan == right.RowSpan
+                && left.RoomIdsKey == right.RoomIdsKey;
+
     public readonly record struct ManualCrossAssignmentKey(
         string CourseId,
         string Section,
         int Day,
         int Period,
         int RowSpan,
-        string RoomIdsKey);
+        string RoomIdsKey,
+        string AssignmentId = "");
 
     private readonly record struct CrossTargetStart(
         CellAssignment Assignment,
@@ -104,7 +117,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             day,
             period,
             assignment.RowSpan,
-            BuildRoomIdsKey(assignment.Rooms));
+            BuildRoomIdsKey(assignment.Rooms),
+            assignment.AssignmentId);
 
     private static ManualCrossAssignmentKey BuildManualCrossAssignmentKey(
         SolutionAssignment assignment,
@@ -116,7 +130,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             assignment.Day,
             assignment.Period,
             rowSpan,
-            BuildRoomIdsKey(new[] { assignment.RoomId }));
+            BuildRoomIdsKey(new[] { assignment.RoomId }),
+            assignment.AssignmentId);
 
     private static string BuildRoomIdsKey(IEnumerable<string> roomIds) =>
         string.Join("|", roomIds
@@ -173,6 +188,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         public List<SolutionAssignment> Assignments { get; init; } = new();
         public List<ManualCrossLink> CrossLinks { get; init; } = new();
+        public string? SelectedAssignmentId { get; init; }
+        public int? SelectedDay { get; init; }
+        public int? SelectedPeriod { get; init; }
+        public int? SelectedGrade { get; init; }
+        public int? SelectedSubColumnIdx { get; init; }
     }
 
     private readonly Stack<ManualEditSnapshot> _undoStack = new();
@@ -488,7 +508,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         _sessionData = SavedTimetableSnapshotResolver.Resolve(record.SnapshotJson);
         var assignments = record.Assignments
-            .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
+            .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
             .ToList();
         LoadCore(new RankedSolution(assignments, new SolutionScore(0, 0, 0, 0)));
         SaveName = record.Name;
@@ -532,7 +552,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         _lastIgnoredCrossLinkCount = 0;
         _ignoredSavedCrossLinkReasons.Clear();
         BaseSolution = solution;
-        _working = solution.Assignment.ToList();
+        _working = EnsureAssignmentIds(solution.Assignment);
         _workingCrossGroups = SessionCrossGroups
             .Select(g => new CrossGroup { Id = g.Id, BaseIds = g.BaseIds.ToList() })
             .ToList();
@@ -548,11 +568,128 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         StatusMessage = "수업 블록을 클릭한 뒤, 초록색 칸을 클릭해 이동하세요.";
     }
 
+    private List<SolutionAssignment> EnsureAssignmentIds(IReadOnlyList<SolutionAssignment> assignments)
+    {
+        var source = assignments.ToList();
+        var idsByIndex = new string[source.Count];
+        var courseKeys = source.Select(BuildAssignmentCourseIdentityKey).ToList();
+        var indexed = source
+            .Select((Assignment, Index) => new { Assignment, Index, CourseKey = courseKeys[Index] })
+            .ToList();
+
+        foreach (var group in indexed.GroupBy(x => (x.CourseKey, x.Assignment.Day)))
+        {
+            var byPeriod = group
+                .GroupBy(x => x.Assignment.Period)
+                .ToDictionary(
+                    g => g.Key,
+                    g => g.ToList());
+            var orderedPeriods = byPeriod.Keys.OrderBy(p => p).ToList();
+            var i = 0;
+            while (i < orderedPeriods.Count)
+            {
+                var start = orderedPeriods[i];
+                var roomSet = byPeriod[start]
+                    .Select(x => x.Assignment.RoomId)
+                    .Where(room => !string.IsNullOrWhiteSpace(room))
+                    .OrderBy(room => room, StringComparer.Ordinal)
+                    .ToList();
+                var maxLength = MaxOccurrenceLength(group.Key.CourseKey);
+                var j = i;
+                while (j + 1 < orderedPeriods.Count
+                    && orderedPeriods[j + 1] == orderedPeriods[j] + 1
+                    && j - i + 1 < maxLength
+                    && SameRooms(roomSet, byPeriod[orderedPeriods[j + 1]].Select(x => x.Assignment.RoomId)))
+                {
+                    j++;
+                }
+
+                var periods = orderedPeriods.Skip(i).Take(j - i + 1).ToHashSet();
+                var rows = group
+                    .Where(x => periods.Contains(x.Assignment.Period)
+                        && roomSet.Contains(x.Assignment.RoomId, StringComparer.Ordinal))
+                    .ToList();
+                var existingIds = rows
+                    .Select(x => x.Assignment.AssignmentId)
+                    .Where(id => !string.IsNullOrWhiteSpace(id))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+                var id = existingIds.Count == 1
+                    ? existingIds[0]
+                    : BuildGeneratedAssignmentId(group.Key.CourseKey, group.Key.Day, start, roomSet);
+                foreach (var row in rows)
+                    idsByIndex[row.Index] = id;
+
+                i = j + 1;
+            }
+        }
+
+        return source
+            .Select((a, index) => new SolutionAssignment(
+                a.CourseId,
+                a.Day,
+                a.Period,
+                a.RoomId,
+                string.IsNullOrWhiteSpace(idsByIndex[index]) ? a.AssignmentId : idsByIndex[index]))
+            .ToList();
+
+        static bool SameRooms(IReadOnlyList<string> left, IEnumerable<string> right) =>
+            left.SequenceEqual(
+                right
+                    .Where(room => !string.IsNullOrWhiteSpace(room))
+                    .OrderBy(room => room, StringComparer.Ordinal),
+                StringComparer.Ordinal);
+    }
+
+    private string BuildAssignmentCourseIdentityKey(SolutionAssignment assignment)
+    {
+        var candidates = SessionCourses
+            .Select((Course, Index) => new { Course, Index })
+            .Where(c => c.Course.Id == assignment.CourseId)
+            .ToList();
+        if (candidates.Count == 0)
+            return string.Join("\u001f", assignment.CourseId, assignment.RoomId);
+        if (candidates.Count == 1)
+            return CourseIdentityKey(candidates[0].Course, candidates[0].Index);
+
+        var roomId = NormalizeRoomId(assignment.RoomId);
+        var byFixedRoom = candidates
+            .Where(c => c.Course.FixedRooms.Any(room => string.Equals(NormalizeRoomId(room), roomId, StringComparison.Ordinal)))
+            .ToList();
+        if (byFixedRoom.Count == 1)
+            return CourseIdentityKey(byFixedRoom[0].Course, byFixedRoom[0].Index);
+
+        return string.Join("\u001f", assignment.CourseId, "room", roomId);
+    }
+
+    private int MaxOccurrenceLength(string courseIdentityKey)
+    {
+        var course = SessionCourses
+            .Select((Course, Index) => new { Course, Index })
+            .FirstOrDefault(c => CourseIdentityKey(c.Course, c.Index) == courseIdentityKey)
+            ?.Course;
+        if (course == null)
+            return 1;
+        if (course.BlockStructure.Count > 0)
+            return Math.Max(1, course.BlockStructure.Max());
+        return course.HoursPerWeek > 1 ? course.HoursPerWeek : 1;
+    }
+
+    private static string CourseIdentityKey(Course course, int index) =>
+        string.Join("\u001f", course.Id, course.Section, course.ProfessorId, course.Name, index);
+
+    private static string BuildGeneratedAssignmentId(
+        string courseIdentityKey,
+        int day,
+        int startPeriod,
+        IReadOnlyList<string> rooms) =>
+        string.Join("\u001f", "occ", courseIdentityKey, day, startPeriod, BuildRoomIdsKey(rooms));
+
     public void LoadFromSavedTimetable(SavedTimetableRecord timetable)
     {
         _sessionData = SavedTimetableSnapshotResolver.Resolve(timetable.SnapshotJson);
         var assignments = timetable.Assignments
-            .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
+            .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
             .ToList();
 
         _isRestoringSavedTimetable = true;
@@ -562,8 +699,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         _lastCrossCleanupSkipReason = "";
         try
         {
-            BaseSolution = new RankedSolution(assignments, new SolutionScore(0, 0, 0, 0));
-            _working = assignments;
+            _working = EnsureAssignmentIds(assignments);
+            BaseSolution = new RankedSolution(_working.ToList(), new SolutionScore(0, 0, 0, 0));
             _workingCrossGroups = SessionCrossGroups
                 .Select(g => new CrossGroup { Id = g.Id, BaseIds = g.BaseIds.ToList() })
                 .ToList();
@@ -614,9 +751,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
         if (SelectedAssignment != null && assignment == null)
         {
-            var selectedCourseId = SelectedAssignment.CourseId;
+            var selectedKey = BuildManualCrossAssignmentKey(SelectedAssignment, SelectedDay ?? day, SelectedPeriod ?? period);
             if (TryMoveSelectedTo(day, period, grade, subColumnIdx))
-                RemoveCrossForCourse(selectedCourseId, "빈 칸 이동으로 기존 크로스가 해제되었습니다.", recordUndo: false);
+                RemoveCrossForAssignment(selectedKey, "빈 칸 이동으로 기존 크로스가 해제되었습니다.", recordUndo: false);
             return;
         }
 
@@ -630,13 +767,6 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 selectedDay,
                 selectedPeriod))
         {
-            if (HasOccupiedTargetRangeConflict(SelectedAssignment, selectedDay, selectedPeriod, day, period, grade, subColumnIdx))
-            {
-                StatusMessage = BlockRangeOverlapBlockedReason;
-                Grid.SetEditState(_selectedGridCell, BuildMoveStates(SelectedAssignment, selectedDay, selectedPeriod));
-                return;
-            }
-
             SelectCell(day, period, grade, subColumnIdx, assignment);
             return;
         }
@@ -681,12 +811,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return Exit(CrossHoverState.Hidden("수업 정보를 확인할 수 없습니다."), "course-resolve-failed");
         var selectedKey = BuildManualCrossAssignmentKey(SelectedAssignment, selectedDay, selectedPeriod);
         var targetKey = BuildManualCrossAssignmentKey(target, day, period);
-        if (selectedKey == targetKey)
+        if (ManualCrossAssignmentMatches(selectedKey, targetKey))
             return Exit(CrossHoverState.Hidden("현재 선택한 수업입니다."), "same-assignment-key");
         if (IsAlreadyCrossed(selectedKey, targetKey))
             return Exit(CrossHoverState.Hidden("이미 크로스가 설정된 수업입니다."), "already-crossed-pair");
-        if (IsAssignmentAlreadyCrossed(selectedKey)
-            || IsAssignmentAlreadyCrossed(targetKey))
+        var selectedExistingLink = FindCrossLinkContaining(selectedKey);
+        var targetExistingLink = FindCrossLinkContaining(targetKey);
+        if (targetExistingLink != null && !ReferenceEquals(selectedExistingLink, targetExistingLink))
             return Exit(CrossHoverState.Hidden("이미 다른 수업과 크로스된 과목입니다. 크로스는 두 과목끼리만 설정할 수 있습니다."), "assignment-already-crossed");
         if (RequiresSameCourseAssignmentConflictCheck(SelectedAssignment, target))
         {
@@ -743,12 +874,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return Exit(CrossHoverState.Hidden("수업 정보를 확인할 수 없습니다."), "course-resolve-failed");
         var sourceKey = BuildManualCrossAssignmentKey(source, sourceDay, sourcePeriod);
         var targetKey = BuildManualCrossAssignmentKey(target, targetDay, targetPeriod);
-        if (sourceKey == targetKey)
+        if (ManualCrossAssignmentMatches(sourceKey, targetKey))
             return Exit(CrossHoverState.Hidden("현재 선택한 수업입니다."), "same-assignment-key");
         if (IsAlreadyCrossed(sourceKey, targetKey))
             return Exit(CrossHoverState.Hidden("이미 크로스가 설정된 수업입니다."), "already-crossed-pair");
-        if (IsAssignmentAlreadyCrossed(sourceKey)
-            || IsAssignmentAlreadyCrossed(targetKey))
+        var sourceExistingLink = FindCrossLinkContaining(sourceKey);
+        var targetExistingLink = FindCrossLinkContaining(targetKey);
+        if (targetExistingLink != null && !ReferenceEquals(sourceExistingLink, targetExistingLink))
             return Exit(CrossHoverState.Hidden("이미 다른 수업과 크로스된 과목입니다. 크로스는 두 과목끼리만 설정할 수 있습니다."), "assignment-already-crossed");
         if (RequiresSameCourseAssignmentConflictCheck(source, target))
         {
@@ -1103,7 +1235,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         foreach (var i in FindWorkingAssignmentsForRoomChange(candidate, cid, day, period, SelectedAssignment.RowSpan, oldRoomId))
         {
             var a = candidate[i];
-            candidate[i] = new SolutionAssignment(cid, day, a.Period, replacementRoomId);
+            candidate[i] = new SolutionAssignment(cid, day, a.Period, replacementRoomId, a.AssignmentId);
             changed++;
         }
 
@@ -1224,7 +1356,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private void ClearSelection()
     {
         if (SelectedAssignment != null)
-            RemoveCrossForCourse(SelectedAssignment.CourseId, null);
+            RemoveCrossForAssignment(BuildManualCrossAssignmentKey(SelectedAssignment, SelectedDay ?? 0, SelectedPeriod ?? 0), null);
         ClearSelectionCore();
         StatusMessage = "선택이 해제되었습니다.";
     }
@@ -1306,7 +1438,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     [RelayCommand(CanExecute = nameof(CanExport))]
     private void ExportXlsx(string path)
     {
-        var rows = _working.Select(a => new TimetableAssignmentRow(a.CourseId, a.Day, a.Period, a.RoomId)).ToList();
+        var rows = _working.Select(a => new TimetableAssignmentRow(a.CourseId, a.Day, a.Period, a.RoomId, a.AssignmentId)).ToList();
         var name = string.IsNullOrWhiteSpace(SaveName) ? "시간표" : SaveName.Trim();
         FormattedTimetableExporter.Export(name, rows, SessionCourses, SessionProfessors, path, SessionRooms);
     }
@@ -1351,7 +1483,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         PushUndoSnapshot(snapshot);
         var warning = GetSoftWarning(targetDay, targetPeriod);
         StatusMessage = removedLinks > 0
-            ? $"{movedCourseName} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시. 수업 또는 학년 조건 변경으로 크로스 관계가 해제되었습니다."
+            ? $"{movedCourseName} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시. 기존 크로스가 해제되었습니다."
             : warning == null
             ? $"{movedCourseName} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시"
             : $"{movedCourseName} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시. {warning}";
@@ -1382,7 +1514,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var snapshot = CaptureSnapshot();
         var selectedCourseName = CourseSectionDisplayName(SelectedAssignment);
         var targetCourseName = CourseSectionDisplayName(target);
-        var candidate = BuildSwappedCandidate(SelectedAssignment, selectedDay, selectedPeriod, target, targetDay, targetPeriod);
+        if (!TryBuildSwappedCandidate(SelectedAssignment, selectedDay, selectedPeriod, target, targetDay, targetPeriod, out var candidate, out var candidateReason))
+        {
+            reason = candidateReason;
+            return false;
+        }
         var newConflicts = DetectNewConflicts(_working, candidate)
             .Concat(BuildSwapSoftWarnings(SelectedAssignment, selectedDay, selectedPeriod, target, targetDay, targetPeriod))
             .ToList();
@@ -1398,7 +1534,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         PushUndoSnapshot(snapshot);
         var removedLinks = RemoveInvalidCrossesAfterMove();
         StatusMessage = $"{selectedCourseName} ↔ {targetCourseName} 위치를 교환했습니다."
-            + (removedLinks > 0 ? " 수업 또는 학년 조건 변경으로 크로스 관계가 해제되었습니다." : "");
+            + (removedLinks > 0 ? " 기존 크로스가 해제되었습니다." : "");
         ClearSelectionCore();
         return true;
     }
@@ -1447,10 +1583,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         int targetDay,
         int targetPeriod)
     {
-        if (selected.CourseId == target.CourseId
-            && selectedDay == targetDay
-            && selectedPeriod == targetPeriod
-            && selected.Rooms.SequenceEqual(target.Rooms))
+        if (IsSameSwapAssignment(selected, target)
+            || (selected.CourseId == target.CourseId
+                && selectedDay == targetDay
+                && selectedPeriod == targetPeriod
+                && selected.Rooms.SequenceEqual(target.Rooms)))
             return "현재 선택한 수업입니다.";
         if (selected.Grade != target.Grade)
             return "같은 학년 수업끼리만 교환할 수 있습니다.";
@@ -1471,7 +1608,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (selectedAtTarget.Concat(targetAtSelected).Contains(Constants.LunchPeriod))
             return "점심시간에는 수업을 배정할 수 없습니다.";
 
-        var candidate = BuildSwappedCandidate(selected, selectedDay, selectedPeriod, target, targetDay, targetPeriod);
+        if (!TryBuildSwappedCandidate(selected, selectedDay, selectedPeriod, target, targetDay, targetPeriod, out var candidate, out var candidateReason))
+            return candidateReason;
         if (WouldCreateOneHourAboveMultiHourPattern(candidate, new[] { selected.CourseId, target.CourseId }))
             return OneHourAboveTwoHourBlockedReason;
 
@@ -1483,24 +1621,33 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private static int GetSwapBlockDuration(CellAssignment assignment) => assignment.RowSpan;
 
-    private List<SolutionAssignment> BuildSwappedCandidate(
+    private static bool IsSameSwapAssignment(CellAssignment selected, CellAssignment target) =>
+        !string.IsNullOrWhiteSpace(selected.AssignmentId)
+        && string.Equals(selected.AssignmentId, target.AssignmentId, StringComparison.Ordinal);
+
+    private bool TryBuildSwappedCandidate(
         CellAssignment selected,
         int selectedDay,
         int selectedPeriod,
         CellAssignment target,
         int targetDay,
-        int targetPeriod)
+        int targetPeriod,
+        out List<SolutionAssignment> candidate,
+        out string reason)
     {
-        var selectedAssignments = _working
-            .Where(a => IsSameMovingAssignment(a, selected, selectedDay, selectedPeriod))
-            .OrderBy(a => a.Period)
-            .ToList();
-        var targetAssignments = _working
-            .Where(a => IsSameMovingAssignment(a, target, targetDay, targetPeriod))
-            .OrderBy(a => a.Period)
-            .ToList();
+        candidate = _working.ToList();
+        reason = "";
+        if (IsSameSwapAssignment(selected, target))
+        {
+            reason = "현재 선택한 수업입니다.";
+            return false;
+        }
+        if (!TryGetMovingAssignments(selected, selectedDay, selectedPeriod, out var selectedAssignments, out reason))
+            return false;
+        if (!TryGetMovingAssignments(target, targetDay, targetPeriod, out var targetAssignments, out reason))
+            return false;
 
-        var candidate = _working
+        candidate = _working
             .Where(a => !IsSameMovingAssignment(a, selected, selectedDay, selectedPeriod)
                 && !IsSameMovingAssignment(a, target, targetDay, targetPeriod))
             .ToList();
@@ -1508,15 +1655,15 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         foreach (var a in selectedAssignments.DistinctBy(a => a.Period))
         {
             var newPeriod = targetPeriod + (a.Period - selectedPeriod);
-            candidate.Add(new SolutionAssignment(a.CourseId, targetDay, newPeriod, a.RoomId));
+            candidate.Add(new SolutionAssignment(a.CourseId, targetDay, newPeriod, a.RoomId, a.AssignmentId));
         }
         foreach (var a in targetAssignments.DistinctBy(a => a.Period))
         {
             var newPeriod = selectedPeriod + (a.Period - targetPeriod);
-            candidate.Add(new SolutionAssignment(a.CourseId, selectedDay, newPeriod, a.RoomId));
+            candidate.Add(new SolutionAssignment(a.CourseId, selectedDay, newPeriod, a.RoomId, a.AssignmentId));
         }
 
-        return candidate;
+        return true;
     }
 
     private bool TryForceMoveSelectedTo(
@@ -1547,12 +1694,18 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
         var snapshot = CaptureSnapshot();
         var movedCourseId = SelectedAssignment.CourseId;
-        var candidate = BuildMovedCandidate(
-            SelectedAssignment,
-            SelectedDay.Value,
-            SelectedPeriod.Value,
-            targetDay,
-            targetPeriod);
+        if (!TryBuildMovedCandidate(
+                SelectedAssignment,
+                SelectedDay.Value,
+                SelectedPeriod.Value,
+                targetDay,
+                targetPeriod,
+                out var candidate,
+                out var identityReason))
+        {
+            StatusMessage = identityReason;
+            return false;
+        }
         var conflictsAfterMove = DetectConflicts(candidate).ToList();
         var dialogItems = conflictsAfterMove.Count > 0
             ? conflictsAfterMove
@@ -1667,7 +1820,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return false;
         }
 
-        candidate = BuildMovedCandidate(assignment, sourceDay, sourcePeriod, targetDay, targetPeriod);
+        if (!TryBuildMovedCandidate(assignment, sourceDay, sourcePeriod, targetDay, targetPeriod, out candidate, out var identityReason))
+        {
+            reasons = new[] { identityReason };
+            return false;
+        }
         return true;
     }
 
@@ -1685,7 +1842,12 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (targetGrade != assignment.Grade)
             return new[] { "선택한 수업은 같은 학년 열 안에서만 이동할 수 있습니다." };
 
-        var course = ResolveCourseForCellAssignment(assignment) ?? SessionCourses.First(c => c.Id == assignment.CourseId);
+        if (_working.Count > 0 && !TryGetMovingAssignments(assignment, sourceDay, sourcePeriod, out _, out var identityReason))
+            return new[] { identityReason };
+
+        var course = ResolveCourseForCellAssignment(assignment);
+        if (course == null)
+            return new[] { "선택한 수업 정보를 정확히 확인할 수 없습니다." };
         if (course.IsFixed)
             return new[] { "고정된 수업은 이동할 수 없습니다." };
 
@@ -1730,7 +1892,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return new[] { BlockRangeOverlapBlockedReason };
         }
 
-        var candidate = BuildMovedCandidate(assignment, sourceDay, sourcePeriod, targetDay, targetPeriod);
+        if (!TryBuildMovedCandidate(assignment, sourceDay, sourcePeriod, targetDay, targetPeriod, out var candidate, out var candidateReason))
+            return new[] { candidateReason };
 
         var baselineKeys = ConflictKeys(DetectConflicts(_working));
         var detectedConflicts = DetectConflicts(candidate)
@@ -1878,11 +2041,16 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private static bool IsSameManualCrossAssignmentIgnoringSlot(
         ManualCrossAssignmentKey left,
-        ManualCrossAssignmentKey right) =>
-        left.CourseId == right.CourseId
+        ManualCrossAssignmentKey right)
+    {
+        if (!string.IsNullOrWhiteSpace(left.AssignmentId) && !string.IsNullOrWhiteSpace(right.AssignmentId))
+            return string.Equals(left.AssignmentId, right.AssignmentId, StringComparison.Ordinal);
+
+        return left.CourseId == right.CourseId
         && left.Section == right.Section
         && left.RowSpan == right.RowSpan
         && left.RoomIdsKey == right.RoomIdsKey;
+    }
 
     private static string GetSectionConflictBaseId(ConflictItem conflict)
     {
@@ -1919,11 +2087,15 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         int targetGrade,
         int targetSubColumnIdx)
     {
+        if (_working.Count == 0)
+            return false;
+
         if (WouldCreatePatternAroundTarget(assignment, targetDay, targetPeriod, targetGrade))
             return true;
 
         var baselinePatterns = GetOneHourAboveMultiHourPatterns(RenderManualCells(_working));
-        var candidate = BuildMovedCandidate(assignment, sourceDay, sourcePeriod, targetDay, targetPeriod);
+        if (!TryBuildMovedCandidate(assignment, sourceDay, sourcePeriod, targetDay, targetPeriod, out var candidate, out _))
+            return true;
         var candidatePatterns = GetOneHourAboveMultiHourPatterns(RenderManualCells(candidate));
 
         return candidatePatterns.Any(p =>
@@ -2160,19 +2332,24 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .Count > 0;
     }
 
-    private List<SolutionAssignment> BuildMovedCandidate(
+    private bool TryBuildMovedCandidate(
         CellAssignment assignment,
         int sourceDay,
         int sourcePeriod,
         int targetDay,
-        int targetPeriod)
+        int targetPeriod,
+        out List<SolutionAssignment> candidate,
+        out string reason)
     {
-        var movingAssignments = _working
-            .Where(a => IsSameMovingAssignment(a, assignment, sourceDay, sourcePeriod))
-            .OrderBy(a => a.Period)
-            .ToList();
+        candidate = _working.ToList();
+        reason = "";
+        if (_working.Count == 0)
+            return true;
 
-        var candidate = _working
+        if (!TryGetMovingAssignments(assignment, sourceDay, sourcePeriod, out var movingAssignments, out reason))
+            return false;
+
+        candidate = _working
             .Where(a => !IsSameMovingAssignment(a, assignment, sourceDay, sourcePeriod))
             .ToList();
 
@@ -2181,8 +2358,55 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 a.CourseId,
                 targetDay,
                 targetPeriod + (a.Period - sourcePeriod),
-                a.RoomId));
-        return candidate;
+                a.RoomId,
+                a.AssignmentId));
+        return true;
+    }
+
+    private bool TryGetMovingAssignments(
+        CellAssignment assignment,
+        int sourceDay,
+        int sourcePeriod,
+        out List<SolutionAssignment> movingAssignments,
+        out string reason)
+    {
+        reason = "";
+        movingAssignments = _working
+            .Where(a => IsSameMovingAssignment(a, assignment, sourceDay, sourcePeriod))
+            .OrderBy(a => a.Period)
+            .ThenBy(a => a.RoomId, StringComparer.Ordinal)
+            .ToList();
+
+        if (movingAssignments.Count == 0)
+        {
+            reason = "선택한 수업 assignment를 작업본에서 찾지 못했습니다.";
+            return false;
+        }
+
+        var sourcePeriods = GetOccupiedPeriods(sourcePeriod, assignment.RowSpan).ToHashSet();
+        var assignmentRooms = assignment.Rooms
+            .Where(room => !string.IsNullOrWhiteSpace(room))
+            .Select(room => room.Trim())
+            .ToHashSet(StringComparer.Ordinal);
+        var validRows = movingAssignments.All(a =>
+            a.CourseId == assignment.CourseId
+            && a.Day == sourceDay
+            && sourcePeriods.Contains(a.Period)
+            && assignmentRooms.Contains(a.RoomId));
+        if (!validRows)
+        {
+            reason = "선택한 수업 identity가 둘 이상의 위치를 가리킵니다.";
+            return false;
+        }
+
+        var expectedRows = Math.Max(1, assignment.RowSpan) * Math.Max(1, assignmentRooms.Count);
+        if (movingAssignments.Count != expectedRows)
+        {
+            reason = "선택한 수업 블록의 assignment 수가 화면 블록 정보와 일치하지 않습니다.";
+            return false;
+        }
+
+        return true;
     }
 
     private static bool IsSameMovingAssignment(
@@ -2191,6 +2415,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         int sourceDay,
         int sourcePeriod)
     {
+        if (!string.IsNullOrWhiteSpace(assignment.AssignmentId))
+            return string.Equals(existing.AssignmentId, assignment.AssignmentId, StringComparison.Ordinal);
+
         if (existing.CourseId != assignment.CourseId || existing.Day != sourceDay) return false;
         if (existing.Period < sourcePeriod || existing.Period >= sourcePeriod + assignment.RowSpan) return false;
         return assignment.Rooms.Contains(existing.RoomId);
@@ -2270,6 +2497,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         ConflictType.CourseUnavailableRoomViolation => BuildCourseUnavailableRoomDescription(conflict),
         ConflictType.ProfAllowedRoomViolation => BuildProfessorRoomRestrictionDescription(conflict),
         ConflictType.ProfRoomInconsistent => BuildProfessorRoomInconsistentDescription(conflict),
+        ConflictType.BlockStartViolation => BuildBlockStartViolationDescription(conflict),
         ConflictType.SameCourseSameDayConflict => BuildSameCourseSameDayDescription(conflict),
         _ => SanitizeConflictDescription(conflict.Description),
     };
@@ -2294,10 +2522,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private string BuildRoomConflictDescription(ConflictItem conflict)
     {
-        var conflictingRooms = _working
+        var conflictAssignments = ConflictAssignmentsInSlot(conflict);
+        var conflictingRooms = conflictAssignments
             .Where(a => a.Day == conflict.Day && a.Period == conflict.Period)
             .GroupBy(a => a.RoomId)
-            .Where(g => g.Select(a => a.CourseId).Distinct().Count() > 1)
+            .Where(g => g.Select(AssignmentConflictIdentity).Distinct(StringComparer.Ordinal).Count() > 1)
             .ToList();
         var group = conflictingRooms.FirstOrDefault();
         if (group == null)
@@ -2307,12 +2536,15 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .Select(a => BuildConflictCourseLabel(ResolveCourseForAssignment(a), a.CourseId))
             .Distinct(StringComparer.Ordinal)
             .ToList();
-        return $"{RoomDisplayName(group.Key)} / {FormatConflictTimeLabel(conflict.Day, conflict.Period, conflict.Period)} / {string.Join(", ", courses)}";
+        return FormatSelectedAndRelatedConflict(
+            conflict,
+            $"{RoomDisplayName(group.Key)} / {FormatConflictTimeLabel(conflict.Day, conflict.Period, conflict.Period)}",
+            group.ToList());
     }
 
     private string BuildProfessorConflictDescription(ConflictItem conflict)
     {
-        var slot = _working
+        var slot = ConflictAssignmentsInSlot(conflict)
             .Where(a => a.Day == conflict.Day && a.Period == conflict.Period)
             .Select(a => (Assignment: a, Course: ResolveCourseForAssignment(a)))
             .Where(x => x.Course != null)
@@ -2330,7 +2562,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
 
         var conflictGroup = professorGroups
-            .FirstOrDefault(g => g.Value.Select(x => x.Course.Id).Distinct().Count() > 1);
+            .FirstOrDefault(g => g.Value.Select(x => AssignmentConflictIdentity(x.Assignment)).Distinct(StringComparer.Ordinal).Count() > 1);
         if (string.IsNullOrWhiteSpace(conflictGroup.Key))
             return SanitizeConflictDescription(conflict.Description);
 
@@ -2338,7 +2570,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .Select(x => BuildConflictCourseLabel(x.Course, x.Assignment.CourseId))
             .Distinct(StringComparer.Ordinal)
             .ToList();
-        return $"{ProfessorDisplayName(conflictGroup.Key)} / {FormatConflictTimeLabel(conflict.Day, conflict.Period, conflict.Period)} / {string.Join(", ", courses)}";
+        return FormatSelectedAndRelatedConflict(
+            conflict,
+            $"{ProfessorDisplayName(conflictGroup.Key)} / {FormatConflictTimeLabel(conflict.Day, conflict.Period, conflict.Period)}",
+            conflictGroup.Value.Select(x => x.Assignment).ToList());
     }
 
     private string BuildProfessorUnavailableDescription(ConflictItem conflict)
@@ -2351,7 +2586,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var professorName = course == null
             ? ProfessorDisplayName(assignment.CourseId)
             : string.Join(", ", DomainHelpers.CourseProfIds(course).Select(ProfessorDisplayName));
-        return $"{BuildConflictCourseLabel(course, assignment.CourseId)} / {professorName} / {FormatConflictTimeLabel(conflict.Day, conflict.Period, conflict.Period)}";
+        return FormatSelectedAndRelatedConflict(
+            conflict,
+            $"{BuildConflictCourseLabel(course, assignment.CourseId)} / {professorName} / {FormatConflictTimeLabel(conflict.Day, conflict.Period, conflict.Period)}");
     }
 
     private string BuildFixedRoomViolationDescription(ConflictItem conflict)
@@ -2365,7 +2602,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return SanitizeConflictDescription(conflict.Description);
 
         var allowedRooms = string.Join(", ", course.FixedRooms.Select(RoomDisplayName));
-        return $"{BuildConflictCourseLabel(course, assignment.CourseId)}은 지정된 강의실만 사용할 수 있습니다. 지정 강의실: {allowedRooms}. 현재 강의실: {RoomDisplayName(assignment.RoomId)}";
+        return FormatSelectedAndRelatedConflict(
+            conflict,
+            $"{BuildConflictCourseLabel(course, assignment.CourseId)}은 지정된 강의실만 사용할 수 있습니다. 지정 강의실: {allowedRooms}. 현재 강의실: {RoomDisplayName(assignment.RoomId)}");
     }
 
     private string BuildCourseUnavailableRoomDescription(ConflictItem conflict)
@@ -2379,7 +2618,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return SanitizeConflictDescription(conflict.Description);
 
         var unavailableRooms = string.Join(", ", course.UnavailableRooms.Select(RoomDisplayName));
-        return $"{BuildConflictCourseLabel(course, assignment.CourseId)}은 사용할 수 없는 강의실에 배정되었습니다. 불가 강의실: {unavailableRooms}. 현재 강의실: {RoomDisplayName(assignment.RoomId)}";
+        return FormatSelectedAndRelatedConflict(
+            conflict,
+            $"{BuildConflictCourseLabel(course, assignment.CourseId)}은 사용할 수 없는 강의실에 배정되었습니다. 불가 강의실: {unavailableRooms}. 현재 강의실: {RoomDisplayName(assignment.RoomId)}");
     }
 
     private string BuildProfessorRoomRestrictionDescription(ConflictItem conflict)
@@ -2390,7 +2631,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
         var (assignment, course) = representative.Value;
         var professorId = course?.ProfessorId ?? "";
-        return $"{BuildConflictCourseLabel(course, assignment.CourseId)}은 {ProfessorDisplayName(professorId)} 교수님의 사용할 수 없는 강의실에 배정되었습니다. 현재 강의실: {RoomDisplayName(assignment.RoomId)}";
+        return FormatSelectedAndRelatedConflict(
+            conflict,
+            $"{BuildConflictCourseLabel(course, assignment.CourseId)}은 {ProfessorDisplayName(professorId)} 교수님의 사용할 수 없는 강의실에 배정되었습니다. 현재 강의실: {RoomDisplayName(assignment.RoomId)}");
     }
 
     private string BuildProfessorRoomInconsistentDescription(ConflictItem conflict)
@@ -2405,6 +2648,33 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             : $"교수 강의실 일관성: {description}";
     }
 
+    private string BuildBlockStartViolationDescription(ConflictItem conflict)
+    {
+        // HC-19 설명에는 허용 시작 교시(예: 1, 3, 6, 8)가 포함된다.
+        // 숫자 교수/강의실 ID를 이름으로 치환하는 일반 정제 로직을 거치면
+        // 교시 숫자가 사람 이름으로 바뀔 수 있으므로 원문에서 제약 코드만 제거한다.
+        var description = StripConstraintCodeForDisplay(conflict.Description ?? "").Trim();
+        if (!string.IsNullOrWhiteSpace(description))
+            return description;
+
+        var representative = ResolveRepresentativeConflictAssignment(conflict);
+        if (representative == null)
+            return "수업 블록은 해당 교시에 시작할 수 없습니다.";
+
+        var (assignment, course) = representative.Value;
+        var courseLabel = BuildConflictCourseLabel(course, assignment.CourseId);
+        var rowSpan = Grid.Cells
+            .FirstOrDefault(c =>
+                !string.IsNullOrWhiteSpace(assignment.AssignmentId)
+                && string.Equals(
+                    c.Assignment.AssignmentId,
+                    assignment.AssignmentId,
+                    StringComparison.Ordinal))
+            ?.Assignment.RowSpan ?? 1;
+
+        return $"{courseLabel}의 {Math.Max(1, rowSpan)}시간 수업은 해당 교시에 시작할 수 없습니다.";
+    }
+
     private string BuildSameCourseSameDayDescription(ConflictItem conflict)
     {
         var representative = ResolveRepresentativeConflictAssignment(conflict);
@@ -2412,8 +2682,14 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return SanitizeConflictDescription(conflict.Description);
 
         var (assignment, course) = representative.Value;
-        var range = ResolveConflictPeriodRange(assignment, conflict);
-        return $"{BuildConflictCourseLabel(course, assignment.CourseId)}이 같은 요일에 중복 배치되었습니다. 시간: {FormatConflictTimeLabel(conflict.Day, range.Start, range.End)}";
+        var conflictAssignments = conflict.Assignments is { Count: > 0 }
+            ? conflict.Assignments
+            : Array.Empty<SolutionAssignment>();
+        var range = ResolveConflictPeriodRange(assignment, conflict, conflictAssignments);
+        return FormatSelectedAndRelatedConflict(
+            conflict,
+            $"{BuildConflictCourseLabel(course, assignment.CourseId)}이 같은 요일에 중복 배치되었습니다. 시간: {FormatConflictTimeLabel(conflict.Day, range.Start, range.End)}",
+            conflictAssignments);
     }
 
     private string SanitizeConflictDescription(string? description)
@@ -2421,10 +2697,25 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var value = StripConstraintCodeForDisplay(description ?? "");
         foreach (var course in SessionCourses)
             value = value.Replace($"({course.Id})", "", StringComparison.Ordinal);
-        foreach (var professor in SessionProfessors.Concat(_workspace.Professors))
+
+        // 숫자로만 된 ID는 교시, 학년, 시간, 인원 등의 일반 숫자와 구분할 수 없다.
+        // 일반 설명 정제에서는 치환하지 않고, 교수/강의실 전용 설명 생성 함수에서 표시한다.
+        foreach (var professor in SessionProfessors
+            .Concat(_workspace.Professors)
+            .Where(p => !string.IsNullOrWhiteSpace(p.Id) && !p.Id.All(char.IsDigit))
+            .DistinctBy(p => p.Id))
+        {
             value = ReplaceToken(value, professor.Id, ProfessorDisplayName(professor.Id));
-        foreach (var room in SessionRooms.Concat(_workspace.Rooms))
+        }
+
+        foreach (var room in SessionRooms
+            .Concat(_workspace.Rooms)
+            .Where(r => !string.IsNullOrWhiteSpace(r.Id) && !r.Id.All(char.IsDigit))
+            .DistinctBy(r => r.Id))
+        {
             value = ReplaceToken(value, room.Id, RoomDisplayName(room.Id));
+        }
+
         return value.Trim();
     }
 
@@ -2476,9 +2767,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private (SolutionAssignment Assignment, Course? Course)? ResolveRepresentativeConflictAssignment(ConflictItem conflict)
     {
-        var slotAssignments = _working
-            .Where(a => a.Day == conflict.Day && a.Period == conflict.Period)
-            .ToList();
+        var slotAssignments = conflict.Assignments is { Count: > 0 }
+            ? conflict.Assignments.ToList()
+            : _working
+                .Where(a => a.Day == conflict.Day && a.Period == conflict.Period)
+                .ToList();
         if (slotAssignments.Count == 0)
             return null;
 
@@ -2507,18 +2800,81 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
 
         var assignment = slotAssignments
-            .OrderBy(a => a.CourseId, StringComparer.Ordinal)
+            .OrderByDescending(IsSelectedConflictAssignment)
+            .ThenBy(a => a.CourseId, StringComparer.Ordinal)
             .ThenBy(a => a.RoomId, StringComparer.Ordinal)
             .First();
         return (assignment, ResolveCourseForAssignment(assignment));
     }
 
-    private (int Start, int End) ResolveConflictPeriodRange(SolutionAssignment assignment, ConflictItem conflict)
+    private IReadOnlyList<SolutionAssignment> ConflictAssignmentsInSlot(ConflictItem conflict)
     {
-        var periods = _working
-            .Where(a => a.CourseId == assignment.CourseId
-                && a.Day == assignment.Day
-                && a.RoomId == assignment.RoomId)
+        if (conflict.Assignments is { Count: > 0 })
+            return conflict.Assignments;
+
+        return _working
+            .Where(a => a.Day == conflict.Day && a.Period == conflict.Period)
+            .ToList();
+    }
+
+    private string FormatSelectedAndRelatedConflict(
+        ConflictItem conflict,
+        string baseDescription,
+        IReadOnlyList<SolutionAssignment>? assignments = null)
+    {
+        var rows = assignments is { Count: > 0 }
+            ? assignments
+            : ConflictAssignmentsInSlot(conflict);
+        var selected = rows.FirstOrDefault(IsSelectedConflictAssignment);
+        if (selected == default)
+            return baseDescription;
+
+        var related = rows
+            .Where(a => !IsSameAssignmentIdentity(a, selected))
+            .DistinctBy(AssignmentConflictIdentity)
+            .Select(a => BuildConflictCourseLabel(ResolveCourseForAssignment(a), a.CourseId))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        var selectedLabel = BuildConflictCourseLabel(ResolveCourseForAssignment(selected), selected.CourseId);
+        return related.Count == 0
+            ? $"선택 수업: {selectedLabel}. {baseDescription}"
+            : $"선택: {selectedLabel}. 충돌: {string.Join(", ", related)}. {baseDescription}";
+    }
+
+    private bool IsSelectedConflictAssignment(SolutionAssignment assignment) =>
+        SelectedAssignment != null
+        && IsSameAssignmentIdentity(assignment, SelectedAssignment);
+
+    private bool IsSameAssignmentIdentity(SolutionAssignment assignment, CellAssignment selected)
+    {
+        if (!string.IsNullOrWhiteSpace(selected.AssignmentId))
+            return string.Equals(assignment.AssignmentId, selected.AssignmentId, StringComparison.Ordinal);
+        return assignment.CourseId == selected.CourseId
+            && SelectedDay is int selectedDay
+            && SelectedPeriod is int selectedPeriod
+            && assignment.Day == selectedDay
+            && assignment.Period == selectedPeriod
+            && selected.Rooms.Contains(assignment.RoomId);
+    }
+
+    private static bool IsSameAssignmentIdentity(SolutionAssignment left, SolutionAssignment right) =>
+        string.Equals(AssignmentConflictIdentity(left), AssignmentConflictIdentity(right), StringComparison.Ordinal);
+
+    private static string AssignmentConflictIdentity(SolutionAssignment assignment) =>
+        string.IsNullOrWhiteSpace(assignment.AssignmentId)
+            ? string.Join("\u001f", assignment.CourseId, assignment.Day, assignment.Period, assignment.RoomId)
+            : assignment.AssignmentId;
+
+    private (int Start, int End) ResolveConflictPeriodRange(
+        SolutionAssignment assignment,
+        ConflictItem conflict,
+        IReadOnlyList<SolutionAssignment>? scopedAssignments = null)
+    {
+        var source = scopedAssignments is { Count: > 0 }
+            ? scopedAssignments
+            : _working;
+        var periods = source
+            .Where(a => IsSameConflictRangeAssignment(a, assignment))
             .Select(a => a.Period)
             .Distinct()
             .ToHashSet();
@@ -2534,6 +2890,15 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             end++;
 
         return (start, end);
+    }
+
+    private static bool IsSameConflictRangeAssignment(SolutionAssignment candidate, SolutionAssignment assignment)
+    {
+        if (!string.IsNullOrWhiteSpace(assignment.AssignmentId))
+            return string.Equals(candidate.AssignmentId, assignment.AssignmentId, StringComparison.Ordinal);
+        return candidate.CourseId == assignment.CourseId
+            && candidate.Day == assignment.Day
+            && candidate.RoomId == assignment.RoomId;
     }
 
     private static string BuildConflictCourseLabel(Course? course, string courseId)
@@ -2698,7 +3063,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var candidates = SessionCourses
             .Where(c => c.Id == assignment.CourseId)
             .ToList();
-        if (candidates.Count <= 1) return candidates.FirstOrDefault();
+        if (candidates.Count == 0) return null;
+        if (candidates.Count == 1) return candidates[0];
 
         var bySection = candidates
             .Where(c => c.Section == assignment.Section)
@@ -2720,9 +3086,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .Where(c => c.FixedRooms.Any(room => assignmentRooms.Contains(NormalizeRoomId(room))))
             .ToList();
         if (byFixedRoom.Count == 1) return byFixedRoom[0];
-        if (byFixedRoom.Count > 0) candidates = byFixedRoom;
 
-        return candidates.FirstOrDefault();
+        return null;
     }
 
     private Course? ResolveCourseForAssignment(SolutionAssignment assignment)
@@ -2737,9 +3102,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .Where(c => c.FixedRooms.Any(room => string.Equals(NormalizeRoomId(room), roomId, StringComparison.Ordinal)))
             .ToList();
         if (byFixedRoom.Count == 1) return byFixedRoom[0];
-        if (byFixedRoom.Count > 0) candidates = byFixedRoom;
 
-        return candidates.FirstOrDefault();
+        return null;
     }
 
     private string RoomDisplayName(string id) =>
@@ -2927,7 +3291,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
         var selectedKey = BuildManualCrossAssignmentKey(selected, SelectedDay!.Value, selectedPeriod);
         var targetKey = BuildManualCrossAssignmentKey(target, day, targetPeriod);
-        if (selectedKey == targetKey)
+        if (ManualCrossAssignmentMatches(selectedKey, targetKey))
         {
             reason = "같은 수업끼리는 크로스를 만들 수 없습니다.";
             return false;
@@ -2937,7 +3301,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             reason = "이미 크로스가 설정된 수업입니다.";
             return false;
         }
-        if (IsAssignmentAlreadyCrossed(selectedKey) || IsAssignmentAlreadyCrossed(targetKey))
+        var replacedLink = FindCrossLinkContaining(selectedKey);
+        var targetExistingLink = FindCrossLinkContaining(targetKey);
+        if (targetExistingLink != null && !ReferenceEquals(replacedLink, targetExistingLink))
         {
             reason = "이미 다른 수업과 크로스된 과목입니다. 크로스는 두 과목끼리만 설정할 수 있습니다.";
             return false;
@@ -2949,7 +3315,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
 
         var reasons = ValidateCrossMoveWithProvisionalLink(
-            selected, target, day, targetPeriod, targetGrade, targetSubColumnIdx, null);
+            selected, target, day, targetPeriod, targetGrade, targetSubColumnIdx, replacedLink);
         if (reasons.Count > 0)
         {
             reason = reasons[0];
@@ -2967,6 +3333,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             BuildManualCrossAssignmentKey(selected, day, targetPeriod),
             targetKey);
         var snapshot = CaptureSnapshot();
+        if (replacedLink != null)
+            _workingCrossLinks.Remove(replacedLink);
         var linkAdded = AddManualCrossLinkIfMissing(provisionalLink);
 
         if (!TryMoveAssignment(
@@ -2986,12 +3354,22 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 && moveReasons.Count > 0
                 && moveReasons.All(r => r.Contains("교수 강의실 일관성", StringComparison.Ordinal)))
             {
-                candidate = BuildMovedCandidate(selected, SelectedDay!.Value, selectedPeriod, day, targetPeriod);
+                if (!TryBuildMovedCandidate(selected, SelectedDay!.Value, selectedPeriod, day, targetPeriod, out candidate, out var identityReason))
+                {
+                    if (linkAdded)
+                        _workingCrossLinks.Remove(provisionalLink);
+                    if (replacedLink != null)
+                        _workingCrossLinks.Add(replacedLink);
+                    reason = identityReason;
+                    return false;
+                }
             }
             else
             {
                 if (linkAdded)
                     _workingCrossLinks.Remove(provisionalLink);
+                if (replacedLink != null)
+                    _workingCrossLinks.Add(replacedLink);
                 reason = moveReasons.FirstOrDefault() ?? "크로스 이동을 완료할 수 없습니다.";
                 return false;
             }
@@ -3019,6 +3397,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private bool IsAssignmentAlreadyCrossed(ManualCrossAssignmentKey key) =>
         _workingCrossLinks.Any(l => l.Contains(key));
+
+    private ManualCrossLink? FindCrossLinkContaining(ManualCrossAssignmentKey key) =>
+        _workingCrossLinks.FirstOrDefault(l => l.Contains(key));
 
     private bool AddManualCrossLinkIfMissing(ManualCrossLink link)
     {
@@ -3068,7 +3449,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private bool IsCrossPair(CellAssignment left, CellAssignment right) =>
         left.Grade == right.Grade
-        && _workingCrossLinks.Any(l => l.MatchesPair(left.CourseId, right.CourseId));
+        && _workingCrossLinks.Any(l => LinkMatchesPairIgnoringSlot(
+            l,
+            BuildManualCrossAssignmentKey(left, day: 0, period: 0),
+            BuildManualCrossAssignmentKey(right, day: 0, period: 0)));
 
     private bool CanShareSlotByCross(CellAssignment left, CellAssignment right)
     {
@@ -3164,10 +3548,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
     }
 
-    private void RemoveCrossForCourse(string courseId, string? statusMessage, bool recordUndo = true)
+    private void RemoveCrossForAssignment(ManualCrossAssignmentKey key, string? statusMessage, bool recordUndo = true)
     {
         var snapshot = recordUndo ? CaptureSnapshot() : null;
-        var removed = _workingCrossLinks.RemoveAll(l => l.CourseIdA == courseId || l.CourseIdB == courseId);
+        var removed = _workingCrossLinks.RemoveAll(l => l.Contains(key));
         if (removed == 0) return;
         if (snapshot != null)
             PushUndoSnapshot(snapshot);
@@ -3187,7 +3571,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private ManualEditSnapshot CaptureSnapshot() => new()
     {
         Assignments = _working
-            .Select(a => new SolutionAssignment(a.CourseId, a.Day, a.Period, a.RoomId))
+            .Select(a => new SolutionAssignment(a.CourseId, a.Day, a.Period, a.RoomId, a.AssignmentId))
             .ToList(),
         CrossLinks = _workingCrossLinks
             .Select(l => new ManualCrossLink(
@@ -3201,6 +3585,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 l.SourceKey,
                 l.TargetKey))
             .ToList(),
+        SelectedAssignmentId = SelectedAssignment?.AssignmentId,
+        SelectedDay = SelectedDay,
+        SelectedPeriod = SelectedPeriod,
+        SelectedGrade = _selectedGridCell?.Grade,
+        SelectedSubColumnIdx = _selectedGridCell?.SubColumnIdx,
     };
 
     private void PushUndoSnapshot() => PushUndoSnapshot(CaptureSnapshot());
@@ -3215,11 +3604,45 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private void RestoreSnapshot(ManualEditSnapshot snapshot)
     {
         _working = snapshot.Assignments
-            .Select(a => new SolutionAssignment(a.CourseId, a.Day, a.Period, a.RoomId))
+            .Select(a => new SolutionAssignment(a.CourseId, a.Day, a.Period, a.RoomId, a.AssignmentId))
             .ToList();
         RestoreCrossLinks(snapshot.CrossLinks);
         Rerender();
-        ClearSelectionCore();
+        RestoreSelectionFromSnapshot(snapshot);
+    }
+
+    private void RestoreSelectionFromSnapshot(ManualEditSnapshot snapshot)
+    {
+        if (string.IsNullOrWhiteSpace(snapshot.SelectedAssignmentId))
+        {
+            ClearSelectionCore();
+            return;
+        }
+
+        var cell = Grid.Cells.FirstOrDefault(c =>
+            string.Equals(c.Assignment.AssignmentId, snapshot.SelectedAssignmentId, StringComparison.Ordinal)
+            && (snapshot.SelectedDay == null || c.Day == snapshot.SelectedDay)
+            && (snapshot.SelectedPeriod == null || c.Period == snapshot.SelectedPeriod)
+            && (snapshot.SelectedGrade == null || c.Grade == snapshot.SelectedGrade)
+            && (snapshot.SelectedSubColumnIdx == null || c.SubColumnIdx == snapshot.SelectedSubColumnIdx))
+            ?? Grid.Cells.FirstOrDefault(c =>
+                string.Equals(c.Assignment.AssignmentId, snapshot.SelectedAssignmentId, StringComparison.Ordinal));
+        if (cell == null)
+        {
+            ClearSelectionCore();
+            return;
+        }
+
+        SelectedDay = cell.Day;
+        SelectedPeriod = cell.Period;
+        SelectedAssignment = cell.Assignment;
+        _selectedGridCell = new UnifiedCellKey(cell.Day, cell.Period, cell.Grade, cell.SubColumnIdx);
+        NewRoomId = cell.Assignment.Rooms.FirstOrDefault() ?? "";
+        SelectedOldRoomId = NewRoomId;
+        SelectedReplacementRoomId = ReplacementRoomCandidates.FirstOrDefault() ?? "";
+        OnPropertyChanged(nameof(SelectedSlotDisplayText));
+        NotifySelectionDetailChanged();
+        Grid.SetEditState(_selectedGridCell, BuildMoveStates(cell.Assignment, cell.Day, cell.Period));
     }
 
     private void RestoreResetBaseline()
@@ -3227,7 +3650,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (_resetBaselineSnapshot == null) return;
 
         _working = _resetBaselineSnapshot.Assignments
-            .Select(a => new SolutionAssignment(a.CourseId, a.Day, a.Period, a.RoomId))
+            .Select(a => new SolutionAssignment(a.CourseId, a.Day, a.Period, a.RoomId, a.AssignmentId))
             .ToList();
         RestoreCrossLinks(_resetBaselineSnapshot.CrossLinks);
     }
@@ -3241,31 +3664,39 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private bool IsCrossLinkStillValid(ManualCrossLink link)
     {
-        var c1 = SessionCourses.FirstOrDefault(c => c.Id == link.CourseIdA);
-        var c2 = SessionCourses.FirstOrDefault(c => c.Id == link.CourseIdB);
+        var c1 = FindCourseForManualCrossKey(link.SourceKey);
+        var c2 = FindCourseForManualCrossKey(link.TargetKey);
         return c1 != null
             && c2 != null
             && c1.Grade == c2.Grade
-            && _working.Any(a => a.CourseId == link.CourseIdA)
-            && _working.Any(a => a.CourseId == link.CourseIdB);
+            && HasWorkingAssignmentForManualCrossKey(link.SourceKey)
+            && HasWorkingAssignmentForManualCrossKey(link.TargetKey);
     }
+
+    private bool HasWorkingAssignmentForManualCrossKey(ManualCrossAssignmentKey key) =>
+        !string.IsNullOrWhiteSpace(key.AssignmentId)
+            ? _working.Any(a => string.Equals(a.AssignmentId, key.AssignmentId, StringComparison.Ordinal))
+            : _working.Any(a => a.CourseId == key.CourseId
+                && a.Day == key.Day
+                && a.Period == key.Period
+                && (string.IsNullOrWhiteSpace(key.RoomIdsKey) || key.RoomIdsKey.Split('|').Contains(a.RoomId)));
 
     private IReadOnlyDictionary<string, string> BuildCrossLinkLabels()
     {
         var labels = new Dictionary<string, List<string>>();
         foreach (var link in _workingCrossLinks)
         {
-            AddLabel(link.SourceKey, link.CourseIdB);
-            AddLabel(link.TargetKey, link.CourseIdA);
+            AddLabel(link.SourceKey, link.TargetKey);
+            AddLabel(link.TargetKey, link.SourceKey);
         }
         return labels.ToDictionary(kv => kv.Key, kv => string.Join(", ", kv.Value));
 
-        void AddLabel(ManualCrossAssignmentKey sourceKey, string targetId)
+        void AddLabel(ManualCrossAssignmentKey sourceKey, ManualCrossAssignmentKey targetKey)
         {
             var sourceDisplayKey = ToManualCrossDisplayKey(sourceKey);
             if (!labels.TryGetValue(sourceDisplayKey, out var list))
                 labels[sourceDisplayKey] = list = new List<string>();
-            list.Add(CourseDisplayName(targetId));
+            list.Add(CourseDisplayName(targetKey));
         }
     }
 
@@ -3297,7 +3728,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 link.TargetKey.Day,
                 link.TargetKey.Period,
                 RepresentativeRoomId(link.TargetKey),
-                ManualCrossPolicyType));
+                ManualCrossPolicyType,
+                link.SourceKey.AssignmentId,
+                link.TargetKey.AssignmentId));
         }
 
         return rows;
@@ -3323,7 +3756,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 continue;
             }
 
-            if (sourceEndpoint.Value.Key == targetEndpoint.Value.Key)
+            if (ManualCrossAssignmentMatches(sourceEndpoint.Value.Key, targetEndpoint.Value.Key))
             {
                 _ignoredSavedCrossLinkReasons.Add($"{row.SourceCourseId} ↔ {row.TargetCourseId}: 같은 수업끼리는 Cross pair를 만들 수 없습니다.");
                 ignored++;
@@ -3368,6 +3801,17 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var day = source ? row.SourceDay : row.TargetDay;
         var period = source ? row.SourcePeriod : row.TargetPeriod;
         var roomId = (source ? row.SourceRoomId : row.TargetRoomId).Trim();
+        var assignmentId = (source ? row.SourceAssignmentId : row.TargetAssignmentId) ?? "";
+
+        if (!string.IsNullOrWhiteSpace(assignmentId))
+        {
+            var byId = _working
+                .Where(a => string.Equals(a.AssignmentId, assignmentId, StringComparison.Ordinal))
+                .ToList();
+            if (byId.Count == 1)
+                return BuildRestoredEndpoint(byId[0], section, rowSpan: GetWorkingRowSpan(byId[0]), new[] { byId[0].RoomId });
+            return null;
+        }
 
         var exact = _working
             .Where(a => a.CourseId == courseId
@@ -3375,10 +3819,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 && a.Period == period
                 && string.Equals(a.RoomId, roomId, StringComparison.Ordinal)
                 && CourseSectionMatches(a.CourseId, section))
-            .Select(a => (SolutionAssignment?)a)
-            .FirstOrDefault();
-        if (exact != null)
-            return BuildRestoredEndpoint(exact.Value, section, rowSpan: GetWorkingRowSpan(courseId, day, period), new[] { exact.Value.RoomId });
+            .ToList();
+        if (exact.Count == 1)
+            return BuildRestoredEndpoint(exact[0], section, rowSpan: GetWorkingRowSpan(exact[0]), new[] { exact[0].RoomId });
+        if (exact.Count > 1)
+            return null;
 
         var slot = _working
             .Where(a => a.CourseId == courseId
@@ -3388,10 +3833,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .ToList();
         if (slot.Count > 0 && (string.IsNullOrWhiteSpace(roomId) || slot.Any(a => a.RoomId == roomId)))
         {
-            var restored = string.IsNullOrWhiteSpace(roomId)
-                ? slot.OrderBy(a => a.RoomId, StringComparer.Ordinal).First()
-                : slot.First(a => a.RoomId == roomId);
-            return BuildRestoredEndpoint(restored, section, GetWorkingRowSpan(courseId, day, period), new[] { restored.RoomId });
+            var slotCandidates = string.IsNullOrWhiteSpace(roomId)
+                ? slot
+                : slot.Where(a => string.Equals(a.RoomId, roomId, StringComparison.Ordinal)).ToList();
+            if (slotCandidates.Count != 1)
+                return null;
+            var restored = slotCandidates[0];
+            return BuildRestoredEndpoint(restored, section, GetWorkingRowSpan(restored), new[] { restored.RoomId });
         }
 
         var candidates = BuildRestoredCandidateBlocks(courseId);
@@ -3423,9 +3871,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             assignment.Day,
             assignment.Period,
             rowSpan,
-            BuildRoomIdsKey(endpointRoomIds));
+            BuildRoomIdsKey(endpointRoomIds),
+            assignment.AssignmentId);
         return new RestoredCrossEndpoint(assignment, key);
     }
+
+    private int GetWorkingRowSpan(SolutionAssignment assignment) =>
+        GetWorkingRowSpan(assignment.CourseId, assignment.Day, assignment.Period);
 
     private List<(SolutionAssignment Assignment, int RowSpan)> BuildRestoredCandidateBlocks(string courseId)
     {
@@ -3475,7 +3927,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     }
 
     private string FormatCrossLink(ManualCrossLink link) =>
-        $"{CourseDisplayName(link.CourseIdA)} ↔ {CourseDisplayName(link.CourseIdB)}";
+        $"{CourseDisplayName(link.SourceKey)} ↔ {CourseDisplayName(link.TargetKey)}";
+
+    private string CourseDisplayName(ManualCrossAssignmentKey key) =>
+        CourseSectionDisplayName(FindCourseForManualCrossKey(key), key.CourseId);
 
     private string CourseDisplayName(string id) =>
         CourseSectionDisplayName(SessionCourses.FirstOrDefault(c => c.Id == id), id);
@@ -3519,9 +3974,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .Where(c => c.FixedRooms.Any(room => keyRooms.Contains(NormalizeRoomId(room))))
             .ToList();
         if (byFixedRoom.Count == 1) return byFixedRoom[0];
-        if (byFixedRoom.Count > 0) candidates = byFixedRoom;
 
-        return candidates.FirstOrDefault();
+        return null;
     }
 
     private IReadOnlyDictionary<string, int> BuildCrossParallelOrder()
@@ -3562,15 +4016,22 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var selectedKey = BuildManualCrossAssignmentKey(selected, selectedDay, selectedPeriod);
         var targetKey = BuildManualCrossAssignmentKey(target, targetDay, targetPeriod);
         var targetPeriods = GetOccupiedPeriods(targetPeriod, selected.RowSpan);
-        var distinctTargetKeys = Grid.Cells
+        var targetKeys = Grid.Cells
             .Where(c => c.Day == targetDay
                 && c.Grade == targetGrade
                 && targetPeriods.Any(p => p >= c.Period && p < c.Period + c.Assignment.RowSpan))
             .Select(c => BuildManualCrossAssignmentKey(c.Assignment, c.Day, c.Period))
-            .Where(key => key != selectedKey)
-            .Distinct()
             .ToList();
-        if (distinctTargetKeys.Any(key => key != targetKey))
+        var distinctTargetKeys = new List<ManualCrossAssignmentKey>();
+        foreach (var key in targetKeys)
+        {
+            if (ManualCrossAssignmentMatches(key, selectedKey))
+                continue;
+            if (distinctTargetKeys.Any(existing => ManualCrossAssignmentMatches(existing, key)))
+                continue;
+            distinctTargetKeys.Add(key);
+        }
+        if (distinctTargetKeys.Any(key => !ManualCrossAssignmentMatches(key, targetKey)))
             return new[] { "3개 이상의 과목 크로스는 허용되지 않습니다." };
 
         var provisional = new ManualCrossLink(
@@ -3669,7 +4130,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         var leftKey = BuildManualCrossAssignmentKey(left, day: 0, period: 0);
         var rightKey = BuildManualCrossAssignmentKey(right, day: 0, period: 0);
-        return leftKey == rightKey;
+        return ManualCrossAssignmentMatches(leftKey, rightKey);
     }
 
     private UnifiedCellKey? FindGridCellKey(CellAssignment assignment, int day, int period, int grade)
@@ -3751,7 +4212,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private static string DayName(int d) => d switch
     {
-        0 => "월", 1 => "화", 2 => "수", 3 => "목", 4 => "금",
+        0 => "월",
+        1 => "화",
+        2 => "수",
+        3 => "목",
+        4 => "금",
         _ => "?"
     };
 }

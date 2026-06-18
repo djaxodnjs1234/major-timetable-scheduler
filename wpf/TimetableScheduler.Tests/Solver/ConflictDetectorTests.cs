@@ -63,6 +63,67 @@ public class ConflictDetectorTests
     }
 
     [Fact]
+    public void DuplicateCourseId_DifferentProfessorResolvedByRoom_DoesNotCreateFalseProfessorConflict()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "DUP", Name = "A", ProfessorId = "P1", Grade = 2, Section = 1, FixedRooms = new List<string> { "R1" } },
+            new() { Id = "DUP", Name = "B", ProfessorId = "P2", Grade = 3, Section = 2, FixedRooms = new List<string> { "R2" } },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("DUP", 0, 1, "R1", "a"),
+            new("DUP", 0, 1, "R2", "b"),
+        };
+
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+        var reversedConflicts = ConflictDetector.Detect(assignment, courses.AsEnumerable().Reverse().ToList());
+
+        Assert.DoesNotContain(conflicts, c => c.Type == ConflictType.ProfessorConflict);
+        Assert.DoesNotContain(reversedConflicts, c => c.Type == ConflictType.ProfessorConflict);
+    }
+
+    [Fact]
+    public void DuplicateCourseId_SameProfessorResolvedByRoom_DetectsRealProfessorConflict()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "DUP", Name = "A", ProfessorId = "P1", Grade = 2, Section = 1, FixedRooms = new List<string> { "R1" } },
+            new() { Id = "DUP", Name = "B", ProfessorId = "P1", Grade = 3, Section = 2, FixedRooms = new List<string> { "R2" } },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("DUP", 0, 1, "R1", "a"),
+            new("DUP", 0, 1, "R2", "b"),
+        };
+
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+
+        var professorConflict = Assert.Single(conflicts.Where(c => c.Type == ConflictType.ProfessorConflict));
+        Assert.Equal(2, professorConflict.Assignments?.Count);
+    }
+
+    [Fact]
+    public void DuplicateCourseId_DifferentSectionResolvedByRoom_DetectsSectionConflict()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "DUP", Name = "A", ProfessorId = "P1", Grade = 2, Section = 1, FixedRooms = new List<string> { "R1" } },
+            new() { Id = "DUP", Name = "B", ProfessorId = "P2", Grade = 2, Section = 2, FixedRooms = new List<string> { "R2" } },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("DUP", 0, 1, "R1", "a"),
+            new("DUP", 0, 1, "R2", "b"),
+        };
+
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+
+        var sectionConflict = Assert.Single(conflicts.Where(c => c.Type == ConflictType.SectionConflict));
+        Assert.Equal(2, sectionConflict.Assignments?.Count);
+    }
+
+    [Fact]
     public void LunchPeriod_DetectsConflict()
     {
         var courses = new List<Course> { new() { Id = "X", Name = "X" } };

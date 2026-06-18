@@ -88,7 +88,7 @@ public sealed class WorkspaceService
         AppData? snapshot = null)
     {
         var rows = assignments
-            .Select(a => new TimetableAssignmentRow(a.CourseId, a.Day, a.Period, a.RoomId))
+            .Select(a => new TimetableAssignmentRow(a.CourseId, a.Day, a.Period, a.RoomId, a.AssignmentId))
             .ToList();
         var snapshotJson = System.Text.Json.JsonSerializer.Serialize(snapshot ?? Snapshot());
         var record = new SavedTimetableRecord(

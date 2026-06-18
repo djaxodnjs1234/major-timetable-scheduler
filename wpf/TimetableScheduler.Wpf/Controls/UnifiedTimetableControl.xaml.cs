@@ -103,6 +103,28 @@ public partial class UnifiedTimetableControl : UserControl
     private HoverBadgeKind _activeBadgeKind;
     private bool _activeBadgeIsDrag;
 
+    internal bool HasActiveHoverBadgeForTests => _activeBadgeTarget != null;
+    internal bool HasDragSourceForTests => _dragSource != null;
+    internal void SetDragSourceForTests(CellClickedEventArgs source) => _dragSource = source;
+    internal bool ShowHoverBadgeForTests(string assignmentId, bool cross, bool swap)
+    {
+        var border = RootGrid.Children
+            .OfType<Border>()
+            .FirstOrDefault(b =>
+                b.Tag is ValueTuple<int, int, int, int, CellAssignment?> tag
+                && string.Equals(tag.Item5?.AssignmentId, assignmentId, StringComparison.Ordinal));
+        if (border == null || TryBuildCurrentArgs(border, allowEmpty: false) is not { } args)
+            return false;
+
+        RefreshCrossSwapBadges(
+            border,
+            args,
+            cross ? CrossHoverState.Available() : CrossHoverState.Hidden(),
+            swap ? SwapHoverState.Available() : SwapHoverState.Hidden(),
+            isDrag: false);
+        return true;
+    }
+
     public UnifiedTimetableControl()
     {
         InitializeComponent();
@@ -688,6 +710,12 @@ public partial class UnifiedTimetableControl : UserControl
         }
 
         var assignment = current.Assignment;
+        if (!string.IsNullOrWhiteSpace(assignment.AssignmentId)
+            || !string.IsNullOrWhiteSpace(args.Assignment.AssignmentId))
+        {
+            return string.Equals(assignment.AssignmentId, args.Assignment.AssignmentId, StringComparison.Ordinal);
+        }
+
         var result = assignment.CourseId == args.Assignment.CourseId
             && assignment.Section == args.Assignment.Section
             && assignment.ProfessorId == args.Assignment.ProfessorId
@@ -946,20 +974,34 @@ public partial class UnifiedTimetableControl : UserControl
 
     private void OnCrossBadgeClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button button
-            || !TryGetCurrentBadgeArgs(button, out var args))
-            return;
-        CrossAddRequested?.Invoke(this, args);
-        e.Handled = true;
+        try
+        {
+            if (sender is not Button button
+                || !TryGetCurrentBadgeArgs(button, out var args))
+                return;
+            CrossAddRequested?.Invoke(this, args);
+            e.Handled = true;
+        }
+        finally
+        {
+            ClearActiveBadge();
+        }
     }
 
     private void OnSwapBadgeClick(object sender, RoutedEventArgs e)
     {
-        if (sender is not Button button
-            || !TryGetCurrentBadgeArgs(button, out var args))
-            return;
-        SwapRequested?.Invoke(this, args);
-        e.Handled = true;
+        try
+        {
+            if (sender is not Button button
+                || !TryGetCurrentBadgeArgs(button, out var args))
+                return;
+            SwapRequested?.Invoke(this, args);
+            e.Handled = true;
+        }
+        finally
+        {
+            ClearActiveBadge();
+        }
     }
 
     private void OnCrossBadgeDragOver(object sender, DragEventArgs e)
@@ -1070,6 +1112,9 @@ public partial class UnifiedTimetableControl : UserControl
             && a.Period == b.Period
             && a.Grade == b.Grade
             && a.SubColumnIdx == b.SubColumnIdx
+            && (string.IsNullOrWhiteSpace(a.Assignment?.AssignmentId)
+                && string.IsNullOrWhiteSpace(b.Assignment?.AssignmentId)
+                || string.Equals(a.Assignment?.AssignmentId, b.Assignment?.AssignmentId, StringComparison.Ordinal))
             && a.Assignment?.CourseId == b.Assignment?.CourseId
             && a.Assignment?.Section == b.Assignment?.Section
             && a.Assignment?.RowSpan == b.Assignment?.RowSpan

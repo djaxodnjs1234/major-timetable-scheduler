@@ -649,7 +649,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         IsExistingMode = true;
         SelectedCategory = InputCategory.Course;
         _editBaseAssignments = record.Assignments
-            .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
+            .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
             .ToList();
         _editBaseManualCrossLinks = (record.ManualCrossLinks ?? Array.Empty<SavedManualCrossLinkRow>())
             .ToList();
