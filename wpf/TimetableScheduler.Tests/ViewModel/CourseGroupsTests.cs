@@ -67,6 +67,14 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void ConsiderRetakeStudents_DefaultsDisabled()
+    {
+        var vm = MakeVm();
+
+        Assert.False(vm.ConsiderRetakeStudents);
+    }
+
+    [Fact]
     public void NonFixed_TwoSections_ProducesOneGroupRow()
     {
         _workspace.AddCourse(MakeCourse("GA1004-01", 1));
@@ -321,9 +329,9 @@ public class CourseGroupsTests : IDisposable
     [Fact]
     public void GenerateBlockStructureOptions_UsesWeeklyHoursExamples()
     {
-        Assert.Equal(new[] { "1+1", "2" }, DataInputViewModel.GenerateBlockStructureOptions(2));
-        Assert.Equal(new[] { "1+2", "2+1", "3" }, DataInputViewModel.GenerateBlockStructureOptions(3));
-        Assert.Equal(new[] { "2+2", "3+1", "1+3", "4" }, DataInputViewModel.GenerateBlockStructureOptions(4));
+        Assert.Equal(new[] { "2" }, DataInputViewModel.GenerateBlockStructureOptions(2));
+        Assert.Equal(new[] { "1+2", "3" }, DataInputViewModel.GenerateBlockStructureOptions(3));
+        Assert.Equal(new[] { "2+2", "4" }, DataInputViewModel.GenerateBlockStructureOptions(4));
     }
 
     [Fact]
@@ -392,6 +400,57 @@ public class CourseGroupsTests : IDisposable
 
         Assert.False(item.Sections[0].IsFixed);
         Assert.Empty(item.Sections[0].FixedSlots);
+    }
+
+    [Fact]
+    public void CourseEdit_DoesNotMutateWorkspaceUntilSave()
+    {
+        var course = MakeCourse("GA1005-01", 1, isFixed: true);
+        course.FixedSlots = new List<TimeSlot> { new(0, 1), new(0, 2), new(1, 1) };
+        _workspace.AddCourse(course);
+
+        var vm = MakeVm();
+        var item = vm.CourseGroups.Single();
+
+        item.Sections[0].Grade = 4;
+        item.Sections[0].IsFixed = false;
+        item.Sections[0].FixedSlots.Clear();
+
+        Assert.Equal(2, _workspace.Courses.Single().Grade);
+        Assert.True(_workspace.Courses.Single().IsFixed);
+        Assert.NotEmpty(_workspace.Courses.Single().FixedSlots);
+
+        vm.SaveGroupCommand.Execute(item);
+
+        Assert.Equal(4, _workspace.Courses.Single().Grade);
+        Assert.False(_workspace.Courses.Single().IsFixed);
+        Assert.Empty(_workspace.Courses.Single().FixedSlots);
+    }
+
+    [Fact]
+    public void ProfessorAndRoomEdits_DoNotMutateWorkspaceUntilSave()
+    {
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Prof One" });
+        _workspace.AddRoom(new Room { Id = "R1", Name = "Room One", Capacity = 30 });
+
+        var vm = MakeVm();
+        var professor = vm.ProfessorItems.Single();
+        var room = vm.RoomItems.Single();
+
+        professor.Professor.UnavailableSlots.Add(new TimeSlot(0, 1));
+        room.Room.Capacity = 45;
+        room.Room.IsLab = true;
+
+        Assert.Empty(_workspace.Professors.Single().UnavailableSlots);
+        Assert.Equal(30, _workspace.Rooms.Single().Capacity);
+        Assert.False(_workspace.Rooms.Single().IsLab);
+
+        vm.SaveProfessorCommand.Execute(professor);
+        vm.SaveRoomCommand.Execute(room);
+
+        Assert.Equal(new TimeSlot(0, 1), _workspace.Professors.Single().UnavailableSlots.Single());
+        Assert.Equal(45, _workspace.Rooms.Single().Capacity);
+        Assert.True(_workspace.Rooms.Single().IsLab);
     }
 
     [Fact]

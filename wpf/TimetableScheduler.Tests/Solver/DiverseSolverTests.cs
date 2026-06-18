@@ -76,6 +76,46 @@ public class DiverseSolverTests
     }
 
     [Fact]
+    public void ConsiderRetakeStudents_Disabled_IgnoresRetakeConflicts()
+    {
+        var (courses, profs, rooms) = MakeFixedRetakeConflictSetup();
+        var retakes = new List<RetakeScenario>
+        {
+            new() { CurrentGrade = 2, RetakeBaseId = "M1" },
+        };
+        var opts = new DiverseSolverOptions
+        {
+            TotalSolutions = 1,
+            TimeLimitSec = 10,
+            PerSolveTimeSec = 1,
+            ConsiderRetakeStudents = false,
+        };
+
+        var result = DiverseSolver.Solve(courses, profs, rooms, opts, retakes: retakes);
+
+        Assert.True(result.Status is "OPTIMAL" or "FEASIBLE");
+        Assert.Single(result.Solutions);
+    }
+
+    [Fact]
+    public void ConsiderRetakeStudents_Enabled_DerivesRetakesAndBlocksRequiredMajorOverlap()
+    {
+        var (courses, profs, rooms) = MakeFixedRetakeConflictSetup();
+        var opts = new DiverseSolverOptions
+        {
+            TotalSolutions = 1,
+            TimeLimitSec = 10,
+            PerSolveTimeSec = 1,
+            ConsiderRetakeStudents = true,
+        };
+
+        var result = DiverseSolver.Solve(courses, profs, rooms, opts);
+
+        Assert.Equal("INFEASIBLE", result.Status);
+        Assert.Empty(result.Solutions);
+    }
+
+    [Fact]
     public void ProgressReportsReceivedFromBothPhases()
     {
         var (courses, profs, rooms) = MakeSetup();
@@ -99,6 +139,48 @@ public class DiverseSolverTests
         private readonly Action<T> _action;
         public SyncProgress(Action<T> action) => _action = action;
         public void Report(T value) => _action(value);
+    }
+
+    private static (List<Course>, List<Professor>, List<Room>) MakeFixedRetakeConflictSetup()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "M1-01",
+                Name = "Lower Required",
+                Grade = 1,
+                HoursPerWeek = 1,
+                CourseType = "전필",
+                ProfessorId = "P1",
+                FixedRooms = new List<string> { "R1" },
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1) },
+            },
+            new()
+            {
+                Id = "M2-01",
+                Name = "Current Required",
+                Grade = 2,
+                HoursPerWeek = 1,
+                CourseType = "전필",
+                ProfessorId = "P2",
+                FixedRooms = new List<string> { "R2" },
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1) },
+            },
+        };
+        var profs = new List<Professor>
+        {
+            new() { Id = "P1", Name = "P1" },
+            new() { Id = "P2", Name = "P2" },
+        };
+        var rooms = new List<Room>
+        {
+            new() { Id = "R1", Name = "R1" },
+            new() { Id = "R2", Name = "R2" },
+        };
+        return (courses, profs, rooms);
     }
 
     [Fact]

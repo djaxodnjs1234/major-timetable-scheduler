@@ -516,6 +516,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private int perSolveTimeSec = new DiverseSolverOptions().PerSolveTimeSec;
 
     [ObservableProperty]
+    private bool considerRetakeStudents;
+
+    [ObservableProperty]
     private bool useSc01 = true;
 
     [ObservableProperty]
@@ -745,7 +748,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
         foreach (var g in byBase)
         {
-            var sections = g.OrderBy(c => c.Section).ToList();
+            var sections = g.OrderBy(c => c.Section).Select(CloneCourse).ToList();
 
             PromoteMissingSharedValues(sections);
             DetectProfessorConflict("RebuildCourseGroups", g.Key, sections);
@@ -832,6 +835,42 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private static string? FirstNonEmpty(IEnumerable<string> values) =>
         values.FirstOrDefault(value => !string.IsNullOrWhiteSpace(value));
 
+    private static Course CloneCourse(Course src) => new()
+    {
+        Id = src.Id,
+        Name = src.Name,
+        Grade = src.Grade,
+        HoursPerWeek = src.HoursPerWeek,
+        CourseType = src.CourseType,
+        ProfessorId = src.ProfessorId,
+        Section = src.Section,
+        Department = src.Department,
+        FixedRooms = new List<string>(src.FixedRooms),
+        UnavailableRooms = new List<string>(src.UnavailableRooms),
+        BlockStructure = new List<int>(src.BlockStructure),
+        IsFixed = src.IsFixed,
+        FixedSlots = new List<TimeSlot>(src.FixedSlots),
+        CoteachProfs = new List<string>(src.CoteachProfs),
+    };
+
+    private static Professor CloneProfessor(Professor src) => new()
+    {
+        Id = src.Id,
+        Name = src.Name,
+        UnavailableSlots = new List<TimeSlot>(src.UnavailableSlots),
+        AllowedRooms = new List<string>(src.AllowedRooms),
+        UnavailableRooms = new List<string>(src.UnavailableRooms),
+    };
+
+    private static Room CloneRoom(Room src) => new()
+    {
+        Id = src.Id,
+        Name = src.Name,
+        IsLab = src.IsLab,
+        Capacity = src.Capacity,
+        IsImportedFromExcel = src.IsImportedFromExcel,
+    };
+
     private void RebuildProfessorItems()
     {
         ProfessorItems.Clear();
@@ -843,11 +882,12 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
         foreach (var prof in _workspace.Professors.OrderBy(p => SortNumericFirst(p.Id)))
         {
+            var editProf = CloneProfessor(prof);
             ProfessorItems.Add(new ProfessorItem
             {
-                Professor = prof,
-                HeaderUnavailableSlots = FormatUnavailableSlots(prof.UnavailableSlots),
-                IsImportedFromExcel = importedProfIds.Contains(prof.Id),
+                Professor = editProf,
+                HeaderUnavailableSlots = FormatUnavailableSlots(editProf.UnavailableSlots),
+                IsImportedFromExcel = importedProfIds.Contains(editProf.Id),
             });
         }
     }
@@ -864,10 +904,12 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
         foreach (var room in _workspace.Rooms.OrderBy(r => SortNumericFirst(r.Id)))
         {
+            var editRoom = CloneRoom(room);
+            editRoom.IsImportedFromExcel = room.IsImportedFromExcel || importedRoomIds.Contains(room.Id);
             RoomItems.Add(new RoomItem
             {
-                Room = room,
-                IsImportedFromExcel = room.IsImportedFromExcel || importedRoomIds.Contains(room.Id),
+                Room = editRoom,
+                IsImportedFromExcel = editRoom.IsImportedFromExcel,
             });
         }
     }
@@ -1033,9 +1075,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public static IReadOnlyList<string> GenerateBlockStructureOptions(int weeklyHours) => weeklyHours switch
     {
         <= 1 => new[] { "1" },
-        2 => new[] { "1+1", "2" },
-        3 => new[] { "1+2", "2+1", "3" },
-        4 => new[] { "2+2", "3+1", "1+3", "4" },
+        2 => new[] { "2" },
+        3 => new[] { "1+2", "3" },
+        4 => new[] { "2+2", "4" },
         _ => new[] { weeklyHours.ToString() },
     };
 
@@ -1189,6 +1231,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 PerSolveTimeSec = UseAdvancedPerSolveTimeSec
                     ? Math.Max(1, PerSolveTimeSec)
                     : new DiverseSolverOptions().PerSolveTimeSec,
+                ConsiderRetakeStudents = ConsiderRetakeStudents,
                 UseSc01 = UseSc01,
                 UseSc02 = UseSc02,
                 UseSc03 = UseSc03,

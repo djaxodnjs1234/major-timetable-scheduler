@@ -20,6 +20,7 @@ public sealed record DiverseSolverOptions
     public int TimeLimitSec { get; init; } = 120;
     public int PerSolveTimeSec { get; init; } = 5;
     public int BaseSeed { get; init; } = 0;
+    public bool ConsiderRetakeStudents { get; init; }
     public bool UseSc01 { get; init; }
     public bool UseSc02 { get; init; }
     public bool UseSc03 { get; init; }
@@ -46,6 +47,7 @@ public static class DiverseSolver
         CancellationToken cancellationToken = default)
     {
         options ??= new DiverseSolverOptions();
+        var effectiveRetakes = EffectiveRetakes(courses, retakes, options.ConsiderRetakeStudents);
         var totalSw = Stopwatch.StartNew();
 
         int? sc01Bound = null, sc02Bound = null, sc03Bound = null;
@@ -54,7 +56,7 @@ public static class DiverseSolver
         {
             cancellationToken.ThrowIfCancellationRequested();
             progress?.Report(new SolverProgress("1A", "SC-01 측정 중", 0, 0, 0));
-            var p1 = ModelBuilder.Build(courses, professors, rooms, crosses, retakes);
+            var p1 = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes);
             var term = SoftConstraints.Sc01PenaltyTerm(p1.X, courses, rooms);
             p1.Model.Minimize(term);
             var s = NewSolver(options.PerSolveTimeSec * 2);
@@ -71,7 +73,7 @@ public static class DiverseSolver
         {
             cancellationToken.ThrowIfCancellationRequested();
             progress?.Report(new SolverProgress("1B", "SC-02 측정 중", 0, 0, 0));
-            var p2 = ModelBuilder.Build(courses, professors, rooms, crosses, retakes);
+            var p2 = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes);
             if (sc01Bound.HasValue)
                 p2.Model.Add(SoftConstraints.Sc01PenaltyTerm(p2.X, courses, rooms) <= sc01Bound.Value);
             var term = SoftConstraints.Sc02PenaltyTerm(p2.Model, p2.X, courses, rooms);
@@ -90,7 +92,7 @@ public static class DiverseSolver
         {
             cancellationToken.ThrowIfCancellationRequested();
             progress?.Report(new SolverProgress("1C", "SC-03 측정 중", 0, 0, 0));
-            var p3 = ModelBuilder.Build(courses, professors, rooms, crosses, retakes);
+            var p3 = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes);
             if (sc01Bound.HasValue)
                 p3.Model.Add(SoftConstraints.Sc01PenaltyTerm(p3.X, courses, rooms) <= sc01Bound.Value);
             if (sc02Bound.HasValue)
@@ -109,7 +111,7 @@ public static class DiverseSolver
 
         // Phase 2: build full model with SC bounds, seed loop
         progress?.Report(new SolverProgress("2", "Phase 2 모델 빌드", 0, options.TotalSolutions, 0));
-        var build = ModelBuilder.Build(courses, professors, rooms, crosses, retakes);
+        var build = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes);
         if (sc01Bound.HasValue)
             build.Model.Add(SoftConstraints.Sc01PenaltyTerm(build.X, courses, rooms) <= sc01Bound.Value);
         if (sc02Bound.HasValue)
@@ -166,6 +168,25 @@ public static class DiverseSolver
         if (randomize) parts.Add("randomize_search:true");
         s.StringParameters = string.Join(" ", parts);
         return s;
+    }
+
+    private static IReadOnlyList<RetakeScenario>? EffectiveRetakes(
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<RetakeScenario>? manualRetakes,
+        bool considerRetakeStudents)
+    {
+        if (!considerRetakeStudents)
+            return null;
+
+        var byKey = new Dictionary<(int Grade, string BaseId), RetakeScenario>();
+        foreach (var retake in DomainHelpers.DeriveAutoRetakes(courses))
+            byKey[(retake.CurrentGrade, retake.RetakeBaseId)] = retake;
+
+        if (manualRetakes != null)
+            foreach (var retake in manualRetakes)
+                byKey[(retake.CurrentGrade, retake.RetakeBaseId)] = retake;
+
+        return byKey.Values.ToList();
     }
 
     private static bool IsFeasible(CpSolverStatus s) =>
