@@ -1088,7 +1088,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void ManualCrossDrop_BlocksThirdAssignmentByKey()
+    public void ManualCrossDrop_AllowsReplacingExistingPartnerByKey()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
@@ -1099,8 +1099,7 @@ public class ManualEditViewModelTests : IDisposable
 
         var state = vm.EvaluateCrossDropHover(0, 1, 2, 0, source, 0, 1, 2, 2, third);
 
-        Assert.False(state.CanCreate);
-        Assert.Contains("이미 다른 수업", state.Reason);
+        Assert.True(state.CanCreate, state.Reason);
     }
 
     [Fact]
@@ -1438,7 +1437,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void ManualCrossQa_BlocksThirdAssignment()
+    public void ManualCrossQa_AllowsReplacingExistingPartner()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         var source = ManualCell(section: 1, professorId: "P1", rooms: new[] { "R1" });
@@ -1449,8 +1448,7 @@ public class ManualEditViewModelTests : IDisposable
 
         var hover = vm.EvaluateCrossDropHover(0, 1, 2, 0, source, 0, 1, 2, 2, third);
 
-        Assert.False(hover.CanCreate);
-        Assert.Contains("이미 다른 수업", hover.Reason);
+        Assert.True(hover.CanCreate, hover.Reason);
     }
 
     [Fact]
@@ -2452,6 +2450,134 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Empty(_dialog.Calls);
         Assert.Contains("블록 시간", vm.StatusMessage);
         Assert.False(vm.UndoCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void Swap_DuplicateCourseId_SwapsOnlySelectedSourceAndTargetByAssignmentId()
+    {
+        var vm = BuildDuplicateProgrammingApplicationThreeVm();
+        var source = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var target = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P30");
+        var other = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+        var sourceId = source.Assignment.AssignmentId;
+        var targetId = target.Assignment.AssignmentId;
+        var otherId = other.Assignment.AssignmentId;
+
+        vm.HandleCellClick(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+        vm.HandleSwapRequested(target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        var movedSource = vm.Grid.Cells.Single(c => c.Assignment.AssignmentId == sourceId);
+        var movedTarget = vm.Grid.Cells.Single(c => c.Assignment.AssignmentId == targetId);
+        var unchanged = vm.Grid.Cells.Single(c => c.Assignment.AssignmentId == otherId);
+        Assert.Equal((2, 1, "D330"), (movedSource.Day, movedSource.Period, string.Join(",", movedSource.Assignment.Rooms)));
+        Assert.Equal((0, 1, "D332"), (movedTarget.Day, movedTarget.Period, string.Join(",", movedTarget.Assignment.Rooms)));
+        Assert.Equal((0, 1, "D331"), (unchanged.Day, unchanged.Period, string.Join(",", unchanged.Assignment.Rooms)));
+        Assert.Equal(sourceId, movedSource.Assignment.AssignmentId);
+        Assert.Equal(targetId, movedTarget.Assignment.AssignmentId);
+    }
+
+    [Fact]
+    public void Swap_DuplicateCourseId_ClickAndDropProduceSameResultWhenOrderChanges()
+    {
+        var clickVm = BuildDuplicateProgrammingApplicationThreeVm(reverseAssignments: true);
+        var clickSource = clickVm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var clickTarget = clickVm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P30");
+        clickVm.HandleCellClick(clickSource.Day, clickSource.Period, clickSource.Grade, clickSource.SubColumnIdx, clickSource.Assignment);
+        clickVm.HandleSwapRequested(clickTarget.Day, clickTarget.Period, clickTarget.Grade, clickTarget.SubColumnIdx, clickTarget.Assignment);
+
+        var dropVm = BuildDuplicateProgrammingApplicationThreeVm(reverseAssignments: true);
+        var dropSource = dropVm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var dropTarget = dropVm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P30");
+        dropVm.HandleSwapDrop(
+            dropSource.Day,
+            dropSource.Period,
+            dropSource.Grade,
+            dropSource.SubColumnIdx,
+            dropSource.Assignment,
+            dropTarget.Day,
+            dropTarget.Period,
+            dropTarget.Grade,
+            dropTarget.SubColumnIdx,
+            dropTarget.Assignment);
+
+        Assert.Equal(ProgrammingApplicationSnapshot(clickVm), ProgrammingApplicationSnapshot(dropVm));
+    }
+
+    [Fact]
+    public void Swap_MissingOrDuplicateAssignmentId_DoesNotChangeWorkingOrUndo()
+    {
+        var missingVm = BuildDuplicateProgrammingApplicationVm();
+        var missingSource = missingVm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var missingTarget = missingVm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+        var beforeMissing = ProgrammingApplicationSnapshot(missingVm);
+        missingVm.HandleCellClick(missingSource.Day, missingSource.Period, missingSource.Grade, missingSource.SubColumnIdx, missingSource.Assignment with { AssignmentId = "missing" });
+        missingVm.HandleSwapRequested(missingTarget.Day, missingTarget.Period, missingTarget.Grade, missingTarget.SubColumnIdx, missingTarget.Assignment);
+
+        Assert.Equal(beforeMissing, ProgrammingApplicationSnapshot(missingVm));
+        Assert.False(missingVm.UndoCommand.CanExecute(null));
+
+        var duplicateVm = BuildDuplicateProgrammingApplicationVm(sharedAssignmentId: "duplicate-id");
+        var duplicateSource = duplicateVm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var duplicateTarget = duplicateVm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+        var beforeDuplicate = ProgrammingApplicationSnapshot(duplicateVm);
+        duplicateVm.HandleCellClick(duplicateSource.Day, duplicateSource.Period, duplicateSource.Grade, duplicateSource.SubColumnIdx, duplicateSource.Assignment);
+        duplicateVm.HandleSwapRequested(duplicateTarget.Day, duplicateTarget.Period, duplicateTarget.Grade, duplicateTarget.SubColumnIdx, duplicateTarget.Assignment);
+
+        Assert.Equal(beforeDuplicate, ProgrammingApplicationSnapshot(duplicateVm));
+        Assert.False(duplicateVm.UndoCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void Swap_DuplicateCourseId_UndoRedoRestoresAssignmentIdentityAndPosition()
+    {
+        var vm = BuildDuplicateProgrammingApplicationVm();
+        var source = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var target = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+        var sourceId = source.Assignment.AssignmentId;
+        var targetId = target.Assignment.AssignmentId;
+
+        vm.HandleCellClick(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+        vm.HandleSwapRequested(target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        vm.UndoCommand.Execute(null);
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.AssignmentId == sourceId && c.Day == source.Day && c.Period == source.Period);
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.AssignmentId == targetId && c.Day == target.Day && c.Period == target.Period);
+
+        vm.RedoCommand.Execute(null);
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.AssignmentId == sourceId && c.Day == target.Day && c.Period == target.Period);
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.AssignmentId == targetId && c.Day == source.Day && c.Period == source.Period);
+    }
+
+    [Fact]
+    public void Swap_UnrelatedCrossPair_IsPreserved()
+    {
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "크로스대상", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
+        _ws.AddCourse(new Course { Id = "A-01", Name = "스왑A", Grade = 2, HoursPerWeek = 1, ProfessorId = "P3", Section = 3 });
+        _ws.AddCourse(new Course { Id = "B-01", Name = "스왑B", Grade = 2, HoursPerWeek = 1, ProfessorId = "P4", Section = 4 });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        _ws.AddProfessor(new Professor { Id = "P3", Name = "교수3" });
+        _ws.AddProfessor(new Professor { Id = "P4", Name = "교수4" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R2"),
+            new SolutionAssignment("A-01", 1, 1, "R1"),
+            new SolutionAssignment("B-01", 2, 1, "R2")));
+        var x = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+        var y = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "Y-01");
+        vm.HandleCellClick(x.Day, x.Period, x.Grade, x.SubColumnIdx, x.Assignment);
+        vm.HandleCrossAddRequested(y.Day, y.Period, y.Grade, y.SubColumnIdx, y.Assignment);
+        Assert.Single(vm.WorkingCrossLinks);
+
+        var a = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "A-01");
+        var b = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "B-01");
+        vm.HandleCellClick(a.Day, a.Period, a.Grade, a.SubColumnIdx, a.Assignment);
+        vm.HandleSwapRequested(b.Day, b.Period, b.Grade, b.SubColumnIdx, b.Assignment);
+
+        var link = Assert.Single(vm.WorkingCrossLinks);
+        Assert.True(link.MatchesPair("X-01", "Y-01"));
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.CourseId == "A-01" && c.Day == 2 && c.Period == 1);
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.CourseId == "B-01" && c.Day == 1 && c.Period == 1);
     }
 
     [Fact]
@@ -6328,7 +6454,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void NonCrossOccupiedTarget_IsBlockedWithoutForceDialog()
+    public void NonCrossOccupiedTarget_ClickSwitchesSelectionWithoutForceDialog()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
@@ -6345,10 +6471,12 @@ public class ManualEditViewModelTests : IDisposable
 
         Assert.Empty(_dialog.Calls);
         Assert.NotNull(vm.SelectedAssignment);
-        Assert.Contains("전체 점유 범위", vm.StatusMessage);
+        Assert.Equal("Y-01", vm.SelectedAssignment.CourseId);
+        Assert.Contains("선택: 기타", vm.StatusMessage);
         Assert.Contains(vm.Grid.Cells, c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "X-01");
         Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "Y-01");
         Assert.DoesNotContain(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        Assert.False(vm.UndoCommand.CanExecute(null));
     }
 
     [Fact]
@@ -6419,12 +6547,12 @@ public class ManualEditViewModelTests : IDisposable
         vm.HandleCrossAddRequested(2, 1, 2, 0, z);
 
         Assert.Single(vm.WorkingCrossLinks);
-        Assert.True(vm.WorkingCrossLinks[0].MatchesPair("X-01", "Y-01"));
-        Assert.Contains("이미 다른 수업과 크로스", vm.StatusMessage);
+        Assert.True(vm.WorkingCrossLinks[0].MatchesPair("X-01", "Z-01"));
+        Assert.DoesNotContain(vm.WorkingCrossLinks, l => l.MatchesPair("X-01", "Y-01"));
     }
 
     [Fact]
-    public void HandleCrossAddRequested_BlocksThirdCrossAndKeepsExistingPartnerAndPosition()
+    public void HandleCrossAddRequested_ReplacesExistingPartnerAndMovesSelected()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
@@ -6449,11 +6577,10 @@ public class ManualEditViewModelTests : IDisposable
         vm.HandleCrossAddRequested(2, 1, 2, 0, z);
 
         Assert.Single(vm.WorkingCrossLinks);
-        Assert.True(vm.WorkingCrossLinks[0].MatchesPair("X-01", "Y-01"));
-        Assert.DoesNotContain(vm.WorkingCrossLinks, l => l.MatchesPair("X-01", "Z-01"));
-        Assert.Contains("이미 다른 수업과 크로스", vm.StatusMessage);
-        Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "X-01");
-        Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "Y-01");
+        Assert.True(vm.WorkingCrossLinks[0].MatchesPair("X-01", "Z-01"));
+        Assert.DoesNotContain(vm.WorkingCrossLinks, l => l.MatchesPair("X-01", "Y-01"));
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 2 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 2 && c.Period == 1 && c.Assignment.CourseId == "Z-01");
     }
 
     [Fact]
@@ -6482,7 +6609,7 @@ public class ManualEditViewModelTests : IDisposable
 
         Assert.Single(vm.WorkingCrossLinks);
         Assert.True(vm.WorkingCrossLinks[0].MatchesPair("X-01", "Y-01"));
-        Assert.Contains("이미 다른 수업과 크로스", vm.StatusMessage);
+        Assert.Contains("강의실", vm.StatusMessage);
         Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "X-01");
     }
 
@@ -6573,6 +6700,410 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
+    public void ManualMove_DuplicateCourseId_ClickMove_UsesSelectedAssignmentIdentity()
+    {
+        var vm = BuildDuplicateProgrammingApplicationVm();
+        var source = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var other = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+        var sourceAssignmentId = source.Assignment.AssignmentId;
+        var otherAssignmentId = other.Assignment.AssignmentId;
+        Assert.False(string.IsNullOrWhiteSpace(sourceAssignmentId));
+        Assert.NotEqual(sourceAssignmentId, otherAssignmentId);
+
+        vm.HandleCellClick(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+
+        Assert.Equal(sourceAssignmentId, vm.SelectedAssignment?.AssignmentId);
+        Assert.Equal("김교수", vm.SelectedProfessorName);
+
+        vm.HandleCellClick(2, 1, source.Grade, 0, null);
+
+        var moved = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var unchanged = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+        Assert.Equal(sourceAssignmentId, moved.Assignment.AssignmentId);
+        Assert.Equal(2, moved.Day);
+        Assert.Equal(1, moved.Period);
+        Assert.Equal(otherAssignmentId, unchanged.Assignment.AssignmentId);
+        Assert.Equal(0, unchanged.Day);
+        Assert.Equal(1, unchanged.Period);
+        Assert.Equal(new[] { "D331" }, unchanged.Assignment.Rooms);
+    }
+
+    [Fact]
+    public void ManualMove_DuplicateCourseId_DragDropMatchesClickMove()
+    {
+        var clickVm = BuildDuplicateProgrammingApplicationVm(reverseAssignments: true);
+        var clickSource = clickVm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var clickSourceAssignmentId = clickSource.Assignment.AssignmentId;
+        clickVm.HandleCellClick(
+            clickSource.Day,
+            clickSource.Period,
+            clickSource.Grade,
+            clickSource.SubColumnIdx,
+            clickSource.Assignment);
+        clickVm.HandleCellClick(2, 1, clickSource.Grade, 0, null);
+
+        var dropVm = BuildDuplicateProgrammingApplicationVm(reverseAssignments: true);
+        var dropSource = dropVm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var dropSourceAssignmentId = dropSource.Assignment.AssignmentId;
+
+        Assert.True(dropVm.CanDropMove(
+            dropSource.Day,
+            dropSource.Period,
+            dropSource.Grade,
+            dropSource.SubColumnIdx,
+            dropSource.Assignment,
+            2,
+            1,
+            dropSource.Grade,
+            0));
+        Assert.True(dropVm.HandleDropMove(
+            dropSource.Day,
+            dropSource.Period,
+            dropSource.Grade,
+            dropSource.SubColumnIdx,
+            dropSource.Assignment,
+            2,
+            1,
+            dropSource.Grade,
+            0));
+
+        var clickMoved = clickVm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var clickOther = clickVm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+        var dropMoved = dropVm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var dropOther = dropVm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+        Assert.Equal(clickSourceAssignmentId, clickMoved.Assignment.AssignmentId);
+        Assert.Equal(dropSourceAssignmentId, dropMoved.Assignment.AssignmentId);
+        Assert.Equal((2, 1, "D330"), (clickMoved.Day, clickMoved.Period, string.Join(",", clickMoved.Assignment.Rooms)));
+        Assert.Equal((2, 1, "D330"), (dropMoved.Day, dropMoved.Period, string.Join(",", dropMoved.Assignment.Rooms)));
+        Assert.Equal((0, 1, "D331"), (clickOther.Day, clickOther.Period, string.Join(",", clickOther.Assignment.Rooms)));
+        Assert.Equal((0, 1, "D331"), (dropOther.Day, dropOther.Period, string.Join(",", dropOther.Assignment.Rooms)));
+    }
+
+    [Fact]
+    public void ManualMove_DuplicateCourseId_MissingIdentity_DoesNotChangeWorkingState()
+    {
+        var vm = BuildDuplicateProgrammingApplicationVm();
+        var source = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var staleAssignment = source.Assignment with { AssignmentId = "missing-assignment" };
+        var before = ProgrammingApplicationSnapshot(vm);
+
+        Assert.False(vm.HandleDropMove(
+            source.Day,
+            source.Period,
+            source.Grade,
+            source.SubColumnIdx,
+            staleAssignment,
+            2,
+            1,
+            source.Grade,
+            0));
+
+        Assert.Equal(before, ProgrammingApplicationSnapshot(vm));
+    }
+
+    [Fact]
+    public void ManualMove_DuplicateCourseId_DuplicateIdentity_DoesNotChangeWorkingState()
+    {
+        var vm = BuildDuplicateProgrammingApplicationVm(sharedAssignmentId: "duplicate-id");
+        var source = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var before = ProgrammingApplicationSnapshot(vm);
+
+        Assert.False(vm.HandleDropMove(
+            source.Day,
+            source.Period,
+            source.Grade,
+            source.SubColumnIdx,
+            source.Assignment,
+            2,
+            1,
+            source.Grade,
+            0));
+
+        Assert.Equal(before, ProgrammingApplicationSnapshot(vm));
+    }
+
+    [Fact]
+    public void ManualMove_DuplicateCourseId_UndoRedoPreservesAssignmentIdAndSelectionSnapshot()
+    {
+        var vm = BuildDuplicateProgrammingApplicationThreeVm();
+        var source = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var sourceId = source.Assignment.AssignmentId;
+
+        vm.HandleCellClick(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+        vm.HandleCellClick(3, 1, source.Grade, 0, null);
+
+        Assert.Null(vm.SelectedAssignment);
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.AssignmentId == sourceId && c.Day == 3 && c.Period == 1);
+
+        vm.UndoCommand.Execute(null);
+
+        Assert.Equal(sourceId, vm.SelectedAssignment?.AssignmentId);
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.AssignmentId == sourceId && c.Day == source.Day && c.Period == source.Period);
+
+        vm.RedoCommand.Execute(null);
+
+        Assert.Null(vm.SelectedAssignment);
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.AssignmentId == sourceId && c.Day == 3 && c.Period == 1);
+    }
+
+    [Fact]
+    public void HandleCellClick_SelectedSameGradeOccupiedBlock_SwitchesSelectionWithoutChangingWorkingState()
+    {
+        var vm = BuildDuplicateProgrammingApplicationThreeVm();
+        var a = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var b = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+        var before = ProgrammingApplicationSnapshot(vm);
+
+        vm.HandleCellClick(a.Day, a.Period, a.Grade, a.SubColumnIdx, a.Assignment);
+        vm.HandleCellClick(b.Day, b.Period, b.Grade, b.SubColumnIdx, b.Assignment);
+
+        Assert.Equal(b.Assignment.AssignmentId, vm.SelectedAssignment?.AssignmentId);
+        Assert.Equal(before, ProgrammingApplicationSnapshot(vm));
+        Assert.Empty(vm.WorkingCrossLinks);
+        Assert.False(vm.UndoCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void HandleCellClick_SelectedSameBlockStillClearsSelection()
+    {
+        var vm = BuildDuplicateProgrammingApplicationThreeVm();
+        var a = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+
+        vm.HandleCellClick(a.Day, a.Period, a.Grade, a.SubColumnIdx, a.Assignment);
+        vm.HandleCellClick(a.Day, a.Period, a.Grade, a.SubColumnIdx, a.Assignment);
+
+        Assert.Null(vm.SelectedAssignment);
+        Assert.False(vm.UndoCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void HandleCellClick_SelectedDifferentGradeStillClearsSelection()
+    {
+        _ws.Courses.Clear();
+        _ws.Professors.Clear();
+        _ws.Rooms.Clear();
+        _ws.Courses.Add(new Course { Id = "A", Name = "A", Grade = 2, HoursPerWeek = 1, ProfessorId = "P10" });
+        _ws.Courses.Add(new Course { Id = "B", Name = "B", Grade = 3, HoursPerWeek = 1, ProfessorId = "P20" });
+        _ws.Professors.Add(new Professor { Id = "P10", Name = "김교수" });
+        _ws.Professors.Add(new Professor { Id = "P20", Name = "박교수" });
+        _ws.Rooms.Add(new Room { Id = "R1", Name = "R1" });
+        _ws.Rooms.Add(new Room { Id = "R2", Name = "R2" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("A", 0, 1, "R1"),
+            new SolutionAssignment("B", 0, 1, "R2")));
+        var a = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "A");
+        var b = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "B");
+
+        vm.HandleCellClick(a.Day, a.Period, a.Grade, a.SubColumnIdx, a.Assignment);
+        vm.HandleCellClick(b.Day, b.Period, b.Grade, b.SubColumnIdx, b.Assignment);
+
+        Assert.Null(vm.SelectedAssignment);
+        Assert.False(vm.UndoCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void DuplicateCourseId_EndToEnd_MoveSwapUndoRedoSaveReload_PreservesOccurrenceIdentity()
+    {
+        var vm = BuildDuplicateProgrammingApplicationThreeVm(reverseAssignments: true);
+        var a = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var b = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+        var c = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P30");
+        var aId = a.Assignment.AssignmentId;
+        var bId = b.Assignment.AssignmentId;
+        var cId = c.Assignment.AssignmentId;
+
+        vm.HandleCellClick(a.Day, a.Period, a.Grade, a.SubColumnIdx, a.Assignment);
+
+        Assert.Equal(aId, vm.SelectedAssignment?.AssignmentId);
+        Assert.Equal("김교수", vm.SelectedProfessorName);
+
+        vm.HandleCellClick(3, 1, a.Grade, 0, null);
+
+        Assert.Contains(vm.Grid.Cells, cell => cell.Assignment.AssignmentId == aId && cell.Day == 3 && cell.Period == 1);
+        Assert.Contains(vm.Grid.Cells, cell => cell.Assignment.AssignmentId == bId && cell.Day == b.Day && cell.Period == b.Period);
+
+        var movedA = vm.Grid.Cells.Single(cell => cell.Assignment.AssignmentId == aId);
+        var currentC = vm.Grid.Cells.Single(cell => cell.Assignment.AssignmentId == cId);
+        vm.HandleCellClick(movedA.Day, movedA.Period, movedA.Grade, movedA.SubColumnIdx, movedA.Assignment);
+        vm.HandleSwapRequested(currentC.Day, currentC.Period, currentC.Grade, currentC.SubColumnIdx, currentC.Assignment);
+
+        Assert.Contains(vm.Grid.Cells, cell => cell.Assignment.AssignmentId == aId && cell.Day == c.Day && cell.Period == c.Period);
+        Assert.Contains(vm.Grid.Cells, cell => cell.Assignment.AssignmentId == cId && cell.Day == 3 && cell.Period == 1);
+        Assert.Contains(vm.Grid.Cells, cell => cell.Assignment.AssignmentId == bId && cell.Day == b.Day && cell.Period == b.Period);
+
+        vm.UndoCommand.Execute(null);
+
+        Assert.Contains(vm.Grid.Cells, cell => cell.Assignment.AssignmentId == aId && cell.Day == 3 && cell.Period == 1);
+        Assert.Contains(vm.Grid.Cells, cell => cell.Assignment.AssignmentId == cId && cell.Day == c.Day && cell.Period == c.Period);
+        Assert.Equal(aId, vm.SelectedAssignment?.AssignmentId);
+
+        vm.RedoCommand.Execute(null);
+
+        Assert.Contains(vm.Grid.Cells, cell => cell.Assignment.AssignmentId == aId && cell.Day == c.Day && cell.Period == c.Period);
+        Assert.Contains(vm.Grid.Cells, cell => cell.Assignment.AssignmentId == cId && cell.Day == 3 && cell.Period == 1);
+
+        vm.SaveName = "dup-e2e";
+        vm.SaveTimetableCommand.Execute(null);
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "dup-e2e"));
+
+        vm.LoadFromSavedTimetable(saved);
+
+        Assert.Contains(vm.Grid.Cells, cell => cell.Assignment.AssignmentId == aId && cell.Day == c.Day && cell.Period == c.Period);
+        Assert.Contains(vm.Grid.Cells, cell => cell.Assignment.AssignmentId == bId && cell.Day == b.Day && cell.Period == b.Period);
+        Assert.Contains(vm.Grid.Cells, cell => cell.Assignment.AssignmentId == cId && cell.Day == 3 && cell.Period == 1);
+        Assert.Equal(3, vm.Grid.Cells.Select(cell => cell.Assignment.AssignmentId).Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
+    public void SaveReload_DuplicateCourseId_PreservesAssignmentIdsAndSelectionCanResolveOccurrence()
+    {
+        var vm = BuildDuplicateProgrammingApplicationVm();
+        var before = vm.Grid.Cells
+            .OrderBy(c => c.Assignment.ProfessorId, StringComparer.Ordinal)
+            .Select(c => (c.Assignment.ProfessorId, c.Assignment.AssignmentId))
+            .ToList();
+        vm.SaveName = "dup-id-save";
+
+        vm.SaveTimetableCommand.Execute(null);
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "dup-id-save"));
+        vm.LoadFromSavedTimetable(saved);
+
+        var after = vm.Grid.Cells
+            .OrderBy(c => c.Assignment.ProfessorId, StringComparer.Ordinal)
+            .Select(c => (c.Assignment.ProfessorId, c.Assignment.AssignmentId))
+            .ToList();
+        Assert.Equal(before, after);
+
+        var p10 = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        vm.SelectCell(p10.Day, p10.Period, p10.Grade, p10.SubColumnIdx, p10.Assignment);
+        Assert.Equal(before.Single(x => x.ProfessorId == "P10").AssignmentId, vm.SelectedAssignment?.AssignmentId);
+    }
+
+    [Fact]
+    public void LoadLegacySavedTimetable_AddsUniqueAssignmentIdsForOccurrences()
+    {
+        var vm = BuildDuplicateProgrammingApplicationVm();
+        var legacy = new SavedTimetableRecord(
+            "legacy",
+            "legacy",
+            DateTime.Now,
+            new[]
+            {
+                new TimetableAssignmentRow("PROG-APP", 0, 1, "D330"),
+                new TimetableAssignmentRow("PROG-APP", 0, 1, "D331"),
+            },
+            Array.Empty<SavedManualCrossLinkRow>(),
+            System.Text.Json.JsonSerializer.Serialize(_ws.Snapshot()));
+
+        vm.LoadFromSavedTimetable(legacy);
+
+        var ids = vm.Grid.Cells
+            .Where(c => c.Assignment.CourseId == "PROG-APP")
+            .Select(c => c.Assignment.AssignmentId)
+            .ToList();
+        Assert.Equal(2, ids.Count);
+        Assert.All(ids, id => Assert.False(string.IsNullOrWhiteSpace(id)));
+        Assert.Equal(ids.Count, ids.Distinct(StringComparer.Ordinal).Count());
+    }
+
+    [Fact]
+    public void RefreshConflicts_DuplicateCourseId_DisplaySeparatesSelectedAndRelatedAssignments()
+    {
+        _ws.Courses.Clear();
+        _ws.Professors.Clear();
+        _ws.Rooms.Clear();
+        _ws.Courses.Add(new Course
+        {
+            Id = "DUP",
+            Name = "선택수업",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P10",
+            Section = 1,
+            FixedRooms = new List<string> { "D330" },
+        });
+        _ws.Courses.Add(new Course
+        {
+            Id = "DUP",
+            Name = "상대수업",
+            Grade = 3,
+            HoursPerWeek = 1,
+            ProfessorId = "P10",
+            Section = 2,
+            FixedRooms = new List<string> { "D331" },
+        });
+        _ws.Professors.Add(new Professor { Id = "P10", Name = "김교수" });
+        _ws.Rooms.Add(new Room { Id = "D330", Name = "D330" });
+        _ws.Rooms.Add(new Room { Id = "D331", Name = "D331" });
+
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("DUP", 0, 1, "D330"),
+            new SolutionAssignment("DUP", 0, 1, "D331")));
+        var selectedCell = vm.Grid.Cells.Single(c => c.Assignment.CourseName == "선택수업");
+        var selectedAssignmentId = selectedCell.Assignment.AssignmentId;
+
+        vm.SelectCell(selectedCell.Day, selectedCell.Period, selectedCell.Grade, selectedCell.SubColumnIdx, selectedCell.Assignment);
+        RefreshConflicts(vm, strictManualCrossValidation: true);
+
+        Assert.Equal(selectedAssignmentId, vm.SelectedAssignment?.AssignmentId);
+        var professorConflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.ProfessorConflict));
+        Assert.Contains("선택 수업: 선택수업", professorConflict.DisplayDescription);
+        Assert.Contains("충돌 상대: 상대수업", professorConflict.DisplayDescription);
+    }
+
+    [Fact]
+    public void Hc20Display_UsesOnlyConflictAssignmentsForRepresentativeAndRelatedCourses()
+    {
+        _ws.Courses.Clear();
+        _ws.Professors.Clear();
+        _ws.Rooms.Clear();
+        _ws.Courses.Add(new Course
+        {
+            Id = "HC20",
+            Name = "중복과목",
+            Grade = 2,
+            HoursPerWeek = 2,
+            ProfessorId = "P10",
+            Section = 1,
+            FixedRooms = new List<string> { "R1" },
+        });
+        _ws.Courses.Add(new Course
+        {
+            Id = "OTHER",
+            Name = "무관과목",
+            Grade = 3,
+            HoursPerWeek = 1,
+            ProfessorId = "P20",
+            Section = 1,
+            FixedRooms = new List<string> { "R2" },
+        });
+        _ws.Professors.Add(new Professor { Id = "P10", Name = "김교수" });
+        _ws.Professors.Add(new Professor { Id = "P20", Name = "박교수" });
+        _ws.Rooms.Add(new Room { Id = "R1", Name = "R1" });
+        _ws.Rooms.Add(new Room { Id = "R2", Name = "R2" });
+
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("HC20", 0, 1, "R1"),
+            new SolutionAssignment("HC20", 0, 3, "R1"),
+            new SolutionAssignment("OTHER", 0, 1, "R2")));
+        var selected = vm.Grid.Cells.Single(c => c.Assignment.CourseName == "중복과목" && c.Period == 1);
+
+        vm.SelectCell(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+        RefreshConflicts(vm, strictManualCrossValidation: true);
+
+        var hc20 = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.SameCourseSameDayConflict));
+        Assert.Contains("중복과목", hc20.DisplayTitle);
+        Assert.DoesNotContain("무관과목", hc20.DisplayTitle);
+        Assert.Contains("중복과목", hc20.DisplayDescription);
+        Assert.DoesNotContain("무관과목", hc20.DisplayDescription);
+        Assert.NotNull(hc20.Conflict.Assignments);
+        Assert.All(hc20.Conflict.Assignments!, assignment => Assert.Equal("HC20", assignment.CourseId));
+    }
+
+    [Fact]
     public void ManualCross_Hover_DuplicateCourseIdDifferentProfessorRoom_AllowsCross()
     {
         var vm = BuildDuplicateProgrammingApplicationVm();
@@ -6602,6 +7133,51 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
+    public void ManualCross_DuplicateCourseId_CrossLabelsUseAssignmentSpecificCourse()
+    {
+        _ws.Courses.Clear();
+        _ws.Professors.Clear();
+        _ws.Rooms.Clear();
+        _ws.Courses.Add(new Course
+        {
+            Id = "DUP",
+            Name = "선택수업",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P10",
+            Section = 1,
+            FixedRooms = new List<string> { "D330" },
+        });
+        _ws.Courses.Add(new Course
+        {
+            Id = "DUP",
+            Name = "상대수업",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P20",
+            Section = 2,
+            FixedRooms = new List<string> { "D331" },
+        });
+        _ws.Professors.Add(new Professor { Id = "P10", Name = "김교수" });
+        _ws.Professors.Add(new Professor { Id = "P20", Name = "박교수" });
+        _ws.Rooms.Add(new Room { Id = "D330", Name = "D330" });
+        _ws.Rooms.Add(new Room { Id = "D331", Name = "D331" });
+
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("DUP", 0, 1, "D330"),
+            new SolutionAssignment("DUP", 0, 1, "D331")));
+        var selected = vm.Grid.Cells.Single(c => c.Assignment.CourseName == "선택수업");
+        var target = vm.Grid.Cells.Single(c => c.Assignment.CourseName == "상대수업");
+
+        vm.SelectCell(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+        vm.HandleCrossAddRequested(target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
+
+        Assert.Contains(vm.Grid.CrossLinkLabels.Values, label => label.Contains("상대수업", StringComparison.Ordinal));
+        Assert.Contains(vm.Grid.CrossLinkLabels.Values, label => label.Contains("선택수업", StringComparison.Ordinal));
+    }
+
+    [Fact]
     public void ManualCross_Drop_DuplicateCourseIdDifferentProfessorRoom_CreatesCross()
     {
         var vm = BuildDuplicateProgrammingApplicationVm();
@@ -6621,6 +7197,101 @@ public class ManualEditViewModelTests : IDisposable
             target.Assignment);
 
         Assert.Single(vm.WorkingCrossLinks);
+    }
+
+    [Fact]
+    public void ManualCross_DuplicateCourseIdThree_ReplacesABWithACByAssignmentId()
+    {
+        var vm = BuildDuplicateProgrammingApplicationThreeVm();
+        var a = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var b = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+        var c = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P30");
+        var aId = a.Assignment.AssignmentId;
+        var bId = b.Assignment.AssignmentId;
+        var cId = c.Assignment.AssignmentId;
+
+        vm.SelectCell(a.Day, a.Period, a.Grade, a.SubColumnIdx, a.Assignment);
+        vm.HandleCrossAddRequested(b.Day, b.Period, b.Grade, b.SubColumnIdx, b.Assignment);
+
+        var ab = Assert.Single(vm.WorkingCrossLinks);
+        Assert.True(ab.Contains(BuildManualCrossKey(a)));
+        Assert.True(ab.Contains(BuildManualCrossKey(b)));
+
+        var movedA = vm.Grid.Cells.Single(cell => cell.Assignment.AssignmentId == aId);
+        var currentC = vm.Grid.Cells.Single(cell => cell.Assignment.AssignmentId == cId);
+        vm.SelectCell(movedA.Day, movedA.Period, movedA.Grade, movedA.SubColumnIdx, movedA.Assignment);
+        vm.HandleCrossAddRequested(currentC.Day, currentC.Period, currentC.Grade, currentC.SubColumnIdx, currentC.Assignment);
+
+        var ac = Assert.Single(vm.WorkingCrossLinks);
+        Assert.True(ac.Contains(BuildManualCrossKey(vm.Grid.Cells.Single(cell => cell.Assignment.AssignmentId == aId))));
+        Assert.True(ac.Contains(BuildManualCrossKey(vm.Grid.Cells.Single(cell => cell.Assignment.AssignmentId == cId))));
+        Assert.DoesNotContain(vm.WorkingCrossLinks, link => link.Contains(new ManualEditViewModel.ManualCrossAssignmentKey(
+            "PROG-APP", "1", 0, 1, 1, "D331", bId)));
+    }
+
+    [Fact]
+    public void ManualCross_DuplicateCourseId_ChangeUndoRedoRestoresExactAssignmentPair()
+    {
+        var vm = BuildDuplicateProgrammingApplicationThreeVm();
+        var a = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var b = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+        var c = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P30");
+        var aId = a.Assignment.AssignmentId;
+        var bId = b.Assignment.AssignmentId;
+        var cId = c.Assignment.AssignmentId;
+
+        vm.SelectCell(a.Day, a.Period, a.Grade, a.SubColumnIdx, a.Assignment);
+        vm.HandleCrossAddRequested(b.Day, b.Period, b.Grade, b.SubColumnIdx, b.Assignment);
+        var movedA = vm.Grid.Cells.Single(cell => cell.Assignment.AssignmentId == aId);
+        var currentC = vm.Grid.Cells.Single(cell => cell.Assignment.AssignmentId == cId);
+        vm.SelectCell(movedA.Day, movedA.Period, movedA.Grade, movedA.SubColumnIdx, movedA.Assignment);
+        vm.HandleCrossAddRequested(currentC.Day, currentC.Period, currentC.Grade, currentC.SubColumnIdx, currentC.Assignment);
+
+        vm.UndoCommand.Execute(null);
+
+        var undoLink = Assert.Single(vm.WorkingCrossLinks);
+        Assert.True(undoLink.Contains(BuildManualCrossKey(vm.Grid.Cells.Single(cell => cell.Assignment.AssignmentId == aId))));
+        Assert.True(undoLink.Contains(BuildManualCrossKey(vm.Grid.Cells.Single(cell => cell.Assignment.AssignmentId == bId))));
+
+        vm.RedoCommand.Execute(null);
+
+        var redoLink = Assert.Single(vm.WorkingCrossLinks);
+        Assert.True(redoLink.Contains(BuildManualCrossKey(vm.Grid.Cells.Single(cell => cell.Assignment.AssignmentId == aId))));
+        Assert.True(redoLink.Contains(BuildManualCrossKey(vm.Grid.Cells.Single(cell => cell.Assignment.AssignmentId == cId))));
+    }
+
+    [Fact]
+    public void ManualCross_DuplicateCourseId_SaveRowsCarryAssignmentIdsAndReloadRestoresPair()
+    {
+        var vm = BuildDuplicateProgrammingApplicationVm();
+        var a = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P10");
+        var b = vm.Grid.Cells.Single(c => c.Assignment.ProfessorId == "P20");
+        vm.SelectCell(a.Day, a.Period, a.Grade, a.SubColumnIdx, a.Assignment);
+        vm.HandleCrossAddRequested(b.Day, b.Period, b.Grade, b.SubColumnIdx, b.Assignment);
+
+        var row = Assert.Single(SavedManualCrossRows(vm));
+
+        Assert.False(string.IsNullOrWhiteSpace(row.SourceAssignmentId));
+        Assert.False(string.IsNullOrWhiteSpace(row.TargetAssignmentId));
+        RestoreSavedManualCrossRows(vm, new[] { row });
+        var restored = Assert.Single(vm.WorkingCrossLinks);
+        Assert.True(restored.Contains(BuildManualCrossKey(a)));
+        Assert.True(restored.Contains(BuildManualCrossKey(b)));
+    }
+
+    [Fact]
+    public void ManualCross_LegacyMigration_AmbiguousEndpointIsIgnored()
+    {
+        var vm = BuildDuplicateProgrammingApplicationVm();
+        var row = new SavedManualCrossLinkRow(
+            "PROG-APP", 2, "1", 0, 1, "",
+            "PROG-APP", 2, "1", 0, 1, "D331",
+            "HC11_ONLY_EXCEPTION");
+
+        var ignored = RestoreSavedManualCrossRows(vm, new[] { row });
+
+        Assert.Equal(1, ignored);
+        Assert.Empty(vm.WorkingCrossLinks);
     }
 
     [Fact]
@@ -6900,7 +7571,9 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Equal("HC11_ONLY_EXCEPTION", row.PolicyType);
     }
 
-    private ManualEditViewModel BuildDuplicateProgrammingApplicationVm()
+    private ManualEditViewModel BuildDuplicateProgrammingApplicationVm(
+        bool reverseAssignments = false,
+        string? sharedAssignmentId = null)
     {
         _ws.Courses.Clear();
         _ws.Professors.Clear();
@@ -6931,9 +7604,14 @@ public class ManualEditViewModelTests : IDisposable
         _ws.Rooms.Add(new Room { Id = "D331", Name = "D331" });
 
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
-        vm.LoadFromSolution(MakeSolution(
-            new SolutionAssignment("PROG-APP", 0, 1, "D330"),
-            new SolutionAssignment("PROG-APP", 0, 1, "D331")));
+        var assignments = new[]
+        {
+            new SolutionAssignment("PROG-APP", 0, 1, "D330", sharedAssignmentId ?? ""),
+            new SolutionAssignment("PROG-APP", 0, 1, "D331", sharedAssignmentId ?? ""),
+        };
+        if (reverseAssignments)
+            Array.Reverse(assignments);
+        vm.LoadFromSolution(MakeSolution(assignments));
         return vm;
     }
 
@@ -6978,11 +7656,88 @@ public class ManualEditViewModelTests : IDisposable
         return vm;
     }
 
+    private ManualEditViewModel BuildDuplicateProgrammingApplicationThreeVm(bool reverseAssignments = false)
+    {
+        _ws.Courses.Clear();
+        _ws.Professors.Clear();
+        _ws.Rooms.Clear();
+        _ws.Courses.Add(new Course
+        {
+            Id = "PROG-APP",
+            Name = "프로그래밍 응용",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P10",
+            Section = 1,
+            FixedRooms = new List<string> { "D330" },
+        });
+        _ws.Courses.Add(new Course
+        {
+            Id = "PROG-APP",
+            Name = "프로그래밍 응용",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P20",
+            Section = 1,
+            FixedRooms = new List<string> { "D331" },
+        });
+        _ws.Courses.Add(new Course
+        {
+            Id = "PROG-APP",
+            Name = "프로그래밍 응용",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P30",
+            Section = 1,
+            FixedRooms = new List<string> { "D332" },
+        });
+        _ws.Professors.Add(new Professor { Id = "P10", Name = "김교수" });
+        _ws.Professors.Add(new Professor { Id = "P20", Name = "박교수" });
+        _ws.Professors.Add(new Professor { Id = "P30", Name = "최교수" });
+        _ws.Rooms.Add(new Room { Id = "D330", Name = "D330" });
+        _ws.Rooms.Add(new Room { Id = "D331", Name = "D331" });
+        _ws.Rooms.Add(new Room { Id = "D332", Name = "D332" });
+
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var assignments = new[]
+        {
+            new SolutionAssignment("PROG-APP", 0, 1, "D330"),
+            new SolutionAssignment("PROG-APP", 0, 1, "D331"),
+            new SolutionAssignment("PROG-APP", 2, 1, "D332"),
+        };
+        if (reverseAssignments)
+            Array.Reverse(assignments);
+        vm.LoadFromSolution(MakeSolution(assignments));
+        return vm;
+    }
+
     private static UnifiedCell ProgrammingApplicationCell(ManualEditViewModel vm, string professorId) =>
         vm.Grid.Cells.Single(c =>
             c.Assignment.CourseId == "PROG-APP"
             && c.Assignment.ProfessorId == professorId
             && c.Assignment.RowSpan == 2);
+
+    private static ManualEditViewModel.ManualCrossAssignmentKey BuildManualCrossKey(UnifiedCell cell) =>
+        new(
+            cell.Assignment.CourseId,
+            cell.Assignment.Section.ToString(System.Globalization.CultureInfo.InvariantCulture),
+            cell.Day,
+            cell.Period,
+            cell.Assignment.RowSpan,
+            string.Join("|", cell.Assignment.Rooms.Order(StringComparer.Ordinal)),
+            cell.Assignment.AssignmentId);
+
+    private static IReadOnlyList<(string ProfessorId, int Day, int Period, string AssignmentId, string Rooms)> ProgrammingApplicationSnapshot(ManualEditViewModel vm) =>
+        vm.Grid.Cells
+            .Where(c => c.Assignment.CourseId == "PROG-APP")
+            .OrderBy(c => c.Assignment.ProfessorId, StringComparer.Ordinal)
+            .Select(c => (
+                c.Assignment.ProfessorId,
+                c.Day,
+                c.Period,
+                c.Assignment.AssignmentId,
+                string.Join(",", c.Assignment.Rooms.Order(StringComparer.Ordinal))))
+            .ToList();
 
     private ManualEditViewModel BuildRoomOptionVm()
     {

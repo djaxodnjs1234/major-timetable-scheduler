@@ -13,6 +13,8 @@ public sealed record CellAssignment(
     int HoursPerWeek,
     bool IsFixed)
 {
+    public string AssignmentId { get; init; } = "";
+    public string CourseKey { get; init; } = "";
     public IReadOnlyList<string> CoteachProfIds { get; init; } = Array.Empty<string>();
     public string CourseType { get; init; } = "";
     public string ProfessorDisplayName { get; init; } = "";
@@ -75,7 +77,9 @@ public sealed record CellAssignment(
         IEnumerable<string> rooms,
         int rowSpan,
         IReadOnlyDictionary<string, string>? professorNames = null,
-        IReadOnlyDictionary<string, string>? roomNames = null)
+        IReadOnlyDictionary<string, string>? roomNames = null,
+        string assignmentId = "",
+        string courseKey = "")
     {
         var roomList = rooms.ToList();
         return new(
@@ -84,6 +88,8 @@ public sealed record CellAssignment(
             roomList, rowSpan,
             course.HoursPerWeek, course.IsFixed)
         {
+            AssignmentId = assignmentId,
+            CourseKey = courseKey,
             CourseType = course.CourseType,
             CoteachProfIds = course.CoteachProfs.ToList(),
             ProfessorDisplayName = DisplayName(professorNames, course.ProfessorId),

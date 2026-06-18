@@ -5,7 +5,7 @@ using TimetableScheduler.Domain;
 namespace TimetableScheduler.Solver;
 
 public readonly record struct SolutionAssignment(
-    string CourseId, int Day, int Period, string RoomId);
+    string CourseId, int Day, int Period, string RoomId, string AssignmentId = "");
 
 public sealed record SolverProgress(
     string Phase,

@@ -120,7 +120,7 @@
             </Border>
             <Grid Margin="8"
                   Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}">
-            <TabControl>
+            <TabControl SelectedIndex="{Binding SelectedPreviewTabIndex, Mode=TwoWay}">
                 <TabItem Header="통합 시간표">
                     <DockPanel>
                         <ctrl:UnifiedTimetableControl DataContext="{Binding Preview}" />

@@ -25,7 +25,8 @@ public sealed record ConflictItem(
     ConflictSeverity Severity,
     string Description,
     int Day,
-    int Period);
+    int Period,
+    IReadOnlyList<SolutionAssignment>? Assignments = null);
 
 public static class ConflictDetector
 {
@@ -37,10 +38,10 @@ public static class ConflictDetector
         Func<string, string, int, int, bool>? isManualGradeOverlapAllowed = null)
     {
         var list = new List<ConflictItem>();
-        var courseMap = courses
-            .GroupBy(c => c.Id)
-            .ToDictionary(g => g.Key, g => g.First());
         var profMap = professors?.ToDictionary(p => p.Id) ?? new Dictionary<string, Professor>();
+        var resolved = assignment
+            .Select(a => (Assignment: a, Course: ResolveCourseForAssignment(a, courses)))
+            .ToList();
 
         // HC-12: lunch period (5) — never allowed
         foreach (var a in assignment.Where(a => a.Period == Constants.LunchPeriod))
@@ -49,35 +50,38 @@ public static class ConflictDetector
             list.Add(new ConflictItem(
                 ConflictType.LunchConflict, ConflictSeverity.Error,
                 $"{name}({a.CourseId})가 점심 시간({DayName(a.Day)} {a.Period}교시)에 배치됨",
-                a.Day, a.Period));
+                a.Day, a.Period,
+                new[] { a }));
         }
 
         // HC-01: room double-booked at same (day, period, room)
         foreach (var g in assignment.GroupBy(a => (a.Day, a.Period, a.RoomId)))
         {
-            // multi-room same course is OK: distinct course ids only
-            var distinctCids = g.Select(a => a.CourseId).Distinct().ToList();
-            if (distinctCids.Count <= 1) continue;
-            var labels = distinctCids.Select(cid =>
-                courseMap.TryGetValue(cid, out var c) ? c.Name : cid);
+            // multi-room same occurrence is OK: distinct assignment identities only
+            var distinctAssignments = g
+                .DistinctBy(AssignmentConflictIdentity)
+                .ToList();
+            if (distinctAssignments.Count <= 1) continue;
+            var labels = distinctAssignments.Select(a =>
+                ResolveCourseForAssignment(a, courses)?.Name ?? a.CourseId);
             list.Add(new ConflictItem(
                 ConflictType.RoomConflict, ConflictSeverity.Error,
                 $"강의실 {g.Key.RoomId}이 {DayName(g.Key.Day)} {g.Key.Period}교시에 중복 점유: {string.Join(", ", labels)}",
-                g.Key.Day, g.Key.Period));
+                g.Key.Day, g.Key.Period,
+                distinctAssignments));
         }
 
         // HC-02: same professor at two different courses at same (day, period)
         var profSlots = new Dictionary<(string Pid, int Day, int Period), HashSet<string>>();
-        foreach (var a in assignment)
+        foreach (var (a, c) in resolved)
         {
-            var c = ResolveCourseForAssignment(a, courses);
             if (c == null) continue;
             foreach (var pid in DomainHelpers.CourseProfIds(c))
             {
                 var key = (pid, a.Day, a.Period);
                 if (!profSlots.TryGetValue(key, out var set))
                     profSlots[key] = set = new HashSet<string>();
-                set.Add(a.CourseId);
+                set.Add(AssignmentConflictIdentity(a));
             }
         }
 
@@ -85,7 +89,7 @@ public static class ConflictDetector
         foreach (var c in courses.Where(c => c.IsFixed))
         {
             var actual = assignment
-                .Where(a => a.CourseId == c.Id)
+                .Where(a => ReferenceEquals(ResolveCourseForAssignment(a, courses), c))
                 .Select(a => new TimeSlot(a.Day, a.Period))
                 .Distinct()
                 .ToHashSet();
@@ -98,15 +102,21 @@ public static class ConflictDetector
                     actual.FirstOrDefault().Day, actual.FirstOrDefault().Period));
             }
         }
-        foreach (var ((pid, d, p), cids) in profSlots)
+        foreach (var ((pid, d, p), assignmentIds) in profSlots)
         {
-            if (cids.Count <= 1) continue;
-            var labels = cids.Select(cid =>
-                courseMap.TryGetValue(cid, out var c) ? c.Name : cid);
+            if (assignmentIds.Count <= 1) continue;
+            var conflictAssignments = assignment
+                .Where(a => a.Day == d
+                    && a.Period == p
+                    && assignmentIds.Contains(AssignmentConflictIdentity(a)))
+                .ToList();
+            var labels = conflictAssignments
+                .Select(a => ResolveCourseForAssignment(a, courses)?.Name ?? a.CourseId);
             list.Add(new ConflictItem(
                 ConflictType.ProfessorConflict, ConflictSeverity.Error,
                 $"교수 {pid}이 {DayName(d)} {p}교시에 중복: {string.Join(", ", labels)}",
-                d, p));
+                d, p,
+                conflictAssignments));
         }
 
         // HC-03: professor unavailable slot
@@ -123,7 +133,8 @@ public static class ConflictDetector
                     list.Add(new ConflictItem(
                         ConflictType.ProfUnavailable, ConflictSeverity.Error,
                         $"{c.Name}({a.CourseId})이 교수 {pid} 불가시간 {DayName(a.Day)} {a.Period}교시에 배치됨",
-                        a.Day, a.Period));
+                        a.Day, a.Period,
+                        new[] { a }));
                 }
             }
         }
@@ -139,7 +150,8 @@ public static class ConflictDetector
                 list.Add(new ConflictItem(
                     ConflictType.FixedRoomViolation, ConflictSeverity.Error,
                     $"{c.Name}({c.Id})은 고정 강의실 [{string.Join(",", c.FixedRooms)}] 만 사용 가능 — {a.RoomId} 사용",
-                    a.Day, a.Period));
+                    a.Day, a.Period,
+                    new[] { a }));
             }
         }
 
@@ -152,7 +164,8 @@ public static class ConflictDetector
             list.Add(new ConflictItem(
                 ConflictType.CourseUnavailableRoomViolation, ConflictSeverity.Error,
                 $"{c.Name}({c.Id})은 불가 강의실 [{string.Join(",", c.UnavailableRooms)}]을 사용할 수 없습니다 — {a.RoomId} 사용",
-                a.Day, a.Period));
+                a.Day, a.Period,
+                new[] { a }));
         }
 
         // HC-19: length-2 blocks must start at 1/3/6/8.
@@ -167,11 +180,19 @@ public static class ConflictDetector
             foreach (var ((cid, d, p), len) in runs.RunLen)
             {
                 if (cid != c.Id || len != 2) continue;
+                var runAssignment = assignment
+                    .Where(a => a.CourseId == cid && a.Day == d && a.Period >= p && a.Period < p + len)
+                    .FirstOrDefault(a => ReferenceEquals(ResolveCourseForAssignment(a, courses), c));
+                if (runAssignment == default) continue;
                 if (Constants.Len2StartPeriods.Contains(p)) continue;
                 list.Add(new ConflictItem(
                     ConflictType.BlockStartViolation, ConflictSeverity.Error,
                     $"{c.Name}({c.Id})의 2시간 수업은 1, 3, 6, 8교시에만 시작할 수 있습니다.",
-                    d, p));
+                    d, p,
+                    assignment
+                        .Where(a => a.CourseId == cid && a.Day == d && a.Period >= p && a.Period < p + len)
+                        .Where(a => ReferenceEquals(ResolveCourseForAssignment(a, courses), c))
+                        .ToList()));
             }
         }
 
@@ -201,7 +222,8 @@ public static class ConflictDetector
                 ConflictSeverity.Error,
                 $"HC-20: 동일 교과목·분반·교수 수업은 같은 요일에 두 번 이상 배치할 수 없습니다. ({sample.Name} / {SectionLabel(sample.Section)}분반 / {ProfessorIdentity(sample)} / {DayName(g.Key.Day)}요일 / {rangesText})",
                 g.Key.Day,
-                firstRange.Start));
+                firstRange.Start,
+                g.Select(x => x.Assignment).ToList()));
         }
 
         // HC-21: professor's auto-placed courses (no FixedRooms) should all share one room
@@ -238,7 +260,8 @@ public static class ConflictDetector
                 list.Add(new ConflictItem(
                     ConflictType.ProfAllowedRoomViolation, ConflictSeverity.Error,
                     $"{c.Name}({c.Id})은 교수 {c.ProfessorId}의 불가 강의실 [{string.Join(",", prof.UnavailableRooms)}]에 배정할 수 없습니다.",
-                    a.Day, a.Period));
+                    a.Day, a.Period,
+                    new[] { a }));
                 continue;
             }
         }
@@ -246,21 +269,25 @@ public static class ConflictDetector
         // HC-08: same baseId different sections at same slot
         foreach (var g in assignment.GroupBy(a => (a.Day, a.Period)))
         {
-            var byBase = new Dictionary<string, HashSet<string>>();
+            var byBase = new Dictionary<string, List<(SolutionAssignment Assignment, Course? Course)>>();
             foreach (var a in g)
             {
-                var bid = DomainHelpers.BaseId(a.CourseId);
+                var c = ResolveCourseForAssignment(a, courses);
+                var bid = DomainHelpers.BaseId(c?.Id ?? a.CourseId);
                 if (!byBase.TryGetValue(bid, out var set))
-                    byBase[bid] = set = new HashSet<string>();
-                set.Add(a.CourseId);
+                    byBase[bid] = set = new List<(SolutionAssignment, Course?)>();
+                set.Add((a, c));
             }
-            foreach (var (bid, cids) in byBase)
+            foreach (var (bid, rows) in byBase)
             {
-                if (cids.Count <= 1) continue;
+                var hasMultipleSections = rows.Select(x => x.Assignment.CourseId).Distinct(StringComparer.Ordinal).Count() > 1
+                    || rows.Select(x => x.Course?.Section).Where(section => section is > 0).Distinct().Count() > 1;
+                if (!hasMultipleSections) continue;
                 list.Add(new ConflictItem(
                     ConflictType.SectionConflict, ConflictSeverity.Error,
-                    $"{bid}의 분반이 {DayName(g.Key.Day)} {g.Key.Period}교시에 중복: {string.Join(", ", cids)}",
-                    g.Key.Day, g.Key.Period));
+                    $"{bid}의 분반이 {DayName(g.Key.Day)} {g.Key.Period}교시에 중복: {string.Join(", ", rows.Select(x => x.Course?.Name ?? x.Assignment.CourseId))}",
+                    g.Key.Day, g.Key.Period,
+                    rows.Select(x => x.Assignment).ToList()));
             }
         }
 
@@ -276,12 +303,17 @@ public static class ConflictDetector
 
         foreach (var g in assignment.GroupBy(a => (a.Day, a.Period)))
         {
-            var cids = g.Select(a => a.CourseId).Distinct().ToList();
-            for (int i = 0; i < cids.Count; i++)
-                for (int j = i + 1; j < cids.Count; j++)
+            var rows = g
+                .Select(a => (Assignment: a, Course: ResolveCourseForAssignment(a, courses)))
+                .Where(x => x.Course != null)
+                .Select(x => (x.Assignment, Course: x.Course!))
+                .DistinctBy(x => AssignmentConflictIdentity(x.Assignment))
+                .ToList();
+            for (int i = 0; i < rows.Count; i++)
+                for (int j = i + 1; j < rows.Count; j++)
                 {
-                    if (!courseMap.TryGetValue(cids[i], out var c1)) continue;
-                    if (!courseMap.TryGetValue(cids[j], out var c2)) continue;
+                    var c1 = rows[i].Course;
+                    var c2 = rows[j].Course;
                     if (c1.Grade <= 0 || c2.Grade <= 0 || c1.Grade != c2.Grade) continue;
                     var b1 = DomainHelpers.BaseId(c1.Id);
                     var b2 = DomainHelpers.BaseId(c2.Id);
@@ -292,7 +324,8 @@ public static class ConflictDetector
                     list.Add(new ConflictItem(
                         ConflictType.GradeConflict, ConflictSeverity.Error,
                         $"{c1.Grade}학년 과목이 {DayName(g.Key.Day)} {g.Key.Period}교시에 중복: {c1.Name}, {c2.Name}",
-                        g.Key.Day, g.Key.Period));
+                        g.Key.Day, g.Key.Period,
+                        new[] { rows[i].Assignment, rows[j].Assignment }));
                 }
         }
 
@@ -314,16 +347,21 @@ public static class ConflictDetector
             .Where(c => c.FixedRooms.Any(room => string.Equals(NormalizeRoomId(room), roomId, StringComparison.Ordinal)))
             .ToList();
         if (fixedRoomMatches.Count == 1) return fixedRoomMatches[0];
-        if (fixedRoomMatches.Count > 0) candidates = fixedRoomMatches;
+        if (fixedRoomMatches.Count > 0) return null;
 
         var unavailableRoomExclusions = candidates
             .Where(c => c.UnavailableRooms.All(room => !string.Equals(NormalizeRoomId(room), roomId, StringComparison.Ordinal)))
             .ToList();
         if (unavailableRoomExclusions.Count == 1) return unavailableRoomExclusions[0];
-        if (unavailableRoomExclusions.Count > 0) candidates = unavailableRoomExclusions;
+        if (unavailableRoomExclusions.Count > 0) return null;
 
-        return candidates[0];
+        return null;
     }
+
+    private static string AssignmentConflictIdentity(SolutionAssignment assignment) =>
+        string.IsNullOrWhiteSpace(assignment.AssignmentId)
+            ? string.Join("\u001f", assignment.CourseId, assignment.Day, assignment.Period, assignment.RoomId)
+            : assignment.AssignmentId;
 
     private static string NormalizeRoomId(string? roomId) =>
         string.IsNullOrWhiteSpace(roomId) ? "" : roomId.Trim();

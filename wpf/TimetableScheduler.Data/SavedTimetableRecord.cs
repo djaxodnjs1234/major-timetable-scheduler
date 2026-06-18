@@ -21,4 +21,6 @@ public sealed record SavedManualCrossLinkRow(
     int TargetDay,
     int TargetPeriod,
     string TargetRoomId,
-    string PolicyType);
+    string PolicyType,
+    string? SourceAssignmentId = null,
+    string? TargetAssignmentId = null);

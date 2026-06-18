@@ -2,7 +2,7 @@ using ClosedXML.Excel;
 
 namespace TimetableScheduler.Data;
 
-public sealed record TimetableAssignmentRow(string CourseId, int Day, int Period, string RoomId);
+public sealed record TimetableAssignmentRow(string CourseId, int Day, int Period, string RoomId, string? AssignmentId = null);
 
 public static class TimetableXlsxService
 {

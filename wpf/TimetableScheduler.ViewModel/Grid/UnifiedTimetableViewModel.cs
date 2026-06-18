@@ -133,6 +133,7 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         // (course metadata key, d, p) -> set of rooms. The metadata key is not just
         // CourseId because some imported/saved sessions can contain duplicate Course.Id.
         var roomsBySlot = new Dictionary<(string CourseKey, int Day, int Period), HashSet<string>>();
+        var assignmentIdsBySlot = new Dictionary<(string CourseKey, int Day, int Period), HashSet<string>>();
         foreach (var a in assignment)
         {
             var courseKey = BuildAssignmentCourseKey(a, courses);
@@ -141,11 +142,15 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
             if (!roomsBySlot.TryGetValue(key, out var set))
                 roomsBySlot[key] = set = new HashSet<string>();
             set.Add(a.RoomId);
+            if (!assignmentIdsBySlot.TryGetValue(key, out var idSet))
+                assignmentIdsBySlot[key] = idSet = new HashSet<string>(StringComparer.Ordinal);
+            if (!string.IsNullOrWhiteSpace(a.AssignmentId))
+                idSet.Add(a.AssignmentId);
         }
 
         var runs = ComputeVisualRuns(roomsBySlot, courseMap, MergeOnlyStructuredBlocks);
 
-        var visualBlocks = BuildVisualBlocks(roomsBySlot, courseMap, runs);
+        var visualBlocks = BuildVisualBlocks(roomsBySlot, assignmentIdsBySlot, courseMap, runs);
         AssignSubColumns(visualBlocks, courseMap);
 
         // For each (day, grade), use the number of sub-columns needed by visual blocks.
@@ -202,7 +207,7 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
                         var c = courseMap[block.CourseKey];
                         cells.Add(new UnifiedCell(
                             d, p, g, block.SubColumnIdx,
-                            CellAssignment.FromCourse(c, block.Rooms, block.RowSpan, professorNames, roomNames)));
+                            CellAssignment.FromCourse(c, block.Rooms, block.RowSpan, professorNames, roomNames, block.AssignmentId, block.CourseKey)));
                     }
                 }
             }
@@ -323,12 +328,14 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         public required int StartPeriod { get; init; }
         public required int RowSpan { get; init; }
         public required IReadOnlySet<string> Rooms { get; init; }
+        public required string AssignmentId { get; init; }
         public int EndPeriod => StartPeriod + RowSpan - 1;
         public int SubColumnIdx { get; set; }
     }
 
     private static List<VisualBlock> BuildVisualBlocks(
         IReadOnlyDictionary<(string CourseKey, int Day, int Period), HashSet<string>> roomsBySlot,
+        IReadOnlyDictionary<(string CourseKey, int Day, int Period), HashSet<string>> assignmentIdsBySlot,
         IReadOnlyDictionary<string, Course> courseMap,
         RunInfo runs)
     {
@@ -338,6 +345,12 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
             if (!courseMap.ContainsKey(courseKey)) continue;
             if (runs.Inside.Contains((courseKey, d, p))) continue;
             var rowSpan = runs.RunLen.TryGetValue((courseKey, d, p), out var n) ? n : 1;
+            var ids = Enumerable.Range(p, rowSpan)
+                .SelectMany(period => assignmentIdsBySlot.TryGetValue((courseKey, d, period), out var slotIds)
+                    ? slotIds
+                    : Enumerable.Empty<string>())
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
             blocks.Add(new VisualBlock
             {
                 CourseKey = courseKey,
@@ -345,6 +358,7 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
                 StartPeriod = p,
                 RowSpan = rowSpan,
                 Rooms = slotRooms,
+                AssignmentId = ids.Count == 1 ? ids[0] : "",
             });
         }
 

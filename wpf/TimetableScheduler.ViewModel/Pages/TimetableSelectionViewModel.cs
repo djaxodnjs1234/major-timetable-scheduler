@@ -25,6 +25,9 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
     [ObservableProperty]
     private SavedTimetableRecord? selectedTimetable;
 
+    [ObservableProperty]
+    private int selectedPreviewTabIndex;
+
     public bool HasSelection => SelectedTimetable != null;
     public bool HasNoSelection => !HasSelection;
     public bool HasNoTimetable => SavedTimetables.Count == 0;
@@ -72,6 +75,7 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
 
     partial void OnSelectedTimetableChanged(SavedTimetableRecord? value)
     {
+        SelectedPreviewTabIndex = 0;
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasNoSelection));
         ExportXlsxCommand.NotifyCanExecuteChanged();
@@ -87,7 +91,7 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         }
 
         var assignments = value.Assignments
-            .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId))
+            .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
             .ToList();
         var snapshot = SavedTimetableSnapshotResolver.Resolve(value.SnapshotJson);
         RenderViews(
