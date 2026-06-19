@@ -184,7 +184,7 @@ public class DiverseSolverTests
     }
 
     [Fact]
-    public void Cancellation_ThrowsOperationCanceled()
+    public void Cancellation_ReturnsCancelledResult()
     {
         var (courses, profs, rooms) = MakeSetup();
         var opts = new DiverseSolverOptions
@@ -196,7 +196,9 @@ public class DiverseSolverTests
         using var cts = new CancellationTokenSource();
         cts.CancelAfter(TimeSpan.FromMilliseconds(50));
 
-        Assert.Throws<OperationCanceledException>(() =>
-            DiverseSolver.Solve(courses, profs, rooms, opts, cancellationToken: cts.Token));
+        var result = DiverseSolver.Solve(courses, profs, rooms, opts, cancellationToken: cts.Token);
+
+        Assert.Equal("CANCELLED", result.Status);
+        Assert.Empty(result.Solutions);
     }
 }

@@ -98,6 +98,7 @@ public static class TimetableDiagnostics
         AddFixedOverlapInputErrors(issues, courses, crosses);
         AddRoomAndTimeCandidateInputErrors(issues, courses, professors, rooms);
         AddCrossInputErrors(issues, courses, crosses);
+        AddGradeSlotCapacityErrors(issues, courses, crosses, "IE-038");
     }
 
     private static void AddGenerationErrors(
@@ -153,6 +154,7 @@ public static class TimetableDiagnostics
         AddFixedOverlapGenerationErrors(issues, courses, crosses);
         AddTeamTeachingGenerationErrors(issues, courses, professors, rooms);
         AddCrossGenerationErrors(issues, courses, crosses);
+        AddGradeSlotCapacityErrors(issues, courses, crosses, "GE-027");
         AddRetakeGenerationErrors(issues, courses, crosses, retakes, considerRetakeStudents);
     }
 
@@ -320,6 +322,9 @@ public static class TimetableDiagnostics
             if (cross.BaseIds.Any(id => !groups.ContainsKey(id)))
                 Add(issues, "IE-033", $"{cross.Id} Cross 대상 과목을 찾을 수 없습니다. Cross를 삭제하고 다시 등록하세요.");
 
+            if (CrossBlockStructureConflict(cross, groups))
+                Add(issues, "IE-035", $"{cross.Id} Cross 과목들의 블록구조가 다릅니다. 블록구조를 같게 맞추거나 Cross를 해제하세요.");
+
             if (CrossFixedConflict(cross, groups))
                 Add(issues, "IE-034", $"{cross.Id} Cross와 시간고정 조건을 동시에 만족할 수 없습니다. Cross 또는 시간고정을 수정하세요.");
         }
@@ -356,8 +361,39 @@ public static class TimetableDiagnostics
             if (groupedCourses.Select(group => group[0].HoursPerWeek).Distinct().Count() > 1)
                 Add(issues, "GE-019", $"{cross.Id} Cross 과목들의 총 시수가 다릅니다. 시수를 맞추세요.");
 
+            if (CrossBlockStructureConflict(cross, groups))
+                Add(issues, "GE-026", $"{cross.Id} Cross 과목들의 블록구조가 다릅니다. 블록구조를 같게 맞추거나 Cross를 해제하세요.");
+
             if (CrossFixedConflict(cross, groups))
                 Add(issues, "GE-020", $"{cross.Id} Cross와 시간고정 조건이 충돌합니다. Cross를 해제하거나 시간고정을 수정하세요.");
+        }
+    }
+
+    private static void AddGradeSlotCapacityErrors(
+        List<TimetableDiagnostic> issues,
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<CrossGroup>? crosses,
+        string id)
+    {
+        var capacity = Constants.Days * Constants.ValidPeriods.Count;
+        var baseRequirements = BaseGradeSlotRequirements(courses);
+        var requiredByGrade = baseRequirements
+            .GroupBy(pair => pair.Key.Grade)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Sum(pair => pair.Value));
+        var crossOverlapByGrade = CrossSlotOverlapByGrade(crosses, baseRequirements);
+
+        foreach (var grade in requiredByGrade.Keys.OrderBy(grade => grade))
+        {
+            var crossOverlap = crossOverlapByGrade.TryGetValue(grade, out var overlap) ? overlap : 0;
+            var requiredSlots = Math.Max(0, requiredByGrade[grade] - crossOverlap);
+            if (requiredSlots <= capacity) continue;
+
+            Add(
+                issues,
+                id,
+                $"{AcademicLevels.DisplayName(grade)} 과목들이 사용할 수 있는 시간칸 {capacity}칸을 초과합니다. 필요한 최소 시간칸은 Cross 반영 후 {requiredSlots}칸입니다. 과목 시수/분반 수를 줄이거나 Cross를 추가해 같은 시간 배치를 허용하세요.");
         }
     }
 
@@ -393,7 +429,7 @@ public static class TimetableDiagnostics
                 currentMajors.All(major =>
                     !section.FixedSlots.Any(slot => major.FixedSlots.Contains(slot))));
             if (!hasSafeSection)
-                Add(issues, "GE-021", $"{retake.CurrentGrade}학년 재수강생 고려 조건 때문에 {retake.RetakeBaseId} 전필 안전 분반을 만들 수 없습니다. 재수강생 고려를 해제하거나 전필 시간 조건을 완화하세요.");
+                Add(issues, "GE-021", $"{AcademicLevels.DisplayName(retake.CurrentGrade)} 재수강생 고려 조건 때문에 {retake.RetakeBaseId} 전필 안전 분반을 만들 수 없습니다. 재수강생 고려를 해제하거나 전필 시간 조건을 완화하세요.");
         }
     }
 
@@ -464,6 +500,25 @@ public static class TimetableDiagnostics
         return false;
     }
 
+    private static bool CrossBlockStructureConflict(CrossGroup cross, IReadOnlyDictionary<string, List<Course>> groups)
+    {
+        if (cross.BaseIds.Count != 2) return false;
+        if (!groups.TryGetValue(cross.BaseIds[0], out var first)) return false;
+        if (!groups.TryGetValue(cross.BaseIds[1], out var second)) return false;
+        if (first.Count != second.Count || first.Count == 0) return false;
+
+        first = first.OrderBy(course => course.Section).ToList();
+        second = second.OrderBy(course => course.Section).ToList();
+        for (var index = 0; index < first.Count; index++)
+        {
+            var left = first[index];
+            var right = second[(index + 1) % second.Count];
+            if (!EffectiveBlocks(left).SequenceEqual(EffectiveBlocks(right)))
+                return true;
+        }
+        return false;
+    }
+
     private static IEnumerable<TimeSlot> FixedOverlaps(Course first, Course second)
     {
         if (!first.IsFixed || !second.IsFixed) yield break;
@@ -495,6 +550,51 @@ public static class TimetableDiagnostics
                 group => group.Key,
                 group => group.OrderBy(course => course.Section).ToList(),
                 StringComparer.Ordinal);
+
+    private static Dictionary<(int Grade, string BaseId), int> BaseGradeSlotRequirements(IReadOnlyList<Course> courses) =>
+        courses
+            .Where(course => course.Grade > 0)
+            .GroupBy(course => (course.Grade, BaseId: DomainHelpers.BaseId(course.Id)))
+            .ToDictionary(
+                group => group.Key,
+                group => group.Max(RequiredSlotCount));
+
+    private static Dictionary<int, int> CrossSlotOverlapByGrade(
+        IReadOnlyList<CrossGroup>? crosses,
+        IReadOnlyDictionary<(int Grade, string BaseId), int> baseRequirements)
+    {
+        var result = new Dictionary<int, int>();
+        if (crosses == null || crosses.Count == 0) return result;
+
+        var seenPairs = new HashSet<(int Grade, string FirstBaseId, string SecondBaseId)>();
+        foreach (var cross in crosses)
+        {
+            if (cross.BaseIds.Count != 2) continue;
+
+            var leftBaseId = cross.BaseIds[0];
+            var rightBaseId = cross.BaseIds[1];
+            if (string.Equals(leftBaseId, rightBaseId, StringComparison.Ordinal))
+                continue;
+
+            foreach (var left in baseRequirements.Where(pair => pair.Key.BaseId == leftBaseId))
+            {
+                if (!baseRequirements.TryGetValue((left.Key.Grade, rightBaseId), out var rightRequired))
+                    continue;
+
+                var firstBaseId = string.CompareOrdinal(leftBaseId, rightBaseId) <= 0 ? leftBaseId : rightBaseId;
+                var secondBaseId = string.CompareOrdinal(leftBaseId, rightBaseId) <= 0 ? rightBaseId : leftBaseId;
+                if (!seenPairs.Add((left.Key.Grade, firstBaseId, secondBaseId)))
+                    continue;
+
+                var overlap = Math.Min(left.Value, rightRequired);
+                result[left.Key.Grade] = result.TryGetValue(left.Key.Grade, out var previous)
+                    ? previous + overlap
+                    : overlap;
+            }
+        }
+
+        return result;
+    }
 
     private static bool FixedSlotsMatchBlocks(Course course)
     {
@@ -537,6 +637,7 @@ public static class TimetableDiagnostics
             2 => text == "2",
             3 => text is "1+2" or "3",
             4 => text is "2+2" or "4",
+            5 => text is "1+2+2" or "2+3",
             _ => text == weeklyHours.ToString(),
         };
     }
@@ -547,6 +648,7 @@ public static class TimetableDiagnostics
         2 => "2",
         3 => "1+2 또는 3",
         4 => "2+2 또는 4",
+        5 => "1+2+2 또는 2+3",
         _ => weeklyHours.ToString(),
     };
 

@@ -342,7 +342,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     public string SelectedLocationText => SelectedAssignment == null
         ? "-"
-        : $"{SelectedAssignment.Grade}학년 / 분반 {Fallback(SelectedAssignment.SectionLabel)} / {SelectedRoomsText}";
+        : $"{AcademicLevels.DisplayName(SelectedAssignment.Grade)} / 분반 {Fallback(SelectedAssignment.SectionLabel)} / {SelectedRoomsText}";
 
     public string SelectedRoomsText => SelectedAssignment == null || SelectedAssignment.Rooms.Count == 0
         ? "-"
@@ -2739,9 +2739,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             var range = ResolveConflictPeriodRange(assignment, conflict);
             var timeLabel = FormatConflictTimeLabel(conflict.Day, range.Start, range.End);
             var gradeLabel = course?.Grade > 0
-                ? $"{course.Grade}학년"
+                ? AcademicLevels.DisplayName(course.Grade)
                 : assignmentCourseGrade(assignment) is int grade && grade > 0
-                    ? $"{grade}학년"
+                    ? AcademicLevels.DisplayName(grade)
                     : "";
 
             return string.IsNullOrWhiteSpace(gradeLabel)
@@ -2999,11 +2999,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var rooms = SessionRooms;
 
         GradeViews.Clear();
-        foreach (var g in new[] { 1, 2, 3, 4 })
+        foreach (var g in AcademicLevels.AllGrades)
         {
             var vm = new TimetableGridViewModel();
             vm.Render(_working, courses, (c, _) => c.Grade == g, professors, rooms);
-            GradeViews.Add(new NamedGridViewModel(g.ToString(), $"{g}학년", vm));
+            GradeViews.Add(new NamedGridViewModel(g.ToString(), AcademicLevels.DisplayName(g), vm));
         }
 
         RoomViews.Clear();

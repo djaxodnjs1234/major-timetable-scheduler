@@ -523,6 +523,46 @@ public class TimetableXlsxRoundTripTests
         }
     }
 
+    [Fact]
+    public void ExcelExport_GraduateCourse_UsesGraduateHeaderAndSheet()
+    {
+        var rows = new List<TimetableAssignmentRow>
+        {
+            new("GR", 0, 1, "R1"),
+        };
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "GR",
+                Name = "Graduate Seminar",
+                Grade = AcademicLevels.GraduateGrade,
+                Section = 1,
+                ProfessorId = "P1",
+            },
+        };
+        var professors = new List<Professor> { new() { Id = "P1", Name = "Professor" } };
+        var rooms = new List<Room> { new() { Id = "R1", Name = "Room" } };
+
+        var path = Path.Combine(Path.GetTempPath(), $"graduate_export_{Guid.NewGuid():N}.xlsx");
+        try
+        {
+            FormattedTimetableExporter.Export("테스트", rows, courses, professors, path, rooms, expandAllGrades: true);
+
+            using var wb = new XLWorkbook(path);
+            var unifiedHeader = RowText(wb.Worksheet("통합 시간표"), 5);
+            Assert.Contains("대학원", unifiedHeader);
+            Assert.Contains(wb.Worksheets.Select(ws => ws.Name), name => name.StartsWith("학년별_대학원", StringComparison.Ordinal));
+            var graduateSheet = wb.Worksheets.Single(ws => ws.Name.StartsWith("학년별_대학원", StringComparison.Ordinal));
+            Assert.Contains("대학원", RowText(graduateSheet, 5));
+            Assert.Contains("Graduate Seminar", SheetText(graduateSheet));
+        }
+        finally
+        {
+            if (File.Exists(path)) File.Delete(path);
+        }
+    }
+
     private static string ExportAndReadVisibleText(
         IReadOnlyList<TimetableAssignmentRow> rows,
         IReadOnlyList<Course> courses,

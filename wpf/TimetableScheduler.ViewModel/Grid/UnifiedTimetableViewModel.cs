@@ -156,7 +156,7 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         // For each (day, grade), use the number of sub-columns needed by visual blocks.
         var maxWidth = new Dictionary<(int Day, int Grade), int>();
         for (int d = 0; d < Constants.Days; d++)
-            foreach (var g in new[] { 1, 2, 3, 4 })
+            foreach (var g in AcademicLevels.AllGrades)
                 maxWidth[(d, g)] = 0;
 
         foreach (var block in visualBlocks)
@@ -172,7 +172,7 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         for (int d = 0; d < Constants.Days; d++)
         {
             var entries = new List<GradeColumn>();
-            foreach (var g in new[] { 1, 2, 3, 4 })
+            foreach (var g in AcademicLevels.AllGrades)
             {
                 int w = maxWidth[(d, g)];
                 if (ExpandAllGrades && w == 0) w = 1;

@@ -1,6 +1,7 @@
 using System.Globalization;
 using System.Windows.Data;
 using System.Windows.Media;
+using TimetableScheduler.Domain;
 
 namespace TimetableScheduler.Wpf.Converters;
 
@@ -16,6 +17,7 @@ public sealed class GradeToBrushConverter : IValueConverter
             [2] = MakeBrush(0xDC, 0xED, 0xC8),
             [3] = MakeBrush(0xBB, 0xDE, 0xFB),
             [4] = MakeBrush(0xFF, 0xCD, 0xD2),
+            [AcademicLevels.GraduateGrade] = MakeBrush(0xD1, 0xC4, 0xE9),
         };
     }
 
@@ -40,8 +42,7 @@ public sealed class GradeToBrushConverter : IValueConverter
                 grade = g;
                 return true;
             case string text:
-                var digits = new string(text.Where(char.IsDigit).ToArray());
-                return int.TryParse(digits, out grade);
+                return AcademicLevels.TryParse(text, out grade);
             default:
                 grade = 0;
                 return false;

@@ -41,6 +41,7 @@ public static class XlsxLoader
     {
         3 => new List<int> { 1, 2 },
         4 => new List<int> { 2, 2 },
+        5 => new List<int> { 1, 2, 2 },
         _ => new List<int> { hours },
     };
 
@@ -74,11 +75,7 @@ public static class XlsxLoader
             var name = Cell("G");
             if (string.IsNullOrEmpty(gradeRaw) || string.IsNullOrEmpty(name)) continue;
 
-            if (!int.TryParse(gradeRaw, out var grade))
-            {
-                if (!double.TryParse(gradeRaw, out var gradeDouble)) continue;
-                grade = (int)gradeDouble;
-            }
+            if (!AcademicLevels.TryParse(gradeRaw, out var grade)) continue;
 
             var typeRaw = Cell("F");
             var courseType = typeRaw == RequiredType ? MajorRequiredType : MajorElectiveType;
@@ -100,7 +97,7 @@ public static class XlsxLoader
             var xlsxBlocks = schedule.Select(entry => entry.Periods.Count).ToList();
 
             List<int> blockStructure;
-            if (hours is 3 or 4) blockStructure = DefaultBlockStructureForHours(hours);
+            if (hours is 3 or 4 or 5) blockStructure = DefaultBlockStructureForHours(hours);
             else if (xlsxBlocks.Count > 0 && xlsxBlocks.Sum() == hours) blockStructure = xlsxBlocks;
             else blockStructure = DefaultBlockStructureForHours(hours);
 

@@ -30,6 +30,21 @@ public class DataInputViewTests
     }
 
     [Fact]
+    public void CancelButton_UsesCancelCommandCanExecute()
+    {
+        var xaml = File.ReadAllText(FindDataInputViewXaml());
+        var commandIndex = xaml.IndexOf("Command=\"{Binding CancelCommand}\"", StringComparison.Ordinal);
+
+        Assert.True(commandIndex >= 0);
+
+        var snippetStart = Math.Max(0, commandIndex - 80);
+        var snippetLength = Math.Min(220, xaml.Length - snippetStart);
+        var cancelButtonSnippet = xaml.Substring(snippetStart, snippetLength);
+        Assert.Contains("Content=\"취소\"", cancelButtonSnippet);
+        Assert.DoesNotContain("IsEnabled=\"{Binding IsSolving}\"", cancelButtonSnippet);
+    }
+
+    [Fact]
     public void BlockStructureChanged_RefreshesFixedCheckbox()
     {
         var source = File.ReadAllText(FindDataInputViewCodeBehind());

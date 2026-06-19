@@ -1,6 +1,7 @@
 using ClosedXML.Excel;
 using TimetableScheduler.Data;
 using TimetableScheduler.Domain;
+using TimetableScheduler.Solver;
 using TimetableScheduler.ViewModel;
 using TimetableScheduler.ViewModel.Pages;
 
@@ -34,6 +35,16 @@ public class CourseGroupsTests : IDisposable
 
     private DataInputViewModel MakeVm() =>
         new(_workspace, null!);
+
+    private void AddTwoSectionCourse(string baseId, Action<Course>? configure = null)
+    {
+        for (var section = 1; section <= 2; section++)
+        {
+            var course = MakeCourse($"{baseId}-{section:D2}", section);
+            configure?.Invoke(course);
+            _workspace.AddCourse(course);
+        }
+    }
 
     private static string CreateWorkbookWithRooms(params (string Grade, string Type, string Name, string Hours, string Code, string Professor, string Department, string Schedule)[] rows)
     {
@@ -72,6 +83,22 @@ public class CourseGroupsTests : IDisposable
         var vm = MakeVm();
 
         Assert.False(vm.ConsiderRetakeStudents);
+    }
+
+    [Fact]
+    public void GradeOptionsAndCourseHeader_IncludeGraduateLevel()
+    {
+        var course = MakeCourse("GR1001-01", 1);
+        course.Grade = AcademicLevels.GraduateGrade;
+        _workspace.AddCourse(course);
+
+        var vm = MakeVm();
+
+        Assert.Contains(vm.GradeOptions, option =>
+            option.Grade == AcademicLevels.GraduateGrade && option.DisplayName == "대학원");
+        var group = Assert.Single(vm.CourseGroups);
+        Assert.Equal("대학원", group.HeaderGrade);
+        Assert.Contains("대학원", group.DisplayLabel);
     }
 
     [Fact]
@@ -326,6 +353,7 @@ public class CourseGroupsTests : IDisposable
         var vm = MakeVm();
 
         Assert.Contains("★", vm.CourseGroups[0].DisplayLabel);
+        Assert.Equal("★", vm.CourseGroups[0].HeaderFixedMarker);
     }
 
     [Fact]
@@ -342,9 +370,13 @@ public class CourseGroupsTests : IDisposable
     [Fact]
     public void GenerateBlockStructureOptions_UsesWeeklyHoursExamples()
     {
+        var vm = MakeVm();
+
+        Assert.Contains(5, vm.HourOptions);
         Assert.Equal(new[] { "2" }, DataInputViewModel.GenerateBlockStructureOptions(2));
         Assert.Equal(new[] { "1+2", "3" }, DataInputViewModel.GenerateBlockStructureOptions(3));
         Assert.Equal(new[] { "2+2", "4" }, DataInputViewModel.GenerateBlockStructureOptions(4));
+        Assert.Equal(new[] { "1+2+2", "2+3" }, DataInputViewModel.GenerateBlockStructureOptions(5));
     }
 
     [Fact]
@@ -674,6 +706,25 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void AddSection_WhenCourseIsFixed_ClearsFixedTimeFromExistingSection()
+    {
+        var course = MakeCourse("GA1004-01", 1, isFixed: true);
+        course.FixedSlots = new List<TimeSlot> { new(0, 1), new(0, 2), new(1, 1) };
+        _workspace.AddCourse(course);
+        var vm = MakeVm();
+        var item = vm.CourseGroups[0];
+
+        vm.AddSectionCommand.Execute(item);
+
+        var saved = _workspace.Courses.OrderBy(c => c.Section).ToList();
+        Assert.Equal(2, saved.Count);
+        Assert.All(saved, section => Assert.False(section.IsFixed));
+        Assert.All(saved, section => Assert.Empty(section.FixedSlots));
+        Assert.Equal("", vm.CourseGroups[0].HeaderFixedMarker);
+        Assert.Equal("없음", vm.CourseGroups[0].ReadOnlyFixedTimes);
+    }
+
+    [Fact]
     public void RemoveSection_RemovesLastSection()
     {
         _workspace.AddCourse(MakeCourse("GA1004-01", 1));
@@ -686,6 +737,28 @@ public class CourseGroupsTests : IDisposable
         Assert.Single(vm.CourseGroups);
         Assert.Single(vm.CourseGroups[0].Sections);
         Assert.Equal("GA1004-01", vm.CourseGroups[0].Sections[0].Id);
+    }
+
+    [Fact]
+    public void RemoveSection_WhenCourseIsFixed_ClearsFixedTimeFromRemainingSections()
+    {
+        var first = MakeCourse("GA1004-01", 1, isFixed: true);
+        first.FixedSlots = new List<TimeSlot> { new(0, 1), new(0, 2), new(1, 1) };
+        var second = MakeCourse("GA1004-02", 2, isFixed: true);
+        second.FixedSlots = new List<TimeSlot> { new(2, 1), new(2, 2), new(3, 1) };
+        _workspace.AddCourse(first);
+        _workspace.AddCourse(second);
+        var vm = MakeVm();
+        var item = vm.CourseGroups[0];
+
+        vm.RemoveSectionCommand.Execute(item);
+
+        var saved = Assert.Single(_workspace.Courses);
+        Assert.Equal("GA1004-01", saved.Id);
+        Assert.False(saved.IsFixed);
+        Assert.Empty(saved.FixedSlots);
+        Assert.Equal("", vm.CourseGroups[0].HeaderFixedMarker);
+        Assert.Equal("없음", vm.CourseGroups[0].ReadOnlyFixedTimes);
     }
 
     [Fact]
@@ -739,6 +812,36 @@ public class CourseGroupsTests : IDisposable
         Assert.Equal(new[] { "R2" }, courses[0].UnavailableRooms);
         Assert.Equal(new[] { "R2" }, courses[1].UnavailableRooms);
         Assert.False(item.IsEditing);
+    }
+
+    [Fact]
+    public void SaveGroup_ClearsSharedOptionalLists_ToAllSections()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "Room 1" });
+        _workspace.AddRoom(new Room { Id = "R2", Name = "Room 2" });
+        _workspace.AddProfessor(new Professor { Id = "P2", Name = "Co Professor" });
+        var first = MakeCourse("GA1004-01", 1);
+        var second = MakeCourse("GA1004-02", 2);
+        foreach (var course in new[] { first, second })
+        {
+            course.FixedRooms = new List<string> { "R1" };
+            course.UnavailableRooms = new List<string> { "R2" };
+            course.CoteachProfs = new List<string> { "P2" };
+        }
+        _workspace.AddCourse(first);
+        _workspace.AddCourse(second);
+        var vm = MakeVm();
+        var item = vm.CourseGroups[0];
+
+        item.Sections[0].FixedRooms.Clear();
+        item.Sections[0].UnavailableRooms.Clear();
+        item.Sections[0].CoteachProfs.Clear();
+        vm.SaveGroupCommand.Execute(item);
+
+        var courses = _workspace.Courses.OrderBy(c => c.Id).ToList();
+        Assert.All(courses, course => Assert.Empty(course.FixedRooms));
+        Assert.All(courses, course => Assert.Empty(course.UnavailableRooms));
+        Assert.All(courses, course => Assert.Empty(course.CoteachProfs));
     }
 
     [Fact]
@@ -831,8 +934,8 @@ public class CourseGroupsTests : IDisposable
     [Fact]
     public void CrossManager_AddsSelectedCoursesAndRebuildsLists()
     {
-        _workspace.AddCourse(MakeCourse("A-01", 1));
-        _workspace.AddCourse(MakeCourse("B-01", 1));
+        AddTwoSectionCourse("A");
+        AddTwoSectionCourse("B");
         var vm = MakeVm();
 
         Assert.Equal(new[] { "A", "B" }, vm.CrossCandidateItems.Select(i => i.Id));
@@ -852,10 +955,57 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
-    public void CrossManager_DeleteSelectedCross_RemovesWorkspaceGroup()
+    public void CrossManager_DisablesSingleSectionCandidates()
     {
         _workspace.AddCourse(MakeCourse("A-01", 1));
-        _workspace.AddCourse(MakeCourse("B-01", 1));
+        AddTwoSectionCourse("B");
+        var vm = MakeVm();
+
+        Assert.False(vm.CrossCandidateItems.Single(i => i.Id == "A").IsEnabled);
+        Assert.True(vm.CrossCandidateItems.Single(i => i.Id == "B").IsEnabled);
+    }
+
+    [Fact]
+    public void CrossManager_KeepsSelectedCandidatesEnabledAfterTwoSelections()
+    {
+        AddTwoSectionCourse("A");
+        AddTwoSectionCourse("B");
+        AddTwoSectionCourse("C");
+        var vm = MakeVm();
+
+        vm.CrossCandidateItems.Single(i => i.Id == "A").IsChecked = true;
+        vm.CrossCandidateItems.Single(i => i.Id == "B").IsChecked = true;
+
+        Assert.True(vm.CrossCandidateItems.Single(i => i.Id == "A").IsEnabled);
+        Assert.True(vm.CrossCandidateItems.Single(i => i.Id == "B").IsEnabled);
+        Assert.False(vm.CrossCandidateItems.Single(i => i.Id == "C").IsEnabled);
+
+        vm.CrossCandidateItems.Single(i => i.Id == "A").IsChecked = false;
+
+        Assert.False(vm.CrossCandidateItems.Single(i => i.Id == "A").IsChecked);
+        Assert.True(vm.CrossCandidateItems.Single(i => i.Id == "C").IsEnabled);
+    }
+
+    [Fact]
+    public void CrossManager_RejectsSingleSectionSelectionWhenExecutedProgrammatically()
+    {
+        _workspace.AddCourse(MakeCourse("A-01", 1));
+        AddTwoSectionCourse("B");
+        var vm = MakeVm();
+
+        vm.CrossCandidateItems.Single(i => i.Id == "A").IsChecked = true;
+        vm.CrossCandidateItems.Single(i => i.Id == "B").IsChecked = true;
+        vm.AddCrossCommand.Execute(null);
+
+        Assert.Empty(_workspace.CrossGroups);
+        Assert.Contains("분반이 2개 이상", vm.CrossStatusMessage);
+    }
+
+    [Fact]
+    public void CrossManager_DeleteSelectedCross_RemovesWorkspaceGroup()
+    {
+        AddTwoSectionCourse("A");
+        AddTwoSectionCourse("B");
         _workspace.AddCrossGroup(new CrossGroup { Id = "legacy", BaseIds = new List<string> { "A", "B" } });
         var vm = MakeVm();
 
@@ -870,10 +1020,8 @@ public class CourseGroupsTests : IDisposable
     [Fact]
     public void CrossManager_RejectsInvalidSelection()
     {
-        _workspace.AddCourse(MakeCourse("A-01", 1));
-        var differentHours = MakeCourse("B-01", 1);
-        differentHours.HoursPerWeek = 4;
-        _workspace.AddCourse(differentHours);
+        AddTwoSectionCourse("A");
+        AddTwoSectionCourse("B", course => course.HoursPerWeek = 4);
         var vm = MakeVm();
 
         vm.CrossCandidateItems.Single(i => i.Id == "A").IsChecked = true;
@@ -888,11 +1036,28 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void CrossManager_RejectsDifferentBlockStructures()
+    {
+        AddTwoSectionCourse("A", course => course.BlockStructure = new List<int> { 3 });
+        AddTwoSectionCourse("B", course => course.BlockStructure = new List<int> { 2, 1 });
+        var vm = MakeVm();
+
+        vm.CrossCandidateItems.Single(i => i.Id == "A").IsChecked = true;
+        vm.CrossCandidateItems.Single(i => i.Id == "B").IsChecked = true;
+        vm.AddCrossCommand.Execute(null);
+
+        Assert.Empty(_workspace.CrossGroups);
+        Assert.Contains("블록구조가 같아야 합니다", vm.CrossStatusMessage);
+        Assert.Contains("A: 3", vm.CrossStatusMessage);
+        Assert.Contains("B: 2+1", vm.CrossStatusMessage);
+    }
+
+    [Fact]
     public void CrossManager_RejectsDuplicateMembership()
     {
-        _workspace.AddCourse(MakeCourse("A-01", 1));
-        _workspace.AddCourse(MakeCourse("B-01", 1));
-        _workspace.AddCourse(MakeCourse("C-01", 1));
+        AddTwoSectionCourse("A");
+        AddTwoSectionCourse("B");
+        AddTwoSectionCourse("C");
         _workspace.AddCrossGroup(new CrossGroup { Id = "X001", BaseIds = new List<string> { "A", "B" } });
         var vm = MakeVm();
 
@@ -952,6 +1117,211 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public async Task Solve_WithMissingProfessor_PrioritizesIe004CourseNameInStatus()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "Room" });
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor" });
+        for (var index = 1; index <= 5; index++)
+        {
+            _workspace.AddCourse(new Course
+            {
+                Id = $"EMPTY-{index:00}",
+                Name = "",
+                Grade = 1,
+                HoursPerWeek = 1,
+                ProfessorId = "P1",
+                Section = 1,
+                BlockStructure = new List<int> { 1 },
+            });
+        }
+
+        _workspace.AddCourse(new Course
+        {
+            Id = "C-IE004",
+            Name = "Missing Professor Course",
+            Grade = 1,
+            HoursPerWeek = 1,
+            ProfessorId = "",
+            Section = 1,
+            BlockStructure = new List<int> { 1 },
+        });
+        var vm = new DataInputViewModel(_workspace, null!);
+
+        await vm.SolveCommand.ExecuteAsync(null);
+
+        Assert.Contains("IE-004", vm.StatusMessage);
+        Assert.Contains("Missing Professor Course", vm.StatusMessage);
+        Assert.False(vm.IsSolveComplete);
+    }
+
+    [Fact]
+    public async Task Solve_CancelCommand_CompletesWithoutThrowing()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "Room" });
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor" });
+        _workspace.AddCourse(new Course
+        {
+            Id = "C-01",
+            Name = "Course",
+            Grade = 1,
+            HoursPerWeek = 1,
+            ProfessorId = "P1",
+            Section = 1,
+            BlockStructure = new List<int> { 1 },
+        });
+        var solver = new CancelAwareSolverService();
+        var vm = new DataInputViewModel(_workspace, solver)
+        {
+            TotalSolutions = 1,
+            TimeLimitSec = 30,
+            UseSc01 = false,
+            UseSc02 = false,
+            UseSc03 = false,
+        };
+        var cancelCanExecuteStates = new List<bool>();
+        vm.CancelCommand.CanExecuteChanged += (_, _) =>
+            cancelCanExecuteStates.Add(vm.CancelCommand.CanExecute(null));
+
+        var solveTask = vm.SolveCommand.ExecuteAsync(null);
+        await solver.Started.Task.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.True(vm.IsSolving);
+        Assert.Contains(true, cancelCanExecuteStates);
+        Assert.True(vm.CancelCommand.CanExecute(null));
+
+        vm.CancelCommand.Execute(null);
+        Assert.False(vm.CancelCommand.CanExecute(null));
+        await solveTask.WaitAsync(TimeSpan.FromSeconds(5));
+
+        Assert.False(vm.IsSolving);
+        Assert.False(vm.IsSolveComplete);
+        Assert.Equal("취소됨", vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task SolverService_WithPreCanceledToken_ReturnsCancelledResult()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "Room" });
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor" });
+        _workspace.AddCourse(new Course
+        {
+            Id = "C-01",
+            Name = "Course",
+            Grade = 1,
+            HoursPerWeek = 1,
+            ProfessorId = "P1",
+            Section = 1,
+            BlockStructure = new List<int> { 1 },
+        });
+        using var cts = new CancellationTokenSource();
+        cts.Cancel();
+
+        var result = await new SolverService().SolveAsync(
+            _workspace,
+            new DiverseSolverOptions { UseSc01 = false, UseSc02 = false, UseSc03 = false },
+            cancellationToken: cts.Token);
+
+        Assert.Equal("CANCELLED", result.Status);
+        Assert.Empty(result.Solutions);
+    }
+
+    [Fact]
+    public async Task Solve_InfeasibleFallback_ShowsActionableEditCandidates()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "강의실1" });
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "교수1" });
+        _workspace.AddCourse(new Course
+        {
+            Id = "C-01",
+            Name = "과목1",
+            Grade = 1,
+            HoursPerWeek = 1,
+            ProfessorId = "P1",
+            Section = 1,
+            BlockStructure = new List<int> { 1 },
+        });
+        var vm = new DataInputViewModel(_workspace, new InfeasibleSolverService())
+        {
+            TotalSolutions = 1,
+            TimeLimitSec = 1,
+            UseSc01 = false,
+            UseSc02 = false,
+            UseSc03 = false,
+        };
+
+        await vm.SolveCommand.ExecuteAsync(null);
+
+        Assert.Contains("GE-025", vm.StatusMessage);
+        Assert.Contains("수정 후보", vm.StatusMessage);
+        Assert.Contains("시간 고정", vm.StatusMessage);
+        Assert.DoesNotContain("detailed reason unavailable", vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task Solve_CrossWithLoadedSectionProfessorMismatch_UsesNormalizedSchedulingSnapshot()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "Room 1" });
+        _workspace.AddRoom(new Room { Id = "R2", Name = "Room 2" });
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor 1" });
+        _workspace.AddProfessor(new Professor { Id = "P2", Name = "Professor 2" });
+        _workspace.AddCourse(new Course
+        {
+            Id = "A-01",
+            Name = "A",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P1",
+            Section = 1,
+            BlockStructure = new List<int> { 1 },
+        });
+        _workspace.AddCourse(new Course
+        {
+            Id = "A-02",
+            Name = "A",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P2",
+            Section = 2,
+            BlockStructure = new List<int> { 1 },
+        });
+        _workspace.AddCourse(new Course
+        {
+            Id = "B-01",
+            Name = "B",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P2",
+            Section = 1,
+            BlockStructure = new List<int> { 1 },
+        });
+        _workspace.AddCourse(new Course
+        {
+            Id = "B-02",
+            Name = "B",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P1",
+            Section = 2,
+            BlockStructure = new List<int> { 1 },
+        });
+        _workspace.AddCrossGroup(new CrossGroup { Id = "X001", BaseIds = new List<string> { "A", "B" } });
+        var vm = new DataInputViewModel(_workspace, new SolverService())
+        {
+            TotalSolutions = 1,
+            TimeLimitSec = 10,
+            UseSc01 = false,
+            UseSc02 = false,
+            UseSc03 = false,
+        };
+
+        await vm.SolveCommand.ExecuteAsync(null);
+
+        Assert.True(vm.IsSolveComplete, vm.StatusMessage);
+        Assert.NotEmpty(vm.RankedResults);
+        Assert.DoesNotContain("GE-025", vm.StatusMessage);
+    }
+
+    [Fact]
     public async Task Solve_Infeasible_DoesNotEnablePreviewOrFireCompleted()
     {
         _workspace.AddRoom(new Room { Id = "R1", Name = "강의실1" });
@@ -989,5 +1359,46 @@ public class CourseGroupsTests : IDisposable
         Assert.Equal(0, completedCount);
         Assert.Contains("IE-023", vm.StatusMessage);
         Assert.DoesNotContain("top", vm.StatusMessage);
+    }
+
+    private sealed class CancelAwareSolverService : SolverService
+    {
+        public TaskCompletionSource Started { get; } =
+            new(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        public override async Task<DiverseSolverResult> SolveAsync(
+            WorkspaceService workspace,
+            DiverseSolverOptions options,
+            IProgress<SolverProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            Started.TrySetResult();
+            await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
+            return new DiverseSolverResult(
+                "UNKNOWN",
+                Array.Empty<IReadOnlyList<SolutionAssignment>>(),
+                null,
+                null,
+                null,
+                0);
+        }
+    }
+
+    private sealed class InfeasibleSolverService : SolverService
+    {
+        public override Task<DiverseSolverResult> SolveAsync(
+            WorkspaceService workspace,
+            DiverseSolverOptions options,
+            IProgress<SolverProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new DiverseSolverResult(
+                "INFEASIBLE",
+                Array.Empty<IReadOnlyList<SolutionAssignment>>(),
+                null,
+                null,
+                null,
+                0));
+        }
     }
 }

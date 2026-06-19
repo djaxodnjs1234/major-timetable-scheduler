@@ -44,7 +44,7 @@ public class UnifiedTimetableViewModelTests
     }
 
     [Fact]
-    public void ExpandAllGrades_True_AllFourGradesShown()
+    public void ExpandAllGrades_True_AllAcademicLevelsShown()
     {
         var vm = new UnifiedTimetableViewModel { ExpandAllGrades = true };
         var courses = new List<Course>
@@ -57,8 +57,28 @@ public class UnifiedTimetableViewModelTests
         };
         vm.Render(assignment, courses);
 
-        // ExpandAllGrades=true → all 4 grades shown even if empty
-        Assert.Equal(4, vm.DayGroups[0].Grades.Count);
+        // ExpandAllGrades=true shows 1~4 plus graduate even if empty.
+        Assert.Equal(AcademicLevels.AllGrades, vm.DayGroups[0].Grades.Select(g => g.Grade!.Value).ToArray());
+    }
+
+    [Fact]
+    public void Render_GraduateCourse_UsesGraduateColumn()
+    {
+        var vm = new UnifiedTimetableViewModel();
+        var courses = new List<Course>
+        {
+            new() { Id = "GR", Grade = AcademicLevels.GraduateGrade },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("GR", 0, 1, "R"),
+        };
+
+        vm.Render(assignment, courses);
+
+        var gradeColumn = Assert.Single(vm.DayGroups[0].Grades);
+        Assert.Equal(AcademicLevels.GraduateGrade, gradeColumn.Grade);
+        Assert.Equal(AcademicLevels.GraduateGrade, Assert.Single(vm.Cells).Grade);
     }
 
     [Fact]

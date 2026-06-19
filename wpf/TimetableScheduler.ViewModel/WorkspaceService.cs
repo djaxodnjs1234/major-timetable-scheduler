@@ -209,6 +209,61 @@ public sealed class WorkspaceService
         Professors.ToList(), Rooms.ToList(),
         CrossGroups.ToList(), RetakeScenarios.ToList());
 
+    public AppData SchedulingSnapshot() => new(
+        NormalizeCourseGroupsForScheduling(Courses),
+        Professors.ToList(),
+        Rooms.ToList(),
+        CrossGroups.ToList(),
+        RetakeScenarios.ToList());
+
+    private static List<Course> NormalizeCourseGroupsForScheduling(IEnumerable<Course> courses)
+    {
+        var normalized = courses.Select(CloneCourse).ToList();
+        foreach (var group in normalized
+            .GroupBy(course => DomainHelpers.BaseId(course.Id))
+            .Where(group => group.Count() > 1))
+        {
+            var sections = group.OrderBy(course => course.Section).ToList();
+            var rep = sections[0];
+            foreach (var section in sections.Skip(1))
+            {
+                section.Name = rep.Name;
+                section.Grade = rep.Grade;
+                section.HoursPerWeek = rep.HoursPerWeek;
+                section.CourseType = rep.CourseType;
+                section.ProfessorId = rep.ProfessorId;
+                section.Department = rep.Department;
+                section.IsFixed = rep.IsFixed;
+                if (!section.IsFixed)
+                    section.FixedSlots.Clear();
+                section.FixedRooms = new List<string>(rep.FixedRooms);
+                section.UnavailableRooms = new List<string>(rep.UnavailableRooms);
+                section.BlockStructure = new List<int>(rep.BlockStructure);
+                section.CoteachProfs = new List<string>(rep.CoteachProfs);
+            }
+        }
+
+        return normalized;
+    }
+
+    private static Course CloneCourse(Course src) => new()
+    {
+        Id = src.Id,
+        Name = src.Name,
+        Grade = src.Grade,
+        HoursPerWeek = src.HoursPerWeek,
+        CourseType = src.CourseType,
+        ProfessorId = src.ProfessorId,
+        Section = src.Section,
+        Department = src.Department,
+        FixedRooms = new List<string>(src.FixedRooms),
+        UnavailableRooms = new List<string>(src.UnavailableRooms),
+        BlockStructure = new List<int>(src.BlockStructure),
+        IsFixed = src.IsFixed,
+        FixedSlots = new List<TimeSlot>(src.FixedSlots),
+        CoteachProfs = new List<string>(src.CoteachProfs),
+    };
+
     private int IndexOfCourse(string id, int section)
     {
         for (int i = 0; i < Courses.Count; i++)

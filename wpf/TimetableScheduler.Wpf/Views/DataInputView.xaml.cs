@@ -311,6 +311,12 @@ public partial class DataInputView : UserControl
         if (sender is not DependencyObject dep || Vm == null) return;
         var item = FindCourseGroupItem(dep);
         if (item == null) return;
+
+        var label = item.Sections.Count > 1
+            ? $"교과목 '{DisplayName(item.HeaderName, item.BaseId)}' {item.Sections.Count}개 분반"
+            : $"교과목 '{DisplayName(item.HeaderName, item.BaseId)}'";
+        if (!ConfirmDelete(label)) return;
+
         if (item.IsFixedIndividual)
             Vm.DeleteSectionCommand.Execute(item);
         else
@@ -336,6 +342,49 @@ public partial class DataInputView : UserControl
         if (sender is not FrameworkElement el || el.DataContext is not ProfessorItem item || Vm == null) return;
         Vm.SaveProfessorCommand.Execute(item);
     }
+
+    private void OnProfessorDeleteClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement el || el.DataContext is not ProfessorItem item || Vm == null) return;
+
+        var label = $"교수 '{DisplayName(item.Professor.Name, item.Professor.Id)}'";
+        if (!ConfirmDelete(label)) return;
+
+        Vm.DeleteProfessorItemCommand.Execute(item);
+    }
+
+    private void OnRoomDeleteClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement el || el.DataContext is not RoomItem item || Vm == null) return;
+
+        var label = $"강의실 '{DisplayName(item.Room.Name, item.Room.Id)}'";
+        if (!ConfirmDelete(label)) return;
+
+        Vm.DeleteRoomItemCommand.Execute(item);
+    }
+
+    private void OnCrossDeleteClick(object sender, RoutedEventArgs e)
+    {
+        if (Vm?.SelectedCrossGroup == null) return;
+
+        var label = $"Cross '{Vm.SelectedCrossGroup.Display}'";
+        if (!ConfirmDelete(label)) return;
+
+        Vm.DeleteCrossCommand.Execute(Vm.SelectedCrossGroup);
+    }
+
+    private static bool ConfirmDelete(string targetLabel)
+    {
+        var result = MessageBox.Show(
+            $"{targetLabel}을(를) 정말 삭제하시겠습니까?\n삭제 후에는 되돌릴 수 없습니다.",
+            "삭제 확인",
+            MessageBoxButton.YesNo,
+            MessageBoxImage.Warning);
+        return result == MessageBoxResult.Yes;
+    }
+
+    private static string DisplayName(string name, string fallback) =>
+        string.IsNullOrWhiteSpace(name) ? fallback : name;
 
     private void OnCourseUnavailableAllRoomsClick(object sender, RoutedEventArgs e)
     {

@@ -1,5 +1,6 @@
 using ClosedXML.Excel;
 using TimetableScheduler.Data;
+using TimetableScheduler.Domain;
 
 namespace TimetableScheduler.Tests.Data;
 
@@ -24,7 +25,7 @@ public class XlsxLoaderTests
         foreach (var course in data.Courses)
         {
             Assert.False(string.IsNullOrEmpty(course.Id));
-            Assert.True(course.Grade is >= 1 and <= 4);
+            Assert.Contains(course.Grade, AcademicLevels.AllGrades);
             Assert.True(course.HoursPerWeek > 0);
             Assert.True(course.CourseType is "전필" or "전선");
             Assert.NotEmpty(course.BlockStructure);
@@ -50,6 +51,19 @@ public class XlsxLoaderTests
         var fourHourCourses = data.Courses.Where(course => course.HoursPerWeek == 4).ToList();
         if (fourHourCourses.Count == 0) return;
         Assert.All(fourHourCourses, course => Assert.Equal(new[] { 2, 2 }, course.BlockStructure));
+    }
+
+    [Fact]
+    public void Load_FiveHourCourse_DefaultsTo122BlockStructure()
+    {
+        var path = CreateWorkbook(
+            ("4", "\uD544\uC218", "Five Hour Course", "5", "GA5001", "Professor", "Software", "\uC6D412/ROOM1"));
+
+        var data = XlsxLoader.Load(path);
+
+        var course = Assert.Single(data.Courses);
+        Assert.Equal(5, course.HoursPerWeek);
+        Assert.Equal(new[] { 1, 2, 2 }, course.BlockStructure);
     }
 
     [Fact]
@@ -107,6 +121,24 @@ public class XlsxLoaderTests
         Assert.Equal(new[] { 1, 2 }, course.BlockStructure);
         Assert.Equal(professor.Id, course.ProfessorId);
         Assert.Equal("홍길동", professor.Name);
+    }
+
+    [Theory]
+    [InlineData("대학원")]
+    [InlineData("석사")]
+    [InlineData("박사")]
+    [InlineData("graduate")]
+    [InlineData("grad")]
+    [InlineData("5")]
+    public void Load_GraduateGradeAliases_MapToGraduate(string grade)
+    {
+        var path = CreateWorkbook(
+            (grade, "\uD544\uC218", "\uC5F0\uAD6C\uC138\uBBF8\uB098", "3", "GR1001", "\uAE40\uAD50\uC218", "\uCEF4\uD4E8\uD130", "\uC6D423/A101"));
+
+        var data = XlsxLoader.Load(path);
+
+        var course = Assert.Single(data.Courses);
+        Assert.Equal(AcademicLevels.GraduateGrade, course.Grade);
     }
 
     private static string CreateWorkbook(params (string Grade, string Type, string Name, string Hours, string Code, string Professor, string Department, string Schedule)[] rows)

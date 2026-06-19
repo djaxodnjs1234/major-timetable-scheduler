@@ -32,7 +32,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         _input.SolveCompleted += (_, ranked) =>
         {
             _results.SetSolutions(
-                ranked, _input.IsSessionMode ? _input.CurrentSnapshot() : null);
+                ranked, _input.CurrentSnapshot());
         };
         _input.GoToSelectionRequested += (_, _) => NavigateTo(_results);
         _input.BackRequested += (_, _) => NavigateTo(_selection);

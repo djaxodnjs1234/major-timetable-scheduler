@@ -1740,7 +1740,7 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Empty(vm.Conflicts);
         Assert.Equal(5, vm.Grid.DayGroups.Count);
         Assert.True(vm.Grid.ExpandAllGrades);
-        Assert.All(vm.Grid.DayGroups, dg => Assert.Equal(4, dg.Grades.Count));
+        Assert.All(vm.Grid.DayGroups, dg => Assert.Equal(AcademicLevels.AllGrades.Count, dg.Grades.Count));
     }
 
     [Fact]

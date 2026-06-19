@@ -110,11 +110,11 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         Preview.Render(assignments, courses, professors, rooms);
 
         GradeViews.Clear();
-        foreach (var g in new[] { 1, 2, 3, 4 })
+        foreach (var g in AcademicLevels.AllGrades)
         {
             var vm = new TimetableGridViewModel();
             vm.Render(assignments, courses, (c, _) => c.Grade == g, professors, rooms);
-            GradeViews.Add(new NamedGridViewModel(g.ToString(), $"{g}학년", vm));
+            GradeViews.Add(new NamedGridViewModel(g.ToString(), AcademicLevels.DisplayName(g), vm));
         }
 
         RoomViews.Clear();

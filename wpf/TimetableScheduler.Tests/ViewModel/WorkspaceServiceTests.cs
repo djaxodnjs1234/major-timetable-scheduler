@@ -140,6 +140,44 @@ public class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void SchedulingSnapshot_NormalizesSharedSectionValuesWithoutMutatingWorkspace()
+    {
+        var ws = new WorkspaceService(_repo);
+        ws.AddCourse(new Course
+        {
+            Id = "A-01",
+            Name = "A",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P1",
+            Section = 1,
+            FixedRooms = new List<string> { "R1" },
+            BlockStructure = new List<int> { 1 },
+        });
+        ws.AddCourse(new Course
+        {
+            Id = "A-02",
+            Name = "A",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P2",
+            Section = 2,
+            FixedRooms = new List<string> { "R2" },
+            BlockStructure = new List<int> { 1 },
+        });
+
+        var raw = ws.Snapshot();
+        var scheduling = ws.SchedulingSnapshot();
+
+        Assert.Equal("P2", raw.Courses.Single(course => course.Id == "A-02").ProfessorId);
+        Assert.Equal("P2", ws.Courses.Single(course => course.Id == "A-02").ProfessorId);
+
+        var normalizedSecond = scheduling.Courses.Single(course => course.Id == "A-02");
+        Assert.Equal("P1", normalizedSecond.ProfessorId);
+        Assert.Equal(new[] { "R1" }, normalizedSecond.FixedRooms);
+    }
+
+    [Fact]
     public void SaveTimetable_EmbedsWorkspaceSnapshot()
     {
         var ws = new WorkspaceService(_repo);
