@@ -1,4 +1,5 @@
 using System.IO;
+using System.Diagnostics;
 using System.Windows;
 using Microsoft.Extensions.DependencyInjection;
 using TimetableScheduler.ViewModel;
@@ -26,26 +27,43 @@ public partial class App : Application
         services.AddSingleton<IConflictDialogService, MessageBoxConflictDialogService>();
         Services = services.BuildServiceProvider();
 
-        AutoImportIfEmpty(dataDir);
+        var autoImportFailed = AutoImportIfEmpty(dataDir);
 
         var window = new MainWindow
         {
             DataContext = Services.GetRequiredService<MainWindowViewModel>(),
         };
         window.Show();
+        if (autoImportFailed)
+        {
+            MessageBox.Show(
+                window,
+                "불러오기에 실패하였습니다.",
+                "불러오기 실패",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
 
         base.OnStartup(e);
     }
 
-    private void AutoImportIfEmpty(string dataDir)
+    private bool AutoImportIfEmpty(string dataDir)
     {
         var workspace = Services.GetRequiredService<WorkspaceService>();
-        if (workspace.Courses.Count > 0) return;
+        if (workspace.Courses.Count > 0) return false;
 
         var xlsx = Path.Combine(dataDir, XlsxFileName);
-        if (!File.Exists(xlsx)) return;
-        try { workspace.ImportFromXlsx(xlsx); }
-        catch { /* ignore — user can manually import */ }
+        if (!File.Exists(xlsx)) return false;
+        try
+        {
+            workspace.ImportFromXlsx(xlsx);
+            return false;
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[XLSX_IMPORT] Auto import failed: {ex}");
+            return true;
+        }
     }
 
     /// <summary>

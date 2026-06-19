@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Data;
+using System.Diagnostics;
 using Microsoft.Win32;
 using TimetableScheduler.Domain;
 using TimetableScheduler.ViewModel.Editors;
@@ -11,9 +12,33 @@ namespace TimetableScheduler.Wpf.Views;
 
 public partial class DataInputView : UserControl
 {
-    public DataInputView() => InitializeComponent();
+    private DataInputViewModel? _subscribedVm;
+
+    public DataInputView()
+    {
+        InitializeComponent();
+        DataContextChanged += OnDataContextChanged;
+    }
 
     private DataInputViewModel? Vm => DataContext as DataInputViewModel;
+
+    private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
+    {
+        if (_subscribedVm != null)
+            _subscribedVm.DeleteBlocked -= OnDeleteBlocked;
+        _subscribedVm = e.NewValue as DataInputViewModel;
+        if (_subscribedVm != null)
+            _subscribedVm.DeleteBlocked += OnDeleteBlocked;
+    }
+
+    private static void OnDeleteBlocked(object? sender, string message)
+    {
+        MessageBox.Show(
+            message,
+            "삭제 불가",
+            MessageBoxButton.OK,
+            MessageBoxImage.Warning);
+    }
 
     private void OnImportXlsxClick(object sender, RoutedEventArgs e)
     {
@@ -23,8 +48,21 @@ public partial class DataInputView : UserControl
             Filter = "Excel files (*.xlsx)|*.xlsx|All files (*.*)|*.*",
             Title = "교과 데이터 xlsx 선택",
         };
-        if (dlg.ShowDialog() == true)
+        if (dlg.ShowDialog() != true) return;
+
+        try
+        {
             Vm.ImportXlsxCommand.Execute(dlg.FileName);
+        }
+        catch (Exception ex)
+        {
+            Debug.WriteLine($"[XLSX_IMPORT] Manual import failed: {ex}");
+            MessageBox.Show(
+                "불러오기에 실패하였습니다.",
+                "불러오기 실패",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
     }
 
     private void OnExportDbClick(object sender, RoutedEventArgs e)
@@ -57,6 +95,12 @@ public partial class DataInputView : UserControl
         };
         if (dlg.ShowDialog() == true)
             Vm.Workspace.ImportDatabase(dlg.FileName);
+    }
+
+    private void OnNumericTextBoxLostFocus(object sender, RoutedEventArgs e)
+    {
+        if (sender is TextBox textBox)
+            BindingOperations.GetBindingExpression(textBox, TextBox.TextProperty)?.UpdateTarget();
     }
 
     private void OnProfessorExpanded(object sender, RoutedEventArgs e)
