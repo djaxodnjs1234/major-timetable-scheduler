@@ -18,6 +18,33 @@ namespace TimetableScheduler.Wpf.Tests;
 public class DataInputViewTests
 {
     [Fact]
+    public void SolveAdvancedRetakeCheckbox_IsDeclaredWithBindingAndTooltip()
+    {
+        var xaml = File.ReadAllText(FindDataInputViewXaml());
+
+        Assert.Contains("x:Name=\"ConsiderRetakeStudentsCheckBox\"", xaml);
+        Assert.Contains("IsChecked=\"{Binding ConsiderRetakeStudents}\"", xaml);
+        Assert.Contains("재수강생 고려", xaml);
+        Assert.Contains("전필-전필 시간이 모두 겹치면 시간표가 생성되지 않을 수 있습니다.", xaml);
+        Assert.Contains("설정한 강의실은 배정되지 않습니다.", xaml);
+    }
+
+    [Fact]
+    public void BlockStructureChanged_RefreshesFixedCheckbox()
+    {
+        var source = File.ReadAllText(FindDataInputViewCodeBehind());
+        var methodStart = source.IndexOf("private void OnCourseBlockStructureChanged", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0);
+
+        var nextMethodStart = source.IndexOf("private void OnCourseSharedSelectionChanged", methodStart, StringComparison.Ordinal);
+        Assert.True(nextMethodStart > methodStart);
+
+        var methodBody = source[methodStart..nextMethodStart];
+        Assert.Contains("Vm.HandleCourseBlockStructureChanged(item);", methodBody);
+        Assert.Contains("RefreshFixedTimeCheckBox(expander);", methodBody);
+    }
+
+    [Fact]
     public void ChangingWeeklyHours_UnchecksFixedCheckboxAndResetsDefaultBlocks()
     {
         RunSta(() =>
@@ -452,6 +479,42 @@ public class DataInputViewTests
             };
             app.InitializeComponent();
         }
+    }
+
+    private static string FindDataInputViewXaml()
+    {
+        var starts = new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() };
+        foreach (var start in starts)
+        {
+            var dir = start;
+            for (var i = 0; i < 16 && dir != null; i++)
+            {
+                var path = Path.Combine(dir, "wpf", "TimetableScheduler.Wpf", "Views", "DataInputView.xaml");
+                if (File.Exists(path))
+                    return path;
+                dir = Path.GetDirectoryName(dir);
+            }
+        }
+
+        throw new InvalidOperationException("DataInputView.xaml not found");
+    }
+
+    private static string FindDataInputViewCodeBehind()
+    {
+        var starts = new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() };
+        foreach (var start in starts)
+        {
+            var dir = start;
+            for (var i = 0; i < 16 && dir != null; i++)
+            {
+                var path = Path.Combine(dir, "wpf", "TimetableScheduler.Wpf", "Views", "DataInputView.xaml.cs");
+                if (File.Exists(path))
+                    return path;
+                dir = Path.GetDirectoryName(dir);
+            }
+        }
+
+        throw new InvalidOperationException("DataInputView.xaml.cs not found");
     }
 
     private static T? FindDescendant<T>(DependencyObject root, Func<T, bool>? predicate = null)

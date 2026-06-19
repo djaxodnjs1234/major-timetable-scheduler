@@ -151,6 +151,7 @@ public partial class DataInputView : UserControl
 
         Vm.HandleCourseBlockStructureChanged(item);
         RefreshCourseBlockStructureCombo(expander, item);
+        RefreshFixedTimeCheckBox(expander);
         RebuildFixedSlotEditor(item);
     }
 
