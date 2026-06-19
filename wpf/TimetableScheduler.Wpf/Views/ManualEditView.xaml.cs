@@ -1,5 +1,7 @@
+using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Input;
+using System.Windows.Media;
 using TimetableScheduler.ViewModel.Grid;
 using TimetableScheduler.ViewModel.Pages;
 using TimetableScheduler.Wpf.Controls;
@@ -8,6 +10,8 @@ namespace TimetableScheduler.Wpf.Views;
 
 public partial class ManualEditView : UserControl
 {
+    private Window? _ownerWindow;
+
     public ManualEditView()
     {
         InitializeComponent();
@@ -25,7 +29,64 @@ public partial class ManualEditView : UserControl
         GridControl.CrossDropRequested += OnCrossDropRequested;
         GridControl.SwapDropRequested += OnSwapDropRequested;
         GridControl.DropMoveRequested += OnDropMoveRequested;
-        Loaded += (_, _) => Focus();
+        Loaded += OnLoaded;
+        Unloaded += OnUnloaded;
+        PreviewMouseDown += OnPreviewMouseDown;
+    }
+
+    private void OnLoaded(object sender, RoutedEventArgs e)
+    {
+        Focus();
+        _ownerWindow = Window.GetWindow(this);
+        if (_ownerWindow != null)
+            _ownerWindow.Deactivated += OnOwnerWindowDeactivated;
+    }
+
+    private void OnUnloaded(object sender, RoutedEventArgs e)
+    {
+        CloseSaveMenu();
+        if (_ownerWindow != null)
+            _ownerWindow.Deactivated -= OnOwnerWindowDeactivated;
+        _ownerWindow = null;
+    }
+
+    private void OnOwnerWindowDeactivated(object? sender, EventArgs e)
+    {
+        if (IsSavePopupMouseOver())
+            return;
+        CloseSaveMenu();
+    }
+
+    private void OnPreviewMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (DataContext is not ManualEditViewModel { IsSaveMenuExpanded: true })
+            return;
+        if (IsWithinSaveSplitButton(e.OriginalSource as DependencyObject))
+            return;
+        if (IsSavePopupMouseOver())
+            return;
+        CloseSaveMenu();
+    }
+
+    private bool IsWithinSaveSplitButton(DependencyObject? source)
+    {
+        while (source != null)
+        {
+            if (ReferenceEquals(source, SaveSplitButtonHost))
+                return true;
+            source = VisualTreeHelper.GetParent(source);
+        }
+        return false;
+    }
+
+    private bool IsSavePopupMouseOver() =>
+        SaveCopyPopup.IsMouseOver
+        || SaveCopyPopup.Child is UIElement { IsMouseOver: true };
+
+    private void CloseSaveMenu()
+    {
+        if (DataContext is ManualEditViewModel vm)
+            vm.IsSaveMenuExpanded = false;
     }
 
     private void OnCellClicked(object? sender, UnifiedTimetableControl.CellClickedEventArgs e)

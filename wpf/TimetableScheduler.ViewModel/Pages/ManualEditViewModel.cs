@@ -239,11 +239,24 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ExportXlsxCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveTimetableCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleSaveMenuCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCopyCommand))]
     private RankedSolution? baseSolution;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveTimetableCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ToggleSaveMenuCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCopyCommand))]
     private string saveName = "";
+
+    [ObservableProperty]
+    [NotifyPropertyChangedFor(nameof(SaveArrowText))]
+    private bool isSaveMenuExpanded;
+
+    [ObservableProperty]
+    private string? editingSavedTimetableId;
+
+    public string SaveArrowText => IsSaveMenuExpanded ? "▲" : "▼";
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ApplyRoomChangeCommand))]
@@ -511,12 +524,14 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
             .ToList();
         LoadCore(new RankedSolution(assignments, new SolutionScore(0, 0, 0, 0)));
+        EditingSavedTimetableId = record.Id;
         SaveName = record.Name;
     }
 
     public void LoadFromSolution(RankedSolution solution)
     {
         _sessionData = null;
+        EditingSavedTimetableId = null;
         LoadCore(solution);
     }
 
@@ -528,9 +543,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         AppData snapshot,
         RankedSolution solution,
         string saveName,
-        IReadOnlyList<SavedManualCrossLinkRow>? manualCrossLinks = null)
+        IReadOnlyList<SavedManualCrossLinkRow>? manualCrossLinks = null,
+        string? savedTimetableId = null)
     {
         _sessionData = snapshot;
+        EditingSavedTimetableId = savedTimetableId;
         LoadCore(
             solution,
             manualCrossLinks,
@@ -688,6 +705,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     public void LoadFromSavedTimetable(SavedTimetableRecord timetable)
     {
         _sessionData = SavedTimetableSnapshotResolver.Resolve(timetable.SnapshotJson);
+        EditingSavedTimetableId = timetable.Id;
         var assignments = timetable.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
             .ToList();
@@ -1403,12 +1421,43 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     [RelayCommand(CanExecute = nameof(CanSaveTimetable))]
     private void SaveTimetable()
     {
-        if (!ValidateBeforeSave()) return;
+        if (SaveTimetableCore(saveAsCopy: false))
+            IsSaveMenuExpanded = false;
+    }
 
-        _workspace.SaveTimetable(SaveName.Trim(), _working, ToSavedManualCrossLinks(), BuildSaveSnapshot());
-        StatusMessage = $"'{SaveName.Trim()}' 저장 완료";
-        SaveName = "";
+    [RelayCommand(CanExecute = nameof(CanSaveTimetable))]
+    private void ToggleSaveMenu()
+    {
+        IsSaveMenuExpanded = !IsSaveMenuExpanded;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanSaveTimetable))]
+    private void SaveCopy()
+    {
+        if (SaveTimetableCore(saveAsCopy: true))
+            IsSaveMenuExpanded = false;
+    }
+
+    private bool SaveTimetableCore(bool saveAsCopy)
+    {
+        if (!ValidateBeforeSave()) return false;
+
+        var name = SaveName.Trim();
+        var targetId = saveAsCopy ? null : EditingSavedTimetableId;
+        var record = _workspace.SaveTimetable(
+            name,
+            _working,
+            ToSavedManualCrossLinks(),
+            BuildSaveSnapshot(),
+            targetId);
+        EditingSavedTimetableId = record.Id;
+        _resetBaselineSnapshot = CaptureSnapshot();
+        BaseSolution = new RankedSolution(_working.ToList(), BaseSolution?.Score ?? new SolutionScore(0, 0, 0, 0));
+        StatusMessage = saveAsCopy
+            ? $"'{name}' 복사본 저장 완료"
+            : $"'{name}' 저장 완료";
         SavedRequested?.Invoke(this, EventArgs.Empty);
+        return true;
     }
 
     private AppData? BuildSaveSnapshot()
@@ -1937,22 +1986,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (conflict.Day != targetDay || !targetPeriods.Contains(conflict.Period))
             return false;
 
-        var conflictBaseId = GetSectionConflictBaseId(conflict);
         var movedKey = BuildManualCrossAssignmentKey(movingAssignment, targetDay, targetPeriods[0]);
         foreach (var link in _workingCrossLinks.Where(link => LinkContainsAssignmentIgnoringSlot(link, movedKey)))
         {
-            var sourceBase = DomainHelpers.BaseId(link.SourceKey.CourseId);
-            var targetBase = DomainHelpers.BaseId(link.TargetKey.CourseId);
-            if (conflict.Type == ConflictType.SectionConflict)
-            {
-                if (string.IsNullOrWhiteSpace(conflictBaseId))
-                    continue;
-                if (!string.Equals(sourceBase, targetBase, StringComparison.Ordinal))
-                    continue;
-                if (!string.Equals(conflictBaseId, sourceBase, StringComparison.Ordinal))
-                    continue;
-            }
-
             var involved = GetAssignmentsInConflictSlot(
                 candidate,
                 conflict,
@@ -2958,21 +2994,16 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (conflict.Type != ConflictType.SectionConflict)
             return false;
 
+        var involved = GetManualCrossConflictCells(conflict, assignments);
+        if (involved.Count != 2)
+            return false;
+
+        var left = involved[0];
+        var right = involved[1];
+        var leftKey = BuildManualCrossAssignmentKey(left.Assignment, left.Day, left.Period);
+        var rightKey = BuildManualCrossAssignmentKey(right.Assignment, right.Day, right.Period);
         foreach (var link in _workingCrossLinks)
         {
-            var involved = GetAssignmentsInConflictSlot(
-                assignments,
-                conflict,
-                targetGrade: 0,
-                ConflictType.SectionConflict,
-                link);
-            if (involved.Count != 2)
-                continue;
-
-            var left = involved[0];
-            var right = involved[1];
-            var leftKey = BuildManualCrossAssignmentKey(left.Assignment, left.Day, left.Period);
-            var rightKey = BuildManualCrossAssignmentKey(right.Assignment, right.Day, right.Period);
             if (!LinkMatchesPairIgnoringSlot(link, leftKey, rightKey))
                 continue;
             if (left.Assignment.Grade != right.Assignment.Grade)
@@ -2990,6 +3021,43 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
 
         return false;
+    }
+
+    private List<UnifiedCell> GetManualCrossConflictCells(
+        ConflictItem conflict,
+        IReadOnlyList<SolutionAssignment> assignments)
+    {
+        var conflictAssignments = conflict.Assignments?
+            .DistinctBy(AssignmentConflictKey)
+            .ToList() ?? new List<SolutionAssignment>();
+        if (conflictAssignments.Count == 0)
+            return new List<UnifiedCell>();
+
+        return RenderManualCells(assignments)
+            .Where(c => c.Day == conflict.Day
+                && c.Period <= conflict.Period
+                && conflict.Period < c.Period + c.Assignment.RowSpan
+                && conflictAssignments.Any(a => IsSameConflictAssignment(a, c)))
+            .DistinctBy(c => BuildManualCrossAssignmentKey(c.Assignment, c.Day, c.Period))
+            .ToList();
+    }
+
+    private static string AssignmentConflictKey(SolutionAssignment assignment) =>
+        !string.IsNullOrWhiteSpace(assignment.AssignmentId)
+            ? assignment.AssignmentId
+            : string.Join('\u001f', assignment.CourseId, assignment.Day, assignment.Period, assignment.RoomId);
+
+    private static bool IsSameConflictAssignment(SolutionAssignment assignment, UnifiedCell cell)
+    {
+        if (!string.IsNullOrWhiteSpace(assignment.AssignmentId)
+            && !string.IsNullOrWhiteSpace(cell.Assignment.AssignmentId))
+            return string.Equals(assignment.AssignmentId, cell.Assignment.AssignmentId, StringComparison.Ordinal);
+
+        return assignment.CourseId == cell.Assignment.CourseId
+            && assignment.Day == cell.Day
+            && assignment.Period >= cell.Period
+            && assignment.Period < cell.Period + cell.Assignment.RowSpan
+            && cell.Assignment.Rooms.Contains(assignment.RoomId, StringComparer.Ordinal);
     }
 
     private void RenderBreakdownViews()
@@ -3808,9 +3876,20 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             var byId = _working
                 .Where(a => string.Equals(a.AssignmentId, assignmentId, StringComparison.Ordinal))
                 .ToList();
-            if (byId.Count == 1)
-                return BuildRestoredEndpoint(byId[0], section, rowSpan: GetWorkingRowSpan(byId[0]), new[] { byId[0].RoomId });
-            return null;
+            if (byId.Count > 0)
+            {
+                var blocks = BuildRestoredAssignmentBlocks(byId);
+                if (blocks.Count == 1)
+                    return BuildRestoredEndpoint(blocks[0], section);
+
+                var matchingBlocks = blocks
+                    .Where(block => SavedEndpointMatchesBlock(block, courseId, section, day, period, roomId))
+                    .ToList();
+                if (matchingBlocks.Count == 1)
+                    return BuildRestoredEndpoint(matchingBlocks[0], section);
+                if (byId.Count > 1)
+                    return null;
+            }
         }
 
         var exact = _working
@@ -3850,6 +3929,113 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
 
         return null;
+    }
+
+    private sealed record RestoredAssignmentBlock(
+        SolutionAssignment Representative,
+        string AssignmentId,
+        string CourseId,
+        string Section,
+        string ProfessorId,
+        int Day,
+        int StartPeriod,
+        int RowSpan,
+        IReadOnlyList<string> RoomIds);
+
+    private RestoredCrossEndpoint BuildRestoredEndpoint(RestoredAssignmentBlock block, string savedSection) =>
+        BuildRestoredEndpoint(
+            block.Representative,
+            string.IsNullOrWhiteSpace(savedSection) ? block.Section : savedSection,
+            block.RowSpan,
+            block.RoomIds);
+
+    private List<RestoredAssignmentBlock> BuildRestoredAssignmentBlocks(IReadOnlyList<SolutionAssignment> rows)
+    {
+        var blocks = new List<RestoredAssignmentBlock>();
+        var indexedRows = rows
+            .Select(a => new
+            {
+                Assignment = a,
+                Course = ResolveCourseForAssignment(a),
+            })
+            .GroupBy(x => new
+            {
+                AssignmentId = x.Assignment.AssignmentId ?? "",
+                x.Assignment.CourseId,
+                Section = x.Course == null ? "" : NormalizeManualCrossSection(x.Course.Section),
+                ProfessorId = x.Course?.ProfessorId ?? "",
+                x.Assignment.Day,
+            });
+
+        foreach (var group in indexedRows)
+        {
+            var groupRows = group.Select(x => x.Assignment).ToList();
+            var periods = groupRows.Select(a => a.Period).Distinct().OrderBy(p => p).ToList();
+            var i = 0;
+            while (i < periods.Count)
+            {
+                var start = periods[i];
+                var end = start;
+                i++;
+                while (i < periods.Count && periods[i] == end + 1)
+                {
+                    end = periods[i];
+                    i++;
+                }
+
+                var runPeriods = Enumerable.Range(start, end - start + 1).ToList();
+                var firstRoomSet = RoomSetForPeriod(groupRows, start);
+                if (firstRoomSet.Count == 0)
+                    continue;
+                if (runPeriods.Any(p => !firstRoomSet.SequenceEqual(RoomSetForPeriod(groupRows, p))))
+                    continue;
+
+                var representative = groupRows
+                    .Where(a => a.Period == start)
+                    .OrderBy(a => a.RoomId, StringComparer.Ordinal)
+                    .First();
+                blocks.Add(new RestoredAssignmentBlock(
+                    representative,
+                    group.Key.AssignmentId,
+                    group.Key.CourseId,
+                    group.Key.Section,
+                    group.Key.ProfessorId,
+                    group.Key.Day,
+                    start,
+                    runPeriods.Count,
+                    firstRoomSet));
+            }
+        }
+
+        return blocks;
+    }
+
+    private static List<string> RoomSetForPeriod(IEnumerable<SolutionAssignment> rows, int period) =>
+        rows
+            .Where(a => a.Period == period)
+            .Select(a => NormalizeRoomId(a.RoomId))
+            .Where(room => !string.IsNullOrWhiteSpace(room))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(room => room, StringComparer.Ordinal)
+            .ToList();
+
+    private static bool SavedEndpointMatchesBlock(
+        RestoredAssignmentBlock block,
+        string courseId,
+        string section,
+        int day,
+        int period,
+        string roomId)
+    {
+        if (!string.Equals(block.CourseId, courseId, StringComparison.Ordinal))
+            return false;
+        if (!string.IsNullOrWhiteSpace(section)
+            && !string.Equals(block.Section, section, StringComparison.Ordinal))
+            return false;
+        if (block.Day != day || block.StartPeriod != period)
+            return false;
+        return string.IsNullOrWhiteSpace(roomId)
+            || block.RoomIds.Contains(NormalizeRoomId(roomId), StringComparer.Ordinal);
     }
 
     private RestoredCrossEndpoint BuildRestoredEndpoint(

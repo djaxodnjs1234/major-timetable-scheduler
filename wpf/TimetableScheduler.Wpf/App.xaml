@@ -11,6 +11,7 @@
             <conv:StringNullOrWhiteSpaceToVisibilityConverter x:Key="StringNullOrWhiteSpaceToVisibility" />
             <conv:GradeToBrushConverter x:Key="GradeToBrush" />
             <conv:IntListToCsvConverter x:Key="IntListToCsv" />
+            <conv:NullableIntTextConverter x:Key="NullableIntText" />
 
             <Style TargetType="{x:Type Button}">
                 <Style.Triggers>
