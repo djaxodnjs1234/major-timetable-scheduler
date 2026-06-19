@@ -139,6 +139,19 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void AddNew_EmptyCourseName_ReportsIe001AndDoesNotAdd()
+    {
+        var vm = MakeVm();
+        vm.SelectedCategory = InputCategory.Course;
+        vm.NewName = " ";
+
+        vm.AddNewCommand.Execute(null);
+
+        Assert.Empty(_workspace.Courses);
+        Assert.Contains("IE-001", vm.StatusMessage);
+    }
+
+    [Fact]
     public void CourseFixedRooms_HidesEmptyRoomMetadata()
     {
         _workspace.AddRoom(new Room { Id = "R1", Name = "D330" });
@@ -696,6 +709,7 @@ public class CourseGroupsTests : IDisposable
         var vm = MakeVm();
         var item = vm.CourseGroups[0];
         item.Sections[0].IsFixed = true;
+        item.Sections[0].FixedSlots = new List<TimeSlot> { new(0, 1), new(0, 2), new(1, 1) };
 
         vm.SaveGroupCommand.Execute(item);
 
@@ -891,6 +905,53 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public async Task Solve_WithUnsavedCourseEdit_ReportsIe037AndDoesNotRunSolver()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "Room" });
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor" });
+        _workspace.AddCourse(new Course
+        {
+            Id = "C-01",
+            Name = "Course",
+            Grade = 1,
+            HoursPerWeek = 1,
+            ProfessorId = "P1",
+            Section = 1,
+            BlockStructure = new List<int> { 1 },
+        });
+        var vm = new DataInputViewModel(_workspace, null!);
+        vm.CourseGroups.Single().IsEditing = true;
+
+        await vm.SolveCommand.ExecuteAsync(null);
+
+        Assert.Contains("IE-037", vm.StatusMessage);
+        Assert.False(vm.IsSolving);
+        Assert.False(vm.IsSolveComplete);
+    }
+
+    [Fact]
+    public async Task Solve_WithNoRooms_ReportsIe027AndDoesNotRunSolver()
+    {
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor" });
+        _workspace.AddCourse(new Course
+        {
+            Id = "C-01",
+            Name = "Course",
+            Grade = 1,
+            HoursPerWeek = 1,
+            ProfessorId = "P1",
+            Section = 1,
+            BlockStructure = new List<int> { 1 },
+        });
+        var vm = new DataInputViewModel(_workspace, null!);
+
+        await vm.SolveCommand.ExecuteAsync(null);
+
+        Assert.Contains("IE-027", vm.StatusMessage);
+        Assert.False(vm.IsSolveComplete);
+    }
+
+    [Fact]
     public async Task Solve_Infeasible_DoesNotEnablePreviewOrFireCompleted()
     {
         _workspace.AddRoom(new Room { Id = "R1", Name = "강의실1" });
@@ -926,7 +987,7 @@ public class CourseGroupsTests : IDisposable
         Assert.False(vm.IsSolveComplete);
         Assert.Empty(vm.RankedResults);
         Assert.Equal(0, completedCount);
-        Assert.Contains("INFEASIBLE", vm.StatusMessage);
+        Assert.Contains("IE-023", vm.StatusMessage);
         Assert.DoesNotContain("top", vm.StatusMessage);
     }
 }
