@@ -12,7 +12,6 @@
             <conv:GradeToBrushConverter x:Key="GradeToBrush" />
             <conv:AcademicLevelLabelConverter x:Key="AcademicLevelLabel" />
             <conv:IntListToCsvConverter x:Key="IntListToCsv" />
-            <conv:NullableIntTextConverter x:Key="NullableIntText" />
 
             <Style TargetType="{x:Type Button}">
                 <Style.Triggers>

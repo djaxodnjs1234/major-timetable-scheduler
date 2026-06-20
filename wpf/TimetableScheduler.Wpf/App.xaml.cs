@@ -1,5 +1,4 @@
 using System.IO;
-using System.Diagnostics;
 using System.Threading;
 using System.Threading.Tasks;
 using System.Windows;
@@ -34,22 +33,13 @@ public partial class App : Application
             services.AddSingleton<IConflictDialogService, MessageBoxConflictDialogService>();
             Services = services.BuildServiceProvider();
 
-            var autoImportFailed = AutoImportIfEmpty(dataDir);
+            AutoImportIfEmpty(dataDir);
 
             var window = new MainWindow
             {
                 DataContext = Services.GetRequiredService<MainWindowViewModel>(),
             };
             window.Show();
-            if (autoImportFailed)
-            {
-                MessageBox.Show(
-                    window,
-                    "불러오기에 실패하였습니다.",
-                    "불러오기 실패",
-                    MessageBoxButton.OK,
-                    MessageBoxImage.Warning);
-            }
 
             base.OnStartup(e);
         }
@@ -125,23 +115,15 @@ public partial class App : Application
     private static string RootMessage(Exception exception) =>
         exception.GetBaseException().Message;
 
-    private bool AutoImportIfEmpty(string dataDir)
+    private void AutoImportIfEmpty(string dataDir)
     {
         var workspace = Services.GetRequiredService<WorkspaceService>();
-        if (workspace.Courses.Count > 0) return false;
+        if (workspace.Courses.Count > 0) return;
 
         var xlsx = Path.Combine(dataDir, XlsxFileName);
-        if (!File.Exists(xlsx)) return false;
-        try
-        {
-            workspace.ImportFromXlsx(xlsx);
-            return false;
-        }
-        catch (Exception ex)
-        {
-            Debug.WriteLine($"[XLSX_IMPORT] Auto import failed: {ex}");
-            return true;
-        }
+        if (!File.Exists(xlsx)) return;
+        try { workspace.ImportFromXlsx(xlsx); }
+        catch { /* ignore — user can manually import */ }
     }
 
     /// <summary>

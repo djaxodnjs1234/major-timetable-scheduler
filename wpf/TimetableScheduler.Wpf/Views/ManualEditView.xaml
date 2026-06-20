@@ -95,129 +95,18 @@
                                    Visibility="{Binding Text, ElementName=SaveNameTextBox, Converter={StaticResource StringNullOrWhiteSpaceToVisibility}}" />
                         </Grid>
 
-                        <Grid x:Name="SaveSplitButtonHost"
-                              Width="104"
-                              Height="34"
-                              Margin="6,0,0,0"
-                              VerticalAlignment="Center">
-                            <Grid.Resources>
-                                <Style x:Key="SaveSplitButtonStyle" TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
+                        <Button Content="💾 저장"
+                            Command="{Binding SaveTimetableCommand}"
+                            Height="34"
+                            Padding="12,0" Margin="6,0,0,0"
+                            VerticalAlignment="Center">
+                            <Button.Style>
+                                <Style TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
                                     <Setter Property="Background" Value="#005FB8" />
-                                    <Setter Property="BorderBrush" Value="#005FB8" />
                                     <Setter Property="Foreground" Value="White" />
-                                    <Setter Property="FontWeight" Value="SemiBold" />
-                                    <Setter Property="Cursor" Value="Hand" />
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="{x:Type Button}">
-                                                <Border x:Name="Bd"
-                                                        Background="{TemplateBinding Background}"
-                                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                                        Padding="{TemplateBinding Padding}">
-                                                    <ContentPresenter HorizontalAlignment="Center"
-                                                                      VerticalAlignment="Center" />
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="#004A91" />
-                                                        <Setter TargetName="Bd" Property="BorderBrush" Value="#004A91" />
-                                                    </Trigger>
-                                                    <Trigger Property="IsPressed" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="#003A73" />
-                                                        <Setter TargetName="Bd" Property="BorderBrush" Value="#003A73" />
-                                                    </Trigger>
-                                                    <Trigger Property="IsEnabled" Value="False">
-                                                        <Setter Property="Foreground" Value="#E5E7EB" />
-                                                        <Setter TargetName="Bd" Property="Background" Value="#7DA9D4" />
-                                                        <Setter TargetName="Bd" Property="BorderBrush" Value="#7DA9D4" />
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
                                 </Style>
-                                <Style x:Key="SaveSplitToggleButtonStyle" TargetType="{x:Type ToggleButton}">
-                                    <Setter Property="Background" Value="#005FB8" />
-                                    <Setter Property="BorderBrush" Value="#005FB8" />
-                                    <Setter Property="Foreground" Value="White" />
-                                    <Setter Property="FontWeight" Value="SemiBold" />
-                                    <Setter Property="Cursor" Value="Hand" />
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="{x:Type ToggleButton}">
-                                                <Border x:Name="Bd"
-                                                        Background="{TemplateBinding Background}"
-                                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                                        Padding="{TemplateBinding Padding}">
-                                                    <ContentPresenter HorizontalAlignment="Center"
-                                                                      VerticalAlignment="Center" />
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsMouseOver" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="#004A91" />
-                                                        <Setter TargetName="Bd" Property="BorderBrush" Value="#004A91" />
-                                                    </Trigger>
-                                                    <Trigger Property="IsPressed" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="#003A73" />
-                                                        <Setter TargetName="Bd" Property="BorderBrush" Value="#003A73" />
-                                                    </Trigger>
-                                                    <Trigger Property="IsChecked" Value="True">
-                                                        <Setter TargetName="Bd" Property="Background" Value="#004A91" />
-                                                        <Setter TargetName="Bd" Property="BorderBrush" Value="#004A91" />
-                                                    </Trigger>
-                                                    <Trigger Property="IsEnabled" Value="False">
-                                                        <Setter Property="Foreground" Value="#E5E7EB" />
-                                                        <Setter TargetName="Bd" Property="Background" Value="#7DA9D4" />
-                                                        <Setter TargetName="Bd" Property="BorderBrush" Value="#7DA9D4" />
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </Grid.Resources>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="28" />
-                            </Grid.ColumnDefinitions>
-                            <Button Grid.Column="0"
-                                    Content="저장"
-                                    Command="{Binding SaveTimetableCommand}"
-                                    Height="34"
-                                    Padding="12,0"
-                                    BorderThickness="1,1,0,1"
-                                    Style="{StaticResource SaveSplitButtonStyle}" />
-                            <ToggleButton x:Name="SaveMenuToggleButton"
-                                          Grid.Column="1"
-                                          Content="{Binding SaveArrowText}"
-                                          IsChecked="{Binding IsSaveMenuExpanded, Mode=TwoWay}"
-                                          Height="34"
-                                          Padding="0"
-                                          BorderThickness="1"
-                                          Style="{StaticResource SaveSplitToggleButtonStyle}" />
-                            <Popup x:Name="SaveCopyPopup"
-                                   PlacementTarget="{Binding ElementName=SaveSplitButtonHost}"
-                                   DataContext="{Binding PlacementTarget.DataContext, RelativeSource={RelativeSource Self}}"
-                                   Placement="Bottom"
-                                   IsOpen="{Binding IsSaveMenuExpanded, Mode=TwoWay}"
-                                   StaysOpen="True"
-                                   AllowsTransparency="True"
-                                   Panel.ZIndex="1000">
-                                <Border Background="White"
-                                        BorderBrush="#B8C7DA"
-                                        BorderThickness="1">
-                                    <Button Content="복사본 저장"
-                                            Command="{Binding SaveCopyCommand}"
-                                            Width="{Binding ActualWidth, ElementName=SaveSplitButtonHost}"
-                                            Height="30"
-                                            Padding="12,0"
-                                            BorderThickness="1"
-                                            Style="{StaticResource SaveSplitButtonStyle}" />
-                                </Border>
-                            </Popup>
-                        </Grid>
+                            </Button.Style>
+                        </Button>
                     </StackPanel>
                 </Border>
 

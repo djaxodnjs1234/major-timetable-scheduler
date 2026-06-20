@@ -13,8 +13,7 @@ public enum InputCategory { Professor, Course, Room, Solve }
 
 public sealed record ManualEditHandoff(
     RankedSolution Solution,
-    IReadOnlyList<SavedManualCrossLinkRow> ManualCrossLinks,
-    string? SavedTimetableId);
+    IReadOnlyList<SavedManualCrossLinkRow> ManualCrossLinks);
 
 public sealed record CrossGroupListItem(string Id, string Display);
 
@@ -363,70 +362,14 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     [RelayCommand]
     private void DeleteSelected()
     {
-        if (TryDeleteItem(SelectedItem))
-            SelectedItem = null;
-    }
-
-    private bool TryDeleteItem(object? item)
-    {
-        try
+        switch (SelectedItem)
         {
-            switch (item)
-            {
-                case Professor p:
-                    if (IsProfessorUsedByCurrentResults(p.Id))
-                        return BlockDelete("이 교수는 교과목 또는 시간표에서 사용 중이므로 삭제할 수 없습니다.");
-                    _workspace.DeleteProfessor(p.Id);
-                    return true;
-                case Course c:
-                    if (IsCourseUsedByCurrentResults(c.Id))
-                        return BlockDelete("이 교과목은 시간표 또는 관련 조건에서 사용 중이므로 삭제할 수 없습니다.");
-                    _workspace.DeleteCourse(c);
-                    return true;
-                case Room r:
-                    if (IsRoomUsedByCurrentResults(r.Id))
-                        return BlockDelete("이 강의실은 교과목 또는 시간표에서 사용 중이므로 삭제할 수 없습니다.");
-                    _workspace.DeleteRoom(r.Id);
-                    return true;
-                default:
-                    return false;
-            }
+            case Professor p: _workspace.DeleteProfessor(p.Id); break;
+            case Course c: _workspace.DeleteCourse(c); break;
+            case Room r: _workspace.DeleteRoom(r.Id); break;
         }
-        catch (InvalidOperationException ex)
-        {
-            return BlockDelete(ex.Message);
-        }
+        SelectedItem = null;
     }
-
-    private bool BlockDelete(string message)
-    {
-        DeleteBlocked?.Invoke(this, message);
-        return false;
-    }
-
-    private bool IsProfessorUsedByCurrentResults(string professorId)
-    {
-        if (RankedResults.Count == 0)
-            return false;
-        var taughtCourseIds = _workspace.Courses
-            .Where(c => string.Equals(c.ProfessorId, professorId, StringComparison.Ordinal)
-                || c.CoteachProfs.Contains(professorId, StringComparer.Ordinal))
-            .Select(c => c.Id)
-            .ToHashSet(StringComparer.Ordinal);
-        return RankedResults
-            .SelectMany(r => r.Assignment)
-            .Any(a => taughtCourseIds.Contains(a.CourseId));
-    }
-
-    private bool IsRoomUsedByCurrentResults(string roomId) =>
-        RankedResults
-            .SelectMany(r => r.Assignment)
-            .Any(a => string.Equals(a.RoomId, roomId, StringComparison.Ordinal));
-
-    private bool IsCourseUsedByCurrentResults(string courseId) =>
-        RankedResults
-            .SelectMany(r => r.Assignment)
-            .Any(a => string.Equals(a.CourseId, courseId, StringComparison.Ordinal));
 
     [RelayCommand]
     private void SaveSelected()
@@ -495,7 +438,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void DeleteProfessorItem(ProfessorItem item)
     {
         if (item is null) return;
-        TryDeleteItem(item.Professor);
+        _workspace.DeleteProfessor(item.Professor.Id);
     }
 
     [RelayCommand]
@@ -533,7 +476,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void DeleteRoomItem(RoomItem item)
     {
         if (item is null) return;
-        TryDeleteItem(item.Room);
+        _workspace.DeleteRoom(item.Room.Id);
     }
 
     [RelayCommand]
@@ -597,10 +540,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     {
         if (item is null) return;
         foreach (var sec in item.Sections.ToList())
-        {
-            if (!TryDeleteItem(sec))
-                return;
-        }
+            _workspace.DeleteCourse(sec);
     }
 
     /// <summary>Save a single fixed section (IsFixedIndividual=true).</summary>
@@ -693,7 +633,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void DeleteSection(CourseGroupItem item)
     {
         if (item is null || item.Sections.Count != 1) return;
-        TryDeleteItem(item.Sections[0]);
+        _workspace.DeleteCourse(item.Sections[0]);
     }
 
     /// <summary>Add the next-numbered section to the group, copying shared fields from Sections[0].</summary>
@@ -730,7 +670,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         if (item is null || item.Sections.Count <= 1) return;
         ClearFixedTimeForSectionAdjustment(item);
         var last = item.Sections.OrderByDescending(s => s.Section).First();
-        TryDeleteItem(last);
+        _workspace.DeleteCourse(last);
     }
 
     private void ClearFixedTimeForSectionAdjustment(CourseGroupItem item)
@@ -790,7 +730,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public event EventHandler? GoToSelectionRequested;
     public event EventHandler? GoToManualRequested;
     public event EventHandler? BackRequested;
-    public event EventHandler<string>? DeleteBlocked;
 
     [RelayCommand]
     private void Back() => BackRequested?.Invoke(this, EventArgs.Empty);
@@ -818,7 +757,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     {
         if (_editBaseAssignments == null) return null;
         var solution = new RankedSolution(_editBaseAssignments, new SolutionScore(0, 0, 0, 0));
-        return new ManualEditHandoff(solution, _editBaseManualCrossLinks, _editBaseId);
+        return new ManualEditHandoff(solution, _editBaseManualCrossLinks);
     }
 
     public AppData CurrentSnapshot() => _workspace.SchedulingSnapshot();
@@ -875,7 +814,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         IsExistingMode = false;
         _editBaseAssignments = null;
         _editBaseManualCrossLinks = Array.Empty<SavedManualCrossLinkRow>();
-        _editBaseId = null;
         _editBaseName = "";
         SelectedCategory = InputCategory.Course;
     }
@@ -895,13 +833,11 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             .ToList();
         _editBaseManualCrossLinks = (record.ManualCrossLinks ?? Array.Empty<SavedManualCrossLinkRow>())
             .ToList();
-        _editBaseId = record.Id;
         _editBaseName = record.Name;
     }
 
     private IReadOnlyList<SolutionAssignment>? _editBaseAssignments;
     private IReadOnlyList<SavedManualCrossLinkRow> _editBaseManualCrossLinks = Array.Empty<SavedManualCrossLinkRow>();
-    private string? _editBaseId;
     private string _editBaseName = "";
 
     /// <summary>Name of the timetable being re-edited (for the manual-edit save field).</summary>

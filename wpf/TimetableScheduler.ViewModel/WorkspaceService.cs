@@ -1,5 +1,4 @@
 using System.Collections.ObjectModel;
-using System.Text.Json;
 using TimetableScheduler.Data;
 using TimetableScheduler.Domain;
 using TimetableScheduler.Solver;
@@ -82,37 +81,25 @@ public sealed class WorkspaceService
 
     // SaveTimetable / DeleteSavedTimetable / Export/ImportDatabase are global-only:
     // a session workspace (_repo == null) is never expected to call them.
-    public SavedTimetableRecord SaveTimetable(
+    public void SaveTimetable(
         string name,
         IReadOnlyList<SolutionAssignment> assignments,
         IReadOnlyList<SavedManualCrossLinkRow>? manualCrossLinks = null,
-        AppData? snapshot = null,
-        string? id = null)
+        AppData? snapshot = null)
     {
         var rows = assignments
             .Select(a => new TimetableAssignmentRow(a.CourseId, a.Day, a.Period, a.RoomId, a.AssignmentId))
             .ToList();
         var snapshotJson = System.Text.Json.JsonSerializer.Serialize(snapshot ?? Snapshot());
-        var recordId = string.IsNullOrWhiteSpace(id) ? Guid.NewGuid().ToString() : id;
         var record = new SavedTimetableRecord(
-            recordId,
+            Guid.NewGuid().ToString(),
             name,
             DateTime.Now,
             rows,
             manualCrossLinks?.ToList() ?? new List<SavedManualCrossLinkRow>(),
             snapshotJson);
         _repo!.UpsertSavedTimetable(record);
-        var existing = SavedTimetables.FirstOrDefault(t => t.Id == record.Id);
-        if (existing == null)
-        {
-            SavedTimetables.Insert(0, record);
-        }
-        else
-        {
-            var index = SavedTimetables.IndexOf(existing);
-            SavedTimetables[index] = record;
-        }
-        return record;
+        SavedTimetables.Insert(0, record);
     }
 
     public void DeleteSavedTimetable(string id)
@@ -154,8 +141,6 @@ public sealed class WorkspaceService
     {
         var c = Courses.FirstOrDefault(x => x.Id == course.Id && x.Section == course.Section);
         if (c == null) return;
-        if (IsCourseInUse(c))
-            throw new InvalidOperationException("이 교과목은 시간표 또는 관련 조건에서 사용 중이므로 삭제할 수 없습니다.");
         Courses.Remove(c);
         Persist();
     }
@@ -172,8 +157,6 @@ public sealed class WorkspaceService
     {
         var p = Professors.FirstOrDefault(x => x.Id == id);
         if (p == null) return;
-        if (IsProfessorInUse(id))
-            throw new InvalidOperationException("이 교수는 교과목 또는 시간표에서 사용 중이므로 삭제할 수 없습니다.");
         Professors.Remove(p);
         Persist();
     }
@@ -190,8 +173,6 @@ public sealed class WorkspaceService
     {
         var r = Rooms.FirstOrDefault(x => x.Id == id);
         if (r == null) return;
-        if (IsRoomInUse(id))
-            throw new InvalidOperationException("이 강의실은 교과목 또는 시간표에서 사용 중이므로 삭제할 수 없습니다.");
         Rooms.Remove(r);
         Persist();
     }
@@ -282,61 +263,6 @@ public sealed class WorkspaceService
         FixedSlots = new List<TimeSlot>(src.FixedSlots),
         CoteachProfs = new List<string>(src.CoteachProfs),
     };
-
-    private bool IsProfessorInUse(string id)
-    {
-        if (Courses.Any(c =>
-            string.Equals(c.ProfessorId, id, StringComparison.Ordinal)
-            || c.CoteachProfs.Contains(id, StringComparer.Ordinal)))
-            return true;
-
-        var professor = Professors.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.Ordinal));
-        if (professor != null
-            && (professor.UnavailableSlots.Count > 0 || professor.UnavailableRooms.Count > 0))
-            return true;
-
-        return false;
-    }
-
-    private bool IsRoomInUse(string id)
-    {
-        if (Courses.Any(c =>
-            c.FixedRooms.Contains(id, StringComparer.Ordinal)
-            || c.UnavailableRooms.Contains(id, StringComparer.Ordinal)))
-            return true;
-
-        if (Professors.Any(p => p.UnavailableRooms.Contains(id, StringComparer.Ordinal)))
-            return true;
-
-        return false;
-    }
-
-    private bool IsCourseInUse(Course course)
-    {
-        var baseId = DomainHelpers.BaseId(course.Id);
-        if (CrossGroups.Any(g => g.BaseIds.Contains(baseId, StringComparer.Ordinal)))
-            return true;
-
-        if (RetakeScenarios.Any(r => string.Equals(r.RetakeBaseId, baseId, StringComparison.Ordinal)))
-            return true;
-
-        return false;
-    }
-
-    private static AppData ResolveSavedSnapshot(SavedTimetableRecord record)
-    {
-        if (string.IsNullOrWhiteSpace(record.SnapshotJson))
-            return AppData.Empty();
-
-        try
-        {
-            return JsonSerializer.Deserialize<AppData>(record.SnapshotJson) ?? AppData.Empty();
-        }
-        catch
-        {
-            return AppData.Empty();
-        }
-    }
 
     private int IndexOfCourse(string id, int section)
     {
