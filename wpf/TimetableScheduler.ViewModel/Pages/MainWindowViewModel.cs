@@ -45,7 +45,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
                     _input.CurrentSnapshot(),
                     handoff.Solution,
                     _input.EditBaseName,
-                    handoff.ManualCrossLinks);
+                    handoff.ManualCrossLinks,
+                    handoff.SavedTimetableId);
             }
             _manualBackTarget = _input;
             NavigateTo(_manual);
