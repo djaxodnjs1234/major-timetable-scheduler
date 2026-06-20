@@ -32,6 +32,54 @@ public class TimetableDiagnosticsTests
     }
 
     [Fact]
+    public void InputErrors_IncludeAffectedManagementLocations()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "A-01",
+                Name = "Alpha",
+                Grade = 1,
+                HoursPerWeek = 1,
+                ProfessorId = "P1",
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1) },
+                BlockStructure = new List<int> { 1 },
+            },
+            new()
+            {
+                Id = "B-01",
+                Name = "Beta",
+                Grade = 1,
+                HoursPerWeek = 1,
+                ProfessorId = "P1",
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1) },
+                BlockStructure = new List<int> { 1 },
+            },
+        };
+        var professors = new List<Professor> { new() { Id = "P1", Name = "Professor" } };
+        var rooms = new List<Room> { new() { Id = "R1", Name = "" } };
+        var crosses = new List<CrossGroup> { new() { Id = "X001", BaseIds = new List<string> { "A", "Missing" } } };
+
+        var diagnostics = TimetableDiagnostics.GetInputErrors(courses, professors, rooms, crosses);
+
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Id == "IE-003" && diagnostic.Message.Contains("강의실 관리 > R1"));
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Id == "IE-016" &&
+            diagnostic.Message.Contains("교과목 관리 > Alpha(A-01) / Beta(B-01)") &&
+            diagnostic.Message.Contains("월 1교시"));
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Id == "IE-017" &&
+            diagnostic.Message.Contains("교수 관리 > P1") &&
+            diagnostic.Message.Contains("월 1교시"));
+        Assert.Contains(diagnostics, diagnostic =>
+            diagnostic.Id == "IE-033" && diagnostic.Message.Contains("Cross 설정 > X001 (A, Missing)"));
+    }
+
+    [Fact]
     public void GenerationErrors_FixedRoomAndProfessorConflict_ReportGe007AndGe008()
     {
         var courses = new List<Course>
@@ -212,6 +260,7 @@ public class TimetableDiagnosticsTests
         Assert.Contains("2학년", inputDiagnostic.Message);
         Assert.Contains("40칸", inputDiagnostic.Message);
         Assert.Contains("41칸", inputDiagnostic.Message);
+        Assert.Contains("교과목 관리 > 2학년", inputDiagnostic.Message);
         Assert.Contains("2학년", generationDiagnostic.Message);
     }
 

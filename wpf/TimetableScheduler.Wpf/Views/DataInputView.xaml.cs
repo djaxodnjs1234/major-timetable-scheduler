@@ -323,6 +323,17 @@ public partial class DataInputView : UserControl
             Vm.DeleteGroupCommand.Execute(item);
     }
 
+    private void OnCourseGroupCancelClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not DependencyObject dep || Vm == null) return;
+        var item = FindCourseGroupItem(dep);
+        if (item == null) return;
+
+        Vm.CancelGroupCommand.Execute(item);
+        if (FindAncestor<Expander>(dep) is Expander expander)
+            OnCourseGroupExpanded(expander, new RoutedEventArgs());
+    }
+
     private void OnAddSectionClick(object sender, RoutedEventArgs e)
     {
         if (sender is not DependencyObject dep || Vm == null) return;
@@ -341,6 +352,15 @@ public partial class DataInputView : UserControl
     {
         if (sender is not FrameworkElement el || el.DataContext is not ProfessorItem item || Vm == null) return;
         Vm.SaveProfessorCommand.Execute(item);
+    }
+
+    private void OnProfessorCancelClick(object sender, RoutedEventArgs e)
+    {
+        if (sender is not FrameworkElement el || el.DataContext is not ProfessorItem item || Vm == null) return;
+
+        Vm.CancelProfessorCommand.Execute(item);
+        if (FindAncestor<Expander>(el) is Expander expander)
+            OnProfessorExpanded(expander, new RoutedEventArgs());
     }
 
     private void OnProfessorDeleteClick(object sender, RoutedEventArgs e)
@@ -386,13 +406,37 @@ public partial class DataInputView : UserControl
     private static string DisplayName(string name, string fallback) =>
         string.IsNullOrWhiteSpace(name) ? fallback : name;
 
-    private void OnCourseUnavailableAllRoomsClick(object sender, RoutedEventArgs e)
+    private void OnCourseUnavailableLabRoomsClick(object sender, RoutedEventArgs e)
+    {
+        SetUnavailableRoomSelection(sender, room => room.IsLab);
+    }
+
+    private void OnCourseUnavailableNonLabRoomsClick(object sender, RoutedEventArgs e)
+    {
+        SetUnavailableRoomSelection(sender, room => !room.IsLab);
+    }
+
+    private void OnCourseUnavailableClearRoomsClick(object sender, RoutedEventArgs e)
+    {
+        SetUnavailableRoomSelection(sender, null);
+    }
+
+    private void SetUnavailableRoomSelection(object sender, Func<Room, bool>? includeRoom)
     {
         var expander = sender is DependencyObject dep ? FindAncestor<Expander>(dep) : null;
         if (expander?.FindName("GroupUnavailableRoomsPicker") is not CheckListPickerControl picker) return;
-        if (picker.DataContext is IEnumerable<CheckListItem> items)
+        if (picker.DataContext is not IEnumerable<CheckListItem> items) return;
+
+        foreach (var item in items)
         {
-            foreach (var item in items) item.IsChecked = true;
+            if (includeRoom == null)
+            {
+                item.IsChecked = false;
+                continue;
+            }
+
+            var room = Vm?.Workspace.Rooms.FirstOrDefault(room => room.Id == item.Id);
+            if (room != null && includeRoom(room)) item.IsChecked = true;
         }
     }
 

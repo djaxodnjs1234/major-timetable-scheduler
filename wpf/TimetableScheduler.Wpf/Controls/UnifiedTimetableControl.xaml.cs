@@ -83,6 +83,45 @@ public partial class UnifiedTimetableControl : UserControl
     public event EventHandler<CellDropMoveEventArgs>? SwapDropRequested;
     public event EventHandler<CellDropMoveEventArgs>? DropMoveRequested;
 
+    public static readonly DependencyProperty PeriodRowMinHeightProperty =
+        DependencyProperty.Register(
+            nameof(PeriodRowMinHeight),
+            typeof(double),
+            typeof(UnifiedTimetableControl),
+            new PropertyMetadata(64.0, OnLayoutMetricsChanged));
+
+    public static readonly DependencyProperty LunchRowHeightProperty =
+        DependencyProperty.Register(
+            nameof(LunchRowHeight),
+            typeof(double),
+            typeof(UnifiedTimetableControl),
+            new PropertyMetadata(22.0, OnLayoutMetricsChanged));
+
+    public static readonly DependencyProperty DayColumnWidthProperty =
+        DependencyProperty.Register(
+            nameof(DayColumnWidth),
+            typeof(double),
+            typeof(UnifiedTimetableControl),
+            new PropertyMetadata(80.0, OnLayoutMetricsChanged));
+
+    public double PeriodRowMinHeight
+    {
+        get => (double)GetValue(PeriodRowMinHeightProperty);
+        set => SetValue(PeriodRowMinHeightProperty, value);
+    }
+
+    public double LunchRowHeight
+    {
+        get => (double)GetValue(LunchRowHeightProperty);
+        set => SetValue(LunchRowHeightProperty, value);
+    }
+
+    public double DayColumnWidth
+    {
+        get => (double)GetValue(DayColumnWidthProperty);
+        set => SetValue(DayColumnWidthProperty, value);
+    }
+
     public bool EnableCrossHover { get; set; }
     public Func<CellClickedEventArgs, CrossHoverState>? CrossHoverEvaluator { get; set; }
     public Func<CellDropMoveEventArgs, CrossHoverState>? CrossDropHoverEvaluator { get; set; }
@@ -131,6 +170,12 @@ public partial class UnifiedTimetableControl : UserControl
         DataContextChanged += OnDataContextChanged;
     }
 
+    private static void OnLayoutMetricsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is UnifiedTimetableControl control && control.DataContext is UnifiedTimetableViewModel vm)
+            control.Rebuild(vm);
+    }
+
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (e.OldValue is UnifiedTimetableViewModel oldVm)
@@ -162,9 +207,9 @@ public partial class UnifiedTimetableControl : UserControl
         {
             // period 5 (index 4) = lunch → compact fixed height
             if (i == 4)
-                RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(22) });
+                RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(LunchRowHeight) });
             else
-                RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = 64 });
+                RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = PeriodRowMinHeight });
         }
 
         // 2 label cols (period, time) + sum of all grade widths
@@ -179,7 +224,7 @@ public partial class UnifiedTimetableControl : UserControl
         {
             dayColStart[dg.Day] = curCol;
             for (int k = 0; k < dg.TotalWidth; k++)
-                RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(80) });
+                RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(DayColumnWidth) });
             curCol += dg.TotalWidth;
         }
 

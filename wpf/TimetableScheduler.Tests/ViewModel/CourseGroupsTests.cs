@@ -69,12 +69,14 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
-    public void SolverAdvancedPerAttemptTime_DefaultsDisabledAndFiveSeconds()
+    public void Solver_DefaultsTo120SecondTotalWithUnlimitedPerSolutionSearch()
     {
+        var options = new DiverseSolverOptions();
         var vm = MakeVm();
 
-        Assert.False(vm.UseAdvancedPerSolveTimeSec);
-        Assert.Equal(5, vm.PerSolveTimeSec);
+        Assert.Equal(120, options.TimeLimitSec);
+        Assert.Equal(0, options.PerSolveTimeSec);
+        Assert.Equal(120, vm.TimeLimitSec);
     }
 
     [Fact]
@@ -496,6 +498,43 @@ public class CourseGroupsTests : IDisposable
         Assert.Equal(new TimeSlot(0, 1), _workspace.Professors.Single().UnavailableSlots.Single());
         Assert.Equal(45, _workspace.Rooms.Single().Capacity);
         Assert.True(_workspace.Rooms.Single().IsLab);
+    }
+
+    [Fact]
+    public void CancelItemEdits_RestoresSavedCopiesAndStopsEditing()
+    {
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor" });
+        _workspace.AddRoom(new Room { Id = "R1", Name = "Room", Capacity = 30 });
+        _workspace.AddCourse(MakeCourse("C-01", 1));
+
+        var vm = MakeVm();
+        var course = vm.CourseGroups.Single();
+        var professor = vm.ProfessorItems.Single();
+        var room = vm.RoomItems.Single();
+
+        vm.EditCourseCommand.Execute(course);
+        vm.EditProfessorCommand.Execute(professor);
+        vm.EditRoomCommand.Execute(room);
+        course.Sections[0].Grade = 4;
+        professor.Professor.UnavailableSlots.Add(new TimeSlot(0, 1));
+        room.Room.Capacity = 45;
+        room.Room.IsLab = true;
+
+        vm.CancelGroupCommand.Execute(course);
+        vm.CancelProfessorCommand.Execute(professor);
+        vm.CancelRoomCommand.Execute(room);
+
+        Assert.False(course.IsEditing);
+        Assert.False(professor.IsEditing);
+        Assert.False(room.IsEditing);
+        Assert.Equal(2, course.Sections[0].Grade);
+        Assert.Empty(professor.Professor.UnavailableSlots);
+        Assert.Equal(30, room.Room.Capacity);
+        Assert.False(room.Room.IsLab);
+        Assert.Equal(2, _workspace.Courses.Single().Grade);
+        Assert.Empty(_workspace.Professors.Single().UnavailableSlots);
+        Assert.Equal(30, _workspace.Rooms.Single().Capacity);
+        Assert.False(_workspace.Rooms.Single().IsLab);
     }
 
     [Fact]
@@ -1070,7 +1109,7 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
-    public async Task Solve_WithUnsavedCourseEdit_ReportsIe037AndDoesNotRunSolver()
+    public async Task Solve_WithUnsavedEdits_ReportsIe037LocationsAndDoesNotRunSolver()
     {
         _workspace.AddRoom(new Room { Id = "R1", Name = "Room" });
         _workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor" });
@@ -1086,10 +1125,15 @@ public class CourseGroupsTests : IDisposable
         });
         var vm = new DataInputViewModel(_workspace, null!);
         vm.CourseGroups.Single().IsEditing = true;
+        vm.ProfessorItems.Single().IsEditing = true;
+        vm.RoomItems.Single().IsEditing = true;
 
         await vm.SolveCommand.ExecuteAsync(null);
 
         Assert.Contains("IE-037", vm.StatusMessage);
+        Assert.Contains("교과목 관리 > Course (C)", vm.StatusMessage);
+        Assert.Contains("교수 관리 > Professor (P1)", vm.StatusMessage);
+        Assert.Contains("강의실 관리 > Room (R1)", vm.StatusMessage);
         Assert.False(vm.IsSolving);
         Assert.False(vm.IsSolveComplete);
     }
@@ -1173,7 +1217,6 @@ public class CourseGroupsTests : IDisposable
         var vm = new DataInputViewModel(_workspace, solver)
         {
             TotalSolutions = 1,
-            TimeLimitSec = 30,
             UseSc01 = false,
             UseSc02 = false,
             UseSc03 = false,
@@ -1243,7 +1286,6 @@ public class CourseGroupsTests : IDisposable
         var vm = new DataInputViewModel(_workspace, new InfeasibleSolverService())
         {
             TotalSolutions = 1,
-            TimeLimitSec = 1,
             UseSc01 = false,
             UseSc02 = false,
             UseSc03 = false,
@@ -1308,7 +1350,6 @@ public class CourseGroupsTests : IDisposable
         var vm = new DataInputViewModel(_workspace, new SolverService())
         {
             TotalSolutions = 1,
-            TimeLimitSec = 10,
             UseSc01 = false,
             UseSc02 = false,
             UseSc03 = false,
@@ -1344,7 +1385,6 @@ public class CourseGroupsTests : IDisposable
         var vm = new DataInputViewModel(_workspace, new SolverService())
         {
             TotalSolutions = 1,
-            TimeLimitSec = 1,
             UseSc01 = false,
             UseSc02 = false,
             UseSc03 = false,

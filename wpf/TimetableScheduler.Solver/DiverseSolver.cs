@@ -17,8 +17,10 @@ public sealed record SolverProgress(
 public sealed record DiverseSolverOptions
 {
     public int TotalSolutions { get; init; } = 500;
+    /// <summary>Zero means no overall time limit.</summary>
     public int TimeLimitSec { get; init; } = 120;
-    public int PerSolveTimeSec { get; init; } = 5;
+    /// <summary>Zero means no time limit for an individual solve attempt.</summary>
+    public int PerSolveTimeSec { get; init; }
     public int BaseSeed { get; init; } = 0;
     public bool ConsiderRetakeStudents { get; init; }
     public bool UseSc01 { get; init; }
@@ -62,7 +64,9 @@ public static class DiverseSolver
             var p1 = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes);
             var term = SoftConstraints.Sc01PenaltyTerm(p1.X, courses, rooms);
             p1.Model.Minimize(term);
-            var s = NewSolver(options.PerSolveTimeSec * 2);
+            if (!TryGetSolveTimeLimit(options, totalSw, 2d, out var sc01TimeLimit))
+                return Unknown(sc01Bound, sc02Bound, sc03Bound);
+            var s = NewSolver(sc01TimeLimit);
             var st = SolveWithCancellation(s, p1.Model, cancellationToken);
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound);
@@ -84,7 +88,9 @@ public static class DiverseSolver
                 p2.Model.Add(SoftConstraints.Sc01PenaltyTerm(p2.X, courses, rooms) <= sc01Bound.Value);
             var term = SoftConstraints.Sc02PenaltyTerm(p2.Model, p2.X, courses, rooms);
             p2.Model.Minimize(term);
-            var s = NewSolver(options.PerSolveTimeSec * 2);
+            if (!TryGetSolveTimeLimit(options, totalSw, 2d, out var sc02TimeLimit))
+                return Unknown(sc01Bound, sc02Bound, sc03Bound);
+            var s = NewSolver(sc02TimeLimit);
             var st = SolveWithCancellation(s, p2.Model, cancellationToken);
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound);
@@ -108,7 +114,9 @@ public static class DiverseSolver
                 p3.Model.Add(SoftConstraints.Sc02PenaltyTerm(p3.Model, p3.X, courses, rooms) <= sc02Bound.Value);
             var term = SoftConstraints.Sc03PenaltyTerm(p3.Model, p3.DayVarsByCourse, courses);
             p3.Model.Minimize(term);
-            var s = NewSolver(options.PerSolveTimeSec * 2);
+            if (!TryGetSolveTimeLimit(options, totalSw, 2d, out var sc03TimeLimit))
+                return Unknown(sc01Bound, sc02Bound, sc03Bound);
+            var s = NewSolver(sc03TimeLimit);
             var st = SolveWithCancellation(s, p3.Model, cancellationToken);
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound);
@@ -140,13 +148,11 @@ public static class DiverseSolver
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound, attempts);
 
-            double elapsed = totalSw.Elapsed.TotalSeconds;
-            if (elapsed > options.TimeLimitSec) break;
+            if (!TryGetSolveTimeLimit(options, totalSw, 1d, out var perSolveTimeLimit))
+                break;
             attempts++;
 
-            double remaining = Math.Max(1.0, options.TimeLimitSec - elapsed);
-            var perSolve = Math.Min(options.PerSolveTimeSec, remaining);
-            var solver = NewSolver(perSolve, seed: options.BaseSeed + i, randomize: true);
+            var solver = NewSolver(perSolveTimeLimit, seed: options.BaseSeed + i, randomize: true);
             var status = SolveWithCancellation(solver, build.Model, cancellationToken);
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound, attempts);
@@ -197,10 +203,39 @@ public static class DiverseSolver
         int attempts = 0) =>
         new("CANCELLED", Array.Empty<IReadOnlyList<SolutionAssignment>>(), sc01Bound, sc02Bound, sc03Bound, attempts);
 
-    private static CpSolver NewSolver(double maxTimeSec, int? seed = null, bool randomize = false)
+    private static DiverseSolverResult Unknown(
+        int? sc01Bound = null,
+        int? sc02Bound = null,
+        int? sc03Bound = null,
+        int attempts = 0) =>
+        new("UNKNOWN", Array.Empty<IReadOnlyList<SolutionAssignment>>(), sc01Bound, sc02Bound, sc03Bound, attempts);
+
+    private static bool TryGetSolveTimeLimit(
+        DiverseSolverOptions options,
+        Stopwatch totalSw,
+        double perSolveMultiplier,
+        out double? timeLimit)
+    {
+        timeLimit = options.PerSolveTimeSec > 0
+            ? options.PerSolveTimeSec * perSolveMultiplier
+            : null;
+        if (options.TimeLimitSec <= 0) return true;
+
+        var remaining = options.TimeLimitSec - totalSw.Elapsed.TotalSeconds;
+        if (remaining <= 0) return false;
+
+        timeLimit = timeLimit.HasValue
+            ? Math.Min(timeLimit.Value, remaining)
+            : remaining;
+        return true;
+    }
+
+    private static CpSolver NewSolver(double? maxTimeSec, int? seed = null, bool randomize = false)
     {
         var s = new CpSolver();
-        var parts = new List<string> { $"max_time_in_seconds:{maxTimeSec.ToString(System.Globalization.CultureInfo.InvariantCulture)}" };
+        var parts = new List<string>();
+        if (maxTimeSec is > 0)
+            parts.Add($"max_time_in_seconds:{maxTimeSec.Value.ToString(System.Globalization.CultureInfo.InvariantCulture)}");
         if (seed.HasValue) parts.Add($"random_seed:{seed.Value}");
         if (randomize) parts.Add("randomize_search:true");
         s.StringParameters = string.Join(" ", parts);

@@ -76,6 +76,23 @@ public class DiverseSolverTests
     }
 
     [Fact]
+    public void UnlimitedPerSolutionTime_WithTotalLimit_StillCollectsSolutions()
+    {
+        var (courses, profs, rooms) = MakeSetup();
+        var opts = new DiverseSolverOptions
+        {
+            TotalSolutions = 1,
+            TimeLimitSec = 120,
+            PerSolveTimeSec = 0,
+        };
+
+        var result = DiverseSolver.Solve(courses, profs, rooms, opts);
+
+        Assert.True(result.Status is "OPTIMAL" or "FEASIBLE");
+        Assert.Single(result.Solutions);
+    }
+
+    [Fact]
     public void ConsiderRetakeStudents_Disabled_IgnoresRetakeConflicts()
     {
         var (courses, profs, rooms) = MakeFixedRetakeConflictSetup();

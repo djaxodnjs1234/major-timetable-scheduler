@@ -148,6 +148,11 @@
                                     Padding="12,6" Margin="0,0,8,0"
                                     Background="{StaticResource PrimaryBrush}" Foreground="White"
                                     Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}" />
+                            <Button Content="취소"
+                                    Click="OnProfessorCancelClick"
+                                    Padding="12,6" Margin="0,0,8,0"
+                                    Background="{StaticResource SurfaceContainer}"
+                                    Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}" />
                             <Button Content="삭제"
                                     Click="OnProfessorDeleteClick"
                                     Padding="12,6"
@@ -396,11 +401,23 @@
                                                Foreground="{StaticResource OnSurfaceVariant}" />
                                     <TextBlock Text=" (?)" FontSize="11" Foreground="{StaticResource PrimaryBrush}"
                                                ToolTip="설정한 강의실은 배정되지 않습니다." />
-                                    <Button x:Name="CourseUnavailableAllRoomsButton"
-                                            Content="전체 선택"
-                                            Click="OnCourseUnavailableAllRoomsClick"
+                                    <Button x:Name="CourseUnavailableLabRoomsButton"
+                                            Content="실습실"
+                                            Click="OnCourseUnavailableLabRoomsClick"
                                             Padding="8,2"
                                             Margin="12,0,0,0"
+                                            Background="{StaticResource SurfaceContainer}" />
+                                    <Button x:Name="CourseUnavailableNonLabRoomsButton"
+                                            Content="비실습실"
+                                            Click="OnCourseUnavailableNonLabRoomsClick"
+                                            Padding="8,2"
+                                            Margin="4,0,0,0"
+                                            Background="{StaticResource SurfaceContainer}" />
+                                    <Button x:Name="CourseUnavailableClearRoomsButton"
+                                            Content="전체 해제"
+                                            Click="OnCourseUnavailableClearRoomsClick"
+                                            Padding="8,2"
+                                            Margin="4,0,0,0"
                                             Background="{StaticResource SurfaceContainer}" />
                                 </StackPanel>
                                 <ctrl:CheckListPickerControl x:Name="GroupUnavailableRoomsPicker"
@@ -438,6 +455,11 @@
                                     Click="OnCourseGroupSaveClick"
                                     Padding="12,6" Margin="0,0,8,0"
                                     Background="{StaticResource PrimaryBrush}" Foreground="White"
+                                    Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
+                            <Button Content="취소"
+                                    Click="OnCourseGroupCancelClick"
+                                    Padding="12,6" Margin="0,0,8,0"
+                                    Background="{StaticResource SurfaceContainer}"
                                     Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
                             <Button Content="삭제"
                                     Click="OnCourseGroupDeleteClick"
@@ -552,6 +574,13 @@
                                     CommandParameter="{Binding}"
                                     Padding="12,6" Margin="0,0,8,0"
                                     Background="{StaticResource PrimaryBrush}" Foreground="White"
+                                    Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}" />
+                            <Button Content="취소"
+                                    Command="{Binding DataContext.CancelRoomCommand,
+                                              RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                    CommandParameter="{Binding}"
+                                    Padding="12,6" Margin="0,0,8,0"
+                                    Background="{StaticResource SurfaceContainer}"
                                     Visibility="{Binding IsEditing, Converter={StaticResource BoolToVisibility}}" />
                             <Button Content="삭제"
                                     Click="OnRoomDeleteClick"
@@ -896,9 +925,9 @@
                                     <TextBox Grid.Row="0" Grid.Column="1" Padding="6,4" Margin="0,4" Width="120" HorizontalAlignment="Left"
                                              Text="{Binding TotalSolutions, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
                                     <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="0,4" VerticalAlignment="Center">
-                                        <TextBlock Text="제한 시간 (초)" />
+                                        <TextBlock Text="전체 생성 제한 시간 (초)" />
                                         <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
-                                                   ToolTip="시간표를 찾기 위해 솔버가 사용할 최대 시간입니다.&#x0a;시간이 길수록 해를 찾을 가능성이 높아질 수 있습니다." />
+                                                   ToolTip="시간표 전체 생성에 사용할 최대 시간입니다. 한 해를 찾는 시간은 제한하지 않습니다." />
                                     </StackPanel>
                                     <TextBox Grid.Row="1" Grid.Column="1" Padding="6,4" Margin="0,4" Width="120" HorizontalAlignment="Left"
                                              Text="{Binding TimeLimitSec, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />

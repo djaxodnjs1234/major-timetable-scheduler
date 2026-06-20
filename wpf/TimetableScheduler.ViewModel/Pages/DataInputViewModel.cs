@@ -52,7 +52,9 @@ public sealed record CrossCandidateGradeGroup(string Header, ObservableCollectio
 
 public sealed partial class ProfessorItem : ObservableObject
 {
-    public Professor Professor { get; init; } = new();
+    [ObservableProperty]
+    private Professor professor = new();
+
     public string HeaderId => Professor.Id;
     public string HeaderName => Professor.Name;
     public string HeaderUnavailableSlots { get; init; } = "없음";
@@ -64,7 +66,9 @@ public sealed partial class ProfessorItem : ObservableObject
 
 public sealed partial class RoomItem : ObservableObject
 {
-    public Room Room { get; init; } = new();
+    [ObservableProperty]
+    private Room room = new();
+
     public string HeaderId => Room.Id;
     public string HeaderName => Room.Name;
     public string HeaderLab => Room.IsLab ? "실습실" : "일반";
@@ -99,7 +103,9 @@ public sealed partial class CourseGroupItem : ObservableObject
     public string HeaderCrossGroups { get; init; } = "";
     public bool IsImportedFromExcel { get; init; }
     /// <summary>All sections in this group (N>1 for grouped, 1 for individual fixed).</summary>
-    public List<Course> Sections { get; init; } = new();
+    [ObservableProperty]
+    private List<Course> sections = new();
+
     public bool IsFixedIndividual => Sections.Count == 1 && Sections[0].IsFixed;
     public string ReadOnlyProfessor => string.IsNullOrWhiteSpace(HeaderProfessor) ? "없음" : HeaderProfessor;
     public string ReadOnlyBlockStructure => HeaderBlockStructure;
@@ -113,6 +119,8 @@ public sealed partial class CourseGroupItem : ObservableObject
 
     [ObservableProperty]
     private FixedSlotEditorViewModel? fixedSlotEditor;
+
+    partial void OnSectionsChanged(List<Course> value) => OnPropertyChanged(nameof(IsFixedIndividual));
 }
 
 public sealed record FixedTimeOverlapInfo(
@@ -209,7 +217,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             case InputCategory.Professor:
                 if (string.IsNullOrWhiteSpace(NewName))
                 {
-                    StatusMessage = "IE-002: 교수명을 입력해야 추가할 수 있습니다.";
+                    StatusMessage = "IE-002: 교수 관리 > 추가: 교수명을 입력해야 추가할 수 있습니다.";
                     return;
                 }
                 _workspace.AddProfessor(new Professor { Id = NextProfessorId(), Name = NewName.Trim() });
@@ -217,7 +225,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             case InputCategory.Course:
                 if (string.IsNullOrWhiteSpace(NewName))
                 {
-                    StatusMessage = "IE-001: 과목명을 입력해야 추가할 수 있습니다.";
+                    StatusMessage = "IE-001: 교과목 관리 > 추가: 과목명을 입력해야 추가할 수 있습니다.";
                     return;
                 }
                 _workspace.AddCourse(new Course
@@ -232,7 +240,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             case InputCategory.Room:
                 if (string.IsNullOrWhiteSpace(NewName))
                 {
-                    StatusMessage = "IE-003: 강의실명을 입력해야 추가할 수 있습니다.";
+                    StatusMessage = "IE-003: 강의실 관리 > 추가: 강의실명을 입력해야 추가할 수 있습니다.";
                     return;
                 }
                 _workspace.AddRoom(new Room { Id = NextRoomId(), Name = NewName.Trim() });
@@ -371,7 +379,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             case Professor p:
                 if (string.IsNullOrWhiteSpace(p.Name))
                 {
-                    StatusMessage = "IE-002: 교수명을 입력해야 저장할 수 있습니다.";
+                    StatusMessage = $"IE-002: {ProfessorInputLocation(p)}: 교수명을 입력해야 저장할 수 있습니다.";
                     return;
                 }
                 _workspace.UpdateProfessor(p);
@@ -379,7 +387,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             case Course c:
                 if (string.IsNullOrWhiteSpace(c.Name))
                 {
-                    StatusMessage = "IE-001: 과목명을 입력해야 저장할 수 있습니다.";
+                    StatusMessage = $"IE-001: {CourseInputLocation(c)}: 과목명을 입력해야 저장할 수 있습니다.";
                     return;
                 }
                 _workspace.UpdateCourse(c);
@@ -387,7 +395,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             case Room r:
                 if (string.IsNullOrWhiteSpace(r.Name))
                 {
-                    StatusMessage = "IE-003: 강의실명을 입력해야 저장할 수 있습니다.";
+                    StatusMessage = $"IE-003: {RoomInputLocation(r)}: 강의실명을 입력해야 저장할 수 있습니다.";
                     return;
                 }
                 _workspace.UpdateRoom(r);
@@ -408,10 +416,21 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         if (item is null) return;
         if (string.IsNullOrWhiteSpace(item.Professor.Name))
         {
-            StatusMessage = "IE-002: 교수명을 입력해야 저장할 수 있습니다.";
+            StatusMessage = $"IE-002: {ProfessorInputLocation(item.Professor)}: 교수명을 입력해야 저장할 수 있습니다.";
             return;
         }
         _workspace.UpdateProfessor(item.Professor);
+        item.IsEditing = false;
+    }
+
+    [RelayCommand]
+    private void CancelProfessor(ProfessorItem item)
+    {
+        if (item is null) return;
+        var savedProfessor = _workspace.Professors.FirstOrDefault(professor => professor.Id == item.Professor.Id);
+        if (savedProfessor == null) return;
+
+        item.Professor = CloneProfessor(savedProfessor);
         item.IsEditing = false;
     }
 
@@ -435,10 +454,21 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         if (item is null) return;
         if (string.IsNullOrWhiteSpace(item.Room.Name))
         {
-            StatusMessage = "IE-003: 강의실명을 입력해야 저장할 수 있습니다.";
+            StatusMessage = $"IE-003: {RoomInputLocation(item.Room)}: 강의실명을 입력해야 저장할 수 있습니다.";
             return;
         }
         _workspace.UpdateRoom(item.Room);
+        item.IsEditing = false;
+    }
+
+    [RelayCommand]
+    private void CancelRoom(RoomItem item)
+    {
+        if (item is null) return;
+        var savedRoom = _workspace.Rooms.FirstOrDefault(room => room.Id == item.Room.Id);
+        if (savedRoom == null) return;
+
+        item.Room = CloneRoom(savedRoom);
         item.IsEditing = false;
     }
 
@@ -528,14 +558,31 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         item.IsEditing = false;
     }
 
+    [RelayCommand]
+    private void CancelGroup(CourseGroupItem item)
+    {
+        if (item is null) return;
+
+        var savedSections = _workspace.Courses
+            .Where(course => DomainHelpers.BaseId(course.Id) == item.BaseId)
+            .OrderBy(course => course.Section)
+            .Select(CloneCourse)
+            .ToList();
+        if (savedSections.Count == 0) return;
+
+        item.Sections = savedSections;
+        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, savedSections[0].IsFixed);
+        item.IsEditing = false;
+    }
+
     private TimetableDiagnostic? FirstCourseSaveError(IReadOnlyList<Course> sections)
     {
         var roomIds = _workspace.Rooms.Select(room => room.Id).ToHashSet(StringComparer.Ordinal);
         foreach (var course in sections)
         {
-            var courseName = string.IsNullOrWhiteSpace(course.Name) ? course.Id : course.Name;
+            var courseName = CourseInputLocation(course);
             if (string.IsNullOrWhiteSpace(course.Name))
-                return new TimetableDiagnostic("IE-001", $"{course.Id} 과목명을 입력해야 저장할 수 있습니다.");
+                return new TimetableDiagnostic("IE-001", $"{courseName}: 과목명을 입력해야 저장할 수 있습니다.");
 
             if (course.BlockStructure.Count > 0 && course.BlockStructure.Sum() != course.HoursPerWeek)
                 return new TimetableDiagnostic("IE-007", $"{courseName} 블록구조 합계가 주당 수업시간과 일치하지 않습니다.");
@@ -642,13 +689,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private int totalSolutions = 3;
 
     [ObservableProperty]
-    private int timeLimitSec = 120;
-
-    [ObservableProperty]
-    private bool useAdvancedPerSolveTimeSec;
-
-    [ObservableProperty]
-    private int perSolveTimeSec = new DiverseSolverOptions().PerSolveTimeSec;
+    private int timeLimitSec = new DiverseSolverOptions().TimeLimitSec;
 
     [ObservableProperty]
     private bool considerRetakeStudents;
@@ -1383,12 +1424,14 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private async Task SolveAsync()
     {
         var scheduleSnapshot = _workspace.SchedulingSnapshot();
+        var unsavedEditLabels = GetUnsavedEditLabels();
         var inputErrors = TimetableDiagnostics.GetInputErrors(
             scheduleSnapshot.Courses,
             scheduleSnapshot.Professors,
             scheduleSnapshot.Rooms,
             scheduleSnapshot.CrossGroups,
-            hasUnsavedEdits: HasUnsavedEdits());
+            hasUnsavedEdits: unsavedEditLabels.Count > 0,
+            unsavedEditSummary: string.Join(", ", unsavedEditLabels));
         if (inputErrors.Count > 0)
         {
             StatusMessage = FormatDiagnostics("입력 오류", inputErrors);
@@ -1419,10 +1462,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             var options = new DiverseSolverOptions
             {
                 TotalSolutions = TotalSolutions,
-                TimeLimitSec = TimeLimitSec,
-                PerSolveTimeSec = UseAdvancedPerSolveTimeSec
-                    ? Math.Max(1, PerSolveTimeSec)
-                    : new DiverseSolverOptions().PerSolveTimeSec,
+                TimeLimitSec = Math.Max(1, TimeLimitSec),
+                PerSolveTimeSec = 0,
                 ConsiderRetakeStudents = ConsiderRetakeStudents,
                 UseSc01 = UseSc01,
                 UseSc02 = UseSc02,
@@ -1605,10 +1646,26 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private static string InfeasibleFallbackMessage() =>
         "INFEASIBLE: GE-025: 정확한 충돌 원인은 자동으로 특정하지 못했습니다. 수정 후보: 시간 고정, 교수 불가시간, 불가 강의실, 고정 강의실, Cross, 재수강 조건을 하나씩 줄인 뒤 다시 생성해 보세요.";
 
-    private bool HasUnsavedEdits() =>
-        CourseGroups.Any(item => item.IsEditing) ||
-        ProfessorItems.Any(item => item.IsEditing) ||
-        RoomItems.Any(item => item.IsEditing);
+    private IReadOnlyList<string> GetUnsavedEditLabels() =>
+        CourseGroups.Where(item => item.IsEditing)
+            .Select(item => $"교과목 관리 > {EditItemLabel(item.HeaderName, item.BaseId)}")
+            .Concat(ProfessorItems.Where(item => item.IsEditing)
+                .Select(item => $"교수 관리 > {EditItemLabel(item.HeaderName, item.HeaderId)}"))
+            .Concat(RoomItems.Where(item => item.IsEditing)
+                .Select(item => $"강의실 관리 > {EditItemLabel(item.HeaderName, item.HeaderId)}"))
+            .ToList();
+
+    private static string EditItemLabel(string name, string id) =>
+        string.IsNullOrWhiteSpace(name) ? id : $"{name} ({id})";
+
+    private static string CourseInputLocation(Course course) =>
+        $"교과목 관리 > {EditItemLabel(course.Name, course.Id)}";
+
+    private static string ProfessorInputLocation(Professor professor) =>
+        $"교수 관리 > {EditItemLabel(professor.Name, professor.Id)}";
+
+    private static string RoomInputLocation(Room room) =>
+        $"강의실 관리 > {EditItemLabel(room.Name, room.Id)}";
 
     private static string FormatDiagnostics(string title, IReadOnlyList<TimetableDiagnostic> diagnostics)
     {
@@ -1629,7 +1686,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             .ToList();
 
     private static string UnknownMessageWithId() =>
-        "GE-022: 시간 초과(UNKNOWN): 제한 시간 안에 해를 찾거나 불가능함을 확정하지 못했습니다. 제한 시간을 늘려 다시 시도해 보세요.";
+        "GE-022: 전체 생성 제한 시간 안에 해를 찾거나 불가능함을 확정하지 못했습니다. 제한 시간을 늘려 다시 시도해 보세요.";
 
     private static string NoSolutionMessageWithId(string status) =>
         status == "MODEL_INVALID"
@@ -1637,7 +1694,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             : $"GE-024: 해를 찾지 못했습니다({status}). 불가 시간, 불가 강의실, 시간 고정, Cross 설정을 줄이거나 제한 시간을 늘려보세요.";
 
     private string UnknownMessage() =>
-        "시간 초과(UNKNOWN): 제한 시간 안에 해를 찾거나 불가능함을 확정하지 못했습니다. 제한 시간을 늘려 다시 시도해 보세요.";
+        "전체 생성 제한 시간 안에 해를 찾거나 불가능함을 확정하지 못했습니다. 제한 시간을 늘려 다시 시도해 보세요.";
 
     private string NoSolutionMessage(string status) =>
         $"해를 찾지 못했습니다({status}). 불가 시간, 불가 강의실, 시간 고정, Cross 설정을 줄이거나 제한 시간을 늘려보세요.";
