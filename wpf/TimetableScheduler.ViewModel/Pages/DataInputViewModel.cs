@@ -13,7 +13,8 @@ public enum InputCategory { Professor, Course, Room, Solve }
 
 public sealed record ManualEditHandoff(
     RankedSolution Solution,
-    IReadOnlyList<SavedManualCrossLinkRow> ManualCrossLinks);
+    IReadOnlyList<SavedManualCrossLinkRow> ManualCrossLinks,
+    string? SavedTimetableId);
 
 public sealed record CrossGroupListItem(string Id, string Display);
 
@@ -817,7 +818,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     {
         if (_editBaseAssignments == null) return null;
         var solution = new RankedSolution(_editBaseAssignments, new SolutionScore(0, 0, 0, 0));
-        return new ManualEditHandoff(solution, _editBaseManualCrossLinks);
+        return new ManualEditHandoff(solution, _editBaseManualCrossLinks, _editBaseId);
     }
 
     public AppData CurrentSnapshot() => _workspace.SchedulingSnapshot();
@@ -874,6 +875,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         IsExistingMode = false;
         _editBaseAssignments = null;
         _editBaseManualCrossLinks = Array.Empty<SavedManualCrossLinkRow>();
+        _editBaseId = null;
         _editBaseName = "";
         SelectedCategory = InputCategory.Course;
     }
@@ -893,11 +895,13 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             .ToList();
         _editBaseManualCrossLinks = (record.ManualCrossLinks ?? Array.Empty<SavedManualCrossLinkRow>())
             .ToList();
+        _editBaseId = record.Id;
         _editBaseName = record.Name;
     }
 
     private IReadOnlyList<SolutionAssignment>? _editBaseAssignments;
     private IReadOnlyList<SavedManualCrossLinkRow> _editBaseManualCrossLinks = Array.Empty<SavedManualCrossLinkRow>();
+    private string? _editBaseId;
     private string _editBaseName = "";
 
     /// <summary>Name of the timetable being re-edited (for the manual-edit save field).</summary>

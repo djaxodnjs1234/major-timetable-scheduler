@@ -196,6 +196,26 @@ public class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void SaveTimetable_WithExistingId_UpdatesTheOriginalRecord()
+    {
+        var ws = new WorkspaceService(_repo);
+        var original = ws.SaveTimetable(
+            "before",
+            Array.Empty<TimetableScheduler.Solver.SolutionAssignment>());
+
+        var updated = ws.SaveTimetable(
+            "after",
+            new[] { new TimetableScheduler.Solver.SolutionAssignment("C-01", 0, 1, "R-01") },
+            id: original.Id);
+
+        var saved = Assert.Single(ws.SavedTimetables);
+        Assert.Equal(original.Id, updated.Id);
+        Assert.Equal("after", saved.Name);
+        Assert.Single(saved.Assignments);
+        Assert.Equal("C-01", saved.Assignments[0].CourseId);
+    }
+
+    [Fact]
     public void SaveTimetable_SnapshotIsIndependentOfLaterEdits()
     {
         var ws = new WorkspaceService(_repo);

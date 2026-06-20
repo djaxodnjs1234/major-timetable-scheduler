@@ -3364,8 +3364,15 @@ public class ManualEditViewModelTests : IDisposable
 
         input.LoadForExistingTimetable(saved);
         var handoff = Assert.IsType<ManualEditHandoff>(input.BuildEditHandoff());
-        vm.LoadFromSnapshot(input.CurrentSnapshot(), handoff.Solution, "handoff", handoff.ManualCrossLinks);
+        vm.LoadFromSnapshot(
+            input.CurrentSnapshot(),
+            handoff.Solution,
+            "handoff",
+            handoff.ManualCrossLinks,
+            handoff.SavedTimetableId);
 
+        Assert.Equal(saved.Id, handoff.SavedTimetableId);
+        Assert.Equal(saved.Id, vm.EditingSavedTimetableId);
         Assert.Single(handoff.ManualCrossLinks);
         Assert.Single(vm.WorkingCrossLinks);
         Assert.Equal(1, vm.LastSavedCrossLinkCount);

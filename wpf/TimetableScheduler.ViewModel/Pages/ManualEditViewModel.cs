@@ -239,11 +239,16 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ExportXlsxCommand))]
     [NotifyCanExecuteChangedFor(nameof(SaveTimetableCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCopyCommand))]
     private RankedSolution? baseSolution;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SaveTimetableCommand))]
+    [NotifyCanExecuteChangedFor(nameof(SaveCopyCommand))]
     private string saveName = "";
+
+    [ObservableProperty]
+    private string? editingSavedTimetableId;
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ApplyRoomChangeCommand))]
@@ -511,12 +516,14 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
             .ToList();
         LoadCore(new RankedSolution(assignments, new SolutionScore(0, 0, 0, 0)));
+        EditingSavedTimetableId = record.Id;
         SaveName = record.Name;
     }
 
     public void LoadFromSolution(RankedSolution solution)
     {
         _sessionData = null;
+        EditingSavedTimetableId = null;
         LoadCore(solution);
     }
 
@@ -528,9 +535,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         AppData snapshot,
         RankedSolution solution,
         string saveName,
-        IReadOnlyList<SavedManualCrossLinkRow>? manualCrossLinks = null)
+        IReadOnlyList<SavedManualCrossLinkRow>? manualCrossLinks = null,
+        string? savedTimetableId = null)
     {
         _sessionData = snapshot;
+        EditingSavedTimetableId = savedTimetableId;
         LoadCore(
             solution,
             manualCrossLinks,
@@ -688,6 +697,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     public void LoadFromSavedTimetable(SavedTimetableRecord timetable)
     {
         _sessionData = SavedTimetableSnapshotResolver.Resolve(timetable.SnapshotJson);
+        EditingSavedTimetableId = timetable.Id;
         var assignments = timetable.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
             .ToList();
@@ -1403,12 +1413,34 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     [RelayCommand(CanExecute = nameof(CanSaveTimetable))]
     private void SaveTimetable()
     {
-        if (!ValidateBeforeSave()) return;
+        SaveTimetableCore(saveAsCopy: false);
+    }
 
-        _workspace.SaveTimetable(SaveName.Trim(), _working, ToSavedManualCrossLinks(), BuildSaveSnapshot());
-        StatusMessage = $"'{SaveName.Trim()}' 저장 완료";
-        SaveName = "";
+    [RelayCommand(CanExecute = nameof(CanSaveTimetable))]
+    private void SaveCopy()
+    {
+        SaveTimetableCore(saveAsCopy: true);
+    }
+
+    private bool SaveTimetableCore(bool saveAsCopy)
+    {
+        if (!ValidateBeforeSave()) return false;
+
+        var name = SaveName.Trim();
+        var record = _workspace.SaveTimetable(
+            name,
+            _working,
+            ToSavedManualCrossLinks(),
+            BuildSaveSnapshot(),
+            saveAsCopy ? null : EditingSavedTimetableId);
+        EditingSavedTimetableId = record.Id;
+        _resetBaselineSnapshot = CaptureSnapshot();
+        BaseSolution = new RankedSolution(_working.ToList(), BaseSolution?.Score ?? new SolutionScore(0, 0, 0, 0));
+        StatusMessage = saveAsCopy
+            ? $"'{name}' 복사본 저장 완료"
+            : $"'{name}' 저장 완료";
         SavedRequested?.Invoke(this, EventArgs.Empty);
+        return true;
     }
 
     private AppData? BuildSaveSnapshot()

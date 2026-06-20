@@ -95,7 +95,7 @@
                                    Visibility="{Binding Text, ElementName=SaveNameTextBox, Converter={StaticResource StringNullOrWhiteSpaceToVisibility}}" />
                         </Grid>
 
-                        <Button Content="💾 저장"
+                        <Button Content="저장"
                             Command="{Binding SaveTimetableCommand}"
                             Height="34"
                             Padding="12,0" Margin="6,0,0,0"
@@ -107,6 +107,11 @@
                                 </Style>
                             </Button.Style>
                         </Button>
+                        <Button Content="복사본 저장"
+                            Command="{Binding SaveCopyCommand}"
+                            Height="34"
+                            Padding="12,0" Margin="6,0,0,0"
+                            VerticalAlignment="Center" />
                     </StackPanel>
                 </Border>
 
