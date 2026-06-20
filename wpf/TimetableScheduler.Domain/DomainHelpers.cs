@@ -62,7 +62,7 @@ public static class DomainHelpers
         IEnumerable<Course> courses,
         IEnumerable<int>? grades = null)
     {
-        grades ??= new[] { 1, 2, 3, 4 };
+        grades ??= AcademicLevels.UndergraduateGrades;
         var gradesList = grades.ToList();
 
         var majorsByGrade = new Dictionary<int, HashSet<string>>();

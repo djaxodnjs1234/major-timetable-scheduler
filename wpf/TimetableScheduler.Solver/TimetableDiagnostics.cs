@@ -16,13 +16,19 @@ public static class TimetableDiagnostics
         IReadOnlyList<Professor> professors,
         IReadOnlyList<Room> rooms,
         IReadOnlyList<CrossGroup>? crosses = null,
-        bool hasUnsavedEdits = false)
+        bool hasUnsavedEdits = false,
+        string? unsavedEditSummary = null)
     {
         var issues = new List<TimetableDiagnostic>();
         AddBasicInputErrors(issues, courses, professors, rooms, crosses);
 
         if (hasUnsavedEdits)
-            Add(issues, "IE-037", "완료되지 않은 편집 항목이 있습니다. 완료하거나 취소한 뒤 시간표를 생성하세요.");
+        {
+            var message = string.IsNullOrWhiteSpace(unsavedEditSummary)
+                ? "완료되지 않은 편집 항목이 있습니다. 완료하거나 취소한 뒤 시간표를 생성하세요."
+                : $"완료되지 않은 편집 항목이 있습니다: {unsavedEditSummary}. 각 항목에서 완료하거나 취소한 뒤 시간표를 생성하세요.";
+            Add(issues, "IE-037", message);
+        }
 
         return Distinct(issues);
     }
@@ -52,9 +58,9 @@ public static class TimetableDiagnostics
 
         foreach (var course in courses)
         {
-            var courseName = CourseLabel(course);
+            var courseName = InputCourseLocation(course);
             if (string.IsNullOrWhiteSpace(course.Name))
-                Add(issues, "IE-001", $"{course.Id} 과목명이 비어 있습니다. 과목명을 입력하세요.");
+                Add(issues, "IE-001", $"{courseName}: 과목명이 비어 있습니다. 과목명을 입력하세요.");
 
             if (string.IsNullOrWhiteSpace(course.ProfessorId))
                 Add(issues, "IE-004", $"{courseName} 담당 교수가 비어 있습니다. 담당 교수를 선택하세요.");
@@ -86,18 +92,19 @@ public static class TimetableDiagnostics
 
         foreach (var professor in professors)
             if (string.IsNullOrWhiteSpace(professor.Name))
-                Add(issues, "IE-002", $"{professor.Id} 교수명이 비어 있습니다. 교수명을 입력하세요.");
+                Add(issues, "IE-002", $"{InputProfessorLocation(professor)}: 교수명이 비어 있습니다. 교수명을 입력하세요.");
 
         foreach (var room in rooms)
             if (string.IsNullOrWhiteSpace(room.Name))
-                Add(issues, "IE-003", $"{room.Id} 강의실명이 비어 있습니다. 강의실명을 입력하세요.");
+                Add(issues, "IE-003", $"{InputRoomLocation(room)}: 강의실명이 비어 있습니다. 강의실명을 입력하세요.");
 
         if (rooms.Count == 0)
-            Add(issues, "IE-027", "강의실이 하나도 없습니다. 시간표 생성을 위해 강의실을 하나 이상 추가하세요.");
+            Add(issues, "IE-027", "강의실 관리: 강의실이 하나도 없습니다. 시간표 생성을 위해 강의실을 하나 이상 추가하세요.");
 
         AddFixedOverlapInputErrors(issues, courses, crosses);
         AddRoomAndTimeCandidateInputErrors(issues, courses, professors, rooms);
         AddCrossInputErrors(issues, courses, crosses);
+        AddGradeSlotCapacityErrors(issues, courses, crosses, "IE-038");
     }
 
     private static void AddGenerationErrors(
@@ -153,12 +160,13 @@ public static class TimetableDiagnostics
         AddFixedOverlapGenerationErrors(issues, courses, crosses);
         AddTeamTeachingGenerationErrors(issues, courses, professors, rooms);
         AddCrossGenerationErrors(issues, courses, crosses);
+        AddGradeSlotCapacityErrors(issues, courses, crosses, "GE-027");
         AddRetakeGenerationErrors(issues, courses, crosses, retakes, considerRetakeStudents);
     }
 
     private static void AddCourseShapeErrors(List<TimetableDiagnostic> issues, Course course, string prefix)
     {
-        var courseName = CourseLabel(course);
+        var courseName = prefix == "IE" ? InputCourseLocation(course) : CourseLabel(course);
         if (course.BlockStructure.Count > 0)
         {
             if (course.BlockStructure.Sum() != course.HoursPerWeek)
@@ -194,13 +202,13 @@ public static class TimetableDiagnostics
             if (overlaps.Count == 0) continue;
 
             if (SharesGradeConstraint(first, second, crosses))
-                Add(issues, "IE-016", $"{CourseLabel(first)} 과목과 {CourseLabel(second)} 과목은 같은 학년에서 고정 시간이 겹칩니다. 시간고정을 수정하세요.");
+                Add(issues, "IE-016", $"{InputCoursePair(first, second)}: 같은 학년에서 고정 시간이 겹칩니다({SlotLabels(overlaps)}). 시간고정을 수정하세요.");
 
             var sharedProfessors = DomainHelpers.CourseProfIds(first).Intersect(DomainHelpers.CourseProfIds(second), StringComparer.Ordinal).ToList();
             if (sharedProfessors.Count > 0)
             {
                 var id = first.CoteachProfs.Count > 0 || second.CoteachProfs.Count > 0 ? "IE-018" : "IE-017";
-                Add(issues, id, $"{CourseLabel(first)} 과목과 {CourseLabel(second)} 과목은 같은 교수의 고정 시간이 겹칩니다. 시간고정을 수정하세요.");
+                Add(issues, id, $"{InputCoursePair(first, second)} / {InputProfessorLocations(sharedProfessors)}: 공통 교수의 고정 시간이 겹칩니다({SlotLabels(overlaps)}). 시간고정을 수정하세요.");
             }
         }
     }
@@ -246,14 +254,14 @@ public static class TimetableDiagnostics
                     continue;
 
                 if (rooms.Count > 0 && CandidateRooms(course, professor, rooms).Count == 0)
-                    Add(issues, "IE-023", $"{CourseLabel(course)} / {professor.Name} 조건으로 사용 가능한 강의실이 없습니다. 교수 강의실 조건 또는 과목 불가강의실을 수정하세요.");
+                    Add(issues, "IE-023", $"{InputCourseLocation(course)} / {InputProfessorLocation(professor)}: 조건으로 사용 가능한 강의실이 없습니다. 교수 강의실 조건 또는 과목 불가강의실을 수정하세요.");
 
                 var requiredSlots = RequiredSlotCount(course);
                 var availableSlots = Constants.ValidPeriods
                     .SelectMany(period => Enumerable.Range(0, Constants.Days).Select(day => new TimeSlot(day, period)))
                     .Count(slot => !IsUnavailable(professor, slot));
                 if (!course.IsFixed && availableSlots < requiredSlots)
-                    Add(issues, "IE-024", $"{CourseLabel(course)} 과목에 대해 {professor.Name} 교수의 가용 시간이 부족합니다. 교수 불가 시간을 줄이세요.");
+                    Add(issues, "IE-024", $"{InputCourseLocation(course)} / {InputProfessorLocation(professor)}: 가용 시간이 부족합니다. 교수 불가 시간을 줄이세요.");
             }
 
             if (course.CoteachProfs.Count > 0)
@@ -270,10 +278,10 @@ public static class TimetableDiagnostics
                         .SelectMany(period => Enumerable.Range(0, Constants.Days).Select(day => new TimeSlot(day, period)))
                         .Count(slot => teachingProfessors.All(professor => !IsUnavailable(professor, slot)));
                     if (!course.IsFixed && commonSlots < requiredSlots)
-                        Add(issues, "IE-025", $"{CourseLabel(course)} 팀티칭 교수들의 공통 가능 시간이 부족합니다. 교수 불가 시간을 조정하세요.");
+                        Add(issues, "IE-025", $"{InputCourseLocation(course)} / {string.Join(", ", teachingProfessors.Select(InputProfessorLocation))}: 팀티칭 교수들의 공통 가능 시간이 부족합니다. 교수 불가 시간을 조정하세요.");
 
                     if (rooms.Count > 0 && CommonCandidateRooms(course, teachingProfessors, rooms).Count == 0)
-                        Add(issues, "IE-026", $"{CourseLabel(course)} 팀티칭 교수들의 공통 가능 강의실이 없습니다. 교수 강의실 조건을 조정하세요.");
+                        Add(issues, "IE-026", $"{InputCourseLocation(course)} / {string.Join(", ", teachingProfessors.Select(InputProfessorLocation))}: 팀티칭 교수들의 공통 가능 강의실이 없습니다. 교수 강의실 조건을 조정하세요.");
                 }
             }
         }
@@ -318,10 +326,13 @@ public static class TimetableDiagnostics
         foreach (var cross in crosses)
         {
             if (cross.BaseIds.Any(id => !groups.ContainsKey(id)))
-                Add(issues, "IE-033", $"{cross.Id} Cross 대상 과목을 찾을 수 없습니다. Cross를 삭제하고 다시 등록하세요.");
+                Add(issues, "IE-033", $"{InputCrossLocation(cross)}: 대상 과목을 찾을 수 없습니다. Cross를 삭제하고 다시 등록하세요.");
+
+            if (CrossBlockStructureConflict(cross, groups))
+                Add(issues, "IE-035", $"{InputCrossLocation(cross)}: Cross 과목들의 블록구조가 다릅니다. 블록구조를 같게 맞추거나 Cross를 해제하세요.");
 
             if (CrossFixedConflict(cross, groups))
-                Add(issues, "IE-034", $"{cross.Id} Cross와 시간고정 조건을 동시에 만족할 수 없습니다. Cross 또는 시간고정을 수정하세요.");
+                Add(issues, "IE-034", $"{InputCrossLocation(cross)}: Cross와 시간고정 조건을 동시에 만족할 수 없습니다. Cross 또는 시간고정을 수정하세요.");
         }
     }
 
@@ -356,8 +367,39 @@ public static class TimetableDiagnostics
             if (groupedCourses.Select(group => group[0].HoursPerWeek).Distinct().Count() > 1)
                 Add(issues, "GE-019", $"{cross.Id} Cross 과목들의 총 시수가 다릅니다. 시수를 맞추세요.");
 
+            if (CrossBlockStructureConflict(cross, groups))
+                Add(issues, "GE-026", $"{cross.Id} Cross 과목들의 블록구조가 다릅니다. 블록구조를 같게 맞추거나 Cross를 해제하세요.");
+
             if (CrossFixedConflict(cross, groups))
                 Add(issues, "GE-020", $"{cross.Id} Cross와 시간고정 조건이 충돌합니다. Cross를 해제하거나 시간고정을 수정하세요.");
+        }
+    }
+
+    private static void AddGradeSlotCapacityErrors(
+        List<TimetableDiagnostic> issues,
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<CrossGroup>? crosses,
+        string id)
+    {
+        var capacity = Constants.Days * Constants.ValidPeriods.Count;
+        var baseRequirements = BaseGradeSlotRequirements(courses);
+        var requiredByGrade = baseRequirements
+            .GroupBy(pair => pair.Key.Grade)
+            .ToDictionary(
+                group => group.Key,
+                group => group.Sum(pair => pair.Value));
+        var crossOverlapByGrade = CrossSlotOverlapByGrade(crosses, baseRequirements);
+
+        foreach (var grade in requiredByGrade.Keys.OrderBy(grade => grade))
+        {
+            var crossOverlap = crossOverlapByGrade.TryGetValue(grade, out var overlap) ? overlap : 0;
+            var requiredSlots = Math.Max(0, requiredByGrade[grade] - crossOverlap);
+            if (requiredSlots <= capacity) continue;
+
+            Add(
+                issues,
+                id,
+                $"교과목 관리 > {AcademicLevels.DisplayName(grade)}: 과목들이 사용할 수 있는 시간칸 {capacity}칸을 초과합니다. 필요한 최소 시간칸은 Cross 반영 후 {requiredSlots}칸입니다. 과목 시수/분반 수를 줄이거나 Cross를 추가해 같은 시간 배치를 허용하세요.");
         }
     }
 
@@ -393,7 +435,7 @@ public static class TimetableDiagnostics
                 currentMajors.All(major =>
                     !section.FixedSlots.Any(slot => major.FixedSlots.Contains(slot))));
             if (!hasSafeSection)
-                Add(issues, "GE-021", $"{retake.CurrentGrade}학년 재수강생 고려 조건 때문에 {retake.RetakeBaseId} 전필 안전 분반을 만들 수 없습니다. 재수강생 고려를 해제하거나 전필 시간 조건을 완화하세요.");
+                Add(issues, "GE-021", $"{AcademicLevels.DisplayName(retake.CurrentGrade)} 재수강생 고려 조건 때문에 {retake.RetakeBaseId} 전필 안전 분반을 만들 수 없습니다. 재수강생 고려를 해제하거나 전필 시간 조건을 완화하세요.");
         }
     }
 
@@ -464,6 +506,25 @@ public static class TimetableDiagnostics
         return false;
     }
 
+    private static bool CrossBlockStructureConflict(CrossGroup cross, IReadOnlyDictionary<string, List<Course>> groups)
+    {
+        if (cross.BaseIds.Count != 2) return false;
+        if (!groups.TryGetValue(cross.BaseIds[0], out var first)) return false;
+        if (!groups.TryGetValue(cross.BaseIds[1], out var second)) return false;
+        if (first.Count != second.Count || first.Count == 0) return false;
+
+        first = first.OrderBy(course => course.Section).ToList();
+        second = second.OrderBy(course => course.Section).ToList();
+        for (var index = 0; index < first.Count; index++)
+        {
+            var left = first[index];
+            var right = second[(index + 1) % second.Count];
+            if (!EffectiveBlocks(left).SequenceEqual(EffectiveBlocks(right)))
+                return true;
+        }
+        return false;
+    }
+
     private static IEnumerable<TimeSlot> FixedOverlaps(Course first, Course second)
     {
         if (!first.IsFixed || !second.IsFixed) yield break;
@@ -495,6 +556,51 @@ public static class TimetableDiagnostics
                 group => group.Key,
                 group => group.OrderBy(course => course.Section).ToList(),
                 StringComparer.Ordinal);
+
+    private static Dictionary<(int Grade, string BaseId), int> BaseGradeSlotRequirements(IReadOnlyList<Course> courses) =>
+        courses
+            .Where(course => course.Grade > 0)
+            .GroupBy(course => (course.Grade, BaseId: DomainHelpers.BaseId(course.Id)))
+            .ToDictionary(
+                group => group.Key,
+                group => group.Max(RequiredSlotCount));
+
+    private static Dictionary<int, int> CrossSlotOverlapByGrade(
+        IReadOnlyList<CrossGroup>? crosses,
+        IReadOnlyDictionary<(int Grade, string BaseId), int> baseRequirements)
+    {
+        var result = new Dictionary<int, int>();
+        if (crosses == null || crosses.Count == 0) return result;
+
+        var seenPairs = new HashSet<(int Grade, string FirstBaseId, string SecondBaseId)>();
+        foreach (var cross in crosses)
+        {
+            if (cross.BaseIds.Count != 2) continue;
+
+            var leftBaseId = cross.BaseIds[0];
+            var rightBaseId = cross.BaseIds[1];
+            if (string.Equals(leftBaseId, rightBaseId, StringComparison.Ordinal))
+                continue;
+
+            foreach (var left in baseRequirements.Where(pair => pair.Key.BaseId == leftBaseId))
+            {
+                if (!baseRequirements.TryGetValue((left.Key.Grade, rightBaseId), out var rightRequired))
+                    continue;
+
+                var firstBaseId = string.CompareOrdinal(leftBaseId, rightBaseId) <= 0 ? leftBaseId : rightBaseId;
+                var secondBaseId = string.CompareOrdinal(leftBaseId, rightBaseId) <= 0 ? rightBaseId : leftBaseId;
+                if (!seenPairs.Add((left.Key.Grade, firstBaseId, secondBaseId)))
+                    continue;
+
+                var overlap = Math.Min(left.Value, rightRequired);
+                result[left.Key.Grade] = result.TryGetValue(left.Key.Grade, out var previous)
+                    ? previous + overlap
+                    : overlap;
+            }
+        }
+
+        return result;
+    }
 
     private static bool FixedSlotsMatchBlocks(Course course)
     {
@@ -537,6 +643,7 @@ public static class TimetableDiagnostics
             2 => text == "2",
             3 => text is "1+2" or "3",
             4 => text is "2+2" or "4",
+            5 => text is "1+2+2" or "2+3",
             _ => text == weeklyHours.ToString(),
         };
     }
@@ -547,6 +654,7 @@ public static class TimetableDiagnostics
         2 => "2",
         3 => "1+2 또는 3",
         4 => "2+2 또는 4",
+        5 => "1+2+2 또는 2+3",
         _ => weeklyHours.ToString(),
     };
 
@@ -573,8 +681,49 @@ public static class TimetableDiagnostics
     private static HashSet<TimeSlot> SlotSet(IEnumerable<TimeSlot> slots) =>
         slots.ToHashSet();
 
+    private static string InputCourseLocation(Course course) =>
+        $"교과목 관리 > {CourseLabel(course)}";
+
+    private static string InputCoursePair(Course first, Course second) =>
+        $"교과목 관리 > {CourseLabel(first)} / {CourseLabel(second)}";
+
+    private static string InputProfessorLocation(Professor professor) =>
+        $"교수 관리 > {ProfessorLabel(professor)}";
+
+    private static string InputProfessorLocations(IEnumerable<string> professorIds) =>
+        string.Join(", ", professorIds.Select(id => $"교수 관리 > {id}"));
+
+    private static string InputRoomLocation(Room room) =>
+        $"강의실 관리 > {RoomLabel(room)}";
+
+    private static string InputCrossLocation(CrossGroup cross) =>
+        $"Cross 설정 > {cross.Id} ({string.Join(", ", cross.BaseIds)})";
+
+    private static string SlotLabels(IEnumerable<TimeSlot> slots) =>
+        string.Join(", ", slots
+            .Distinct()
+            .OrderBy(slot => slot.Day)
+            .ThenBy(slot => slot.Period)
+            .Select(slot => $"{DayLabel(slot.Day)} {slot.Period}교시"));
+
+    private static string DayLabel(int day) => day switch
+    {
+        0 => "월",
+        1 => "화",
+        2 => "수",
+        3 => "목",
+        4 => "금",
+        _ => $"요일{day}",
+    };
+
     private static string CourseLabel(Course course) =>
         string.IsNullOrWhiteSpace(course.Name) ? course.Id : $"{course.Name}({course.Id})";
+
+    private static string ProfessorLabel(Professor professor) =>
+        string.IsNullOrWhiteSpace(professor.Name) ? professor.Id : $"{professor.Name}({professor.Id})";
+
+    private static string RoomLabel(Room room) =>
+        string.IsNullOrWhiteSpace(room.Name) ? room.Id : $"{room.Name}({room.Id})";
 
     private static void Add(List<TimetableDiagnostic> issues, string id, string message) =>
         issues.Add(new TimetableDiagnostic(id, message));

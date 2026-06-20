@@ -16,6 +16,7 @@
                     <sys:Int32>2</sys:Int32>
                     <sys:Int32>3</sys:Int32>
                     <sys:Int32>4</sys:Int32>
+                    <sys:Int32>5</sys:Int32>
                 </x:Array>
             </ItemsControl.ItemsSource>
             <ItemsControl.ItemsPanel>
@@ -35,7 +36,7 @@
                         <TextBlock FontSize="10"
                                    Foreground="#333"
                                    VerticalAlignment="Center"
-                                   Text="{Binding StringFormat={}{0}학년}" />
+                                   Text="{Binding Converter={StaticResource AcademicLevelLabel}}" />
                     </StackPanel>
                 </DataTemplate>
             </ItemsControl.ItemTemplate>

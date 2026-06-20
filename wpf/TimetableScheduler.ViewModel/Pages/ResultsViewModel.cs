@@ -30,7 +30,7 @@ public sealed partial class ResultsViewModel : PageViewModelBase
     /// <summary>The snapshot behind the current solutions, for handing to manual editing.</summary>
     public AppData? SessionSnapshot => _sessionData;
 
-    public AppData CurrentSnapshot => _sessionData ?? _workspace.Snapshot();
+    public AppData CurrentSnapshot => _sessionData ?? _workspace.SchedulingSnapshot();
 
     public override string Title => "해 미리보기";
 
@@ -187,11 +187,11 @@ public sealed partial class ResultsViewModel : PageViewModelBase
         Unified.Render(assignment, courses, professors, rooms);
 
         GradeViews.Clear();
-        foreach (var g in new[] { 1, 2, 3, 4 })
+        foreach (var g in AcademicLevels.AllGrades)
         {
             var vm = new TimetableGridViewModel();
             vm.Render(assignment, courses, (c, _) => c.Grade == g, professors, rooms);
-            GradeViews.Add(new NamedGridViewModel(g.ToString(), $"{g}학년", vm));
+            GradeViews.Add(new NamedGridViewModel(g.ToString(), AcademicLevels.DisplayName(g), vm));
         }
 
         RoomViews.Clear();

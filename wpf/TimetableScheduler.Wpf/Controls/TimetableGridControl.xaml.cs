@@ -29,6 +29,51 @@ public partial class TimetableGridControl : UserControl
         DataContextChanged += OnDataContextChanged;
     }
 
+    public static readonly DependencyProperty PeriodRowMinHeightProperty =
+        DependencyProperty.Register(
+            nameof(PeriodRowMinHeight),
+            typeof(double),
+            typeof(TimetableGridControl),
+            new PropertyMetadata(64.0, OnLayoutMetricsChanged));
+
+    public static readonly DependencyProperty LunchRowMinHeightProperty =
+        DependencyProperty.Register(
+            nameof(LunchRowMinHeight),
+            typeof(double),
+            typeof(TimetableGridControl),
+            new PropertyMetadata(32.0, OnLayoutMetricsChanged));
+
+    public static readonly DependencyProperty DayColumnMinWidthProperty =
+        DependencyProperty.Register(
+            nameof(DayColumnMinWidth),
+            typeof(double),
+            typeof(TimetableGridControl),
+            new PropertyMetadata(76.0, OnLayoutMetricsChanged));
+
+    public double PeriodRowMinHeight
+    {
+        get => (double)GetValue(PeriodRowMinHeightProperty);
+        set => SetValue(PeriodRowMinHeightProperty, value);
+    }
+
+    public double LunchRowMinHeight
+    {
+        get => (double)GetValue(LunchRowMinHeightProperty);
+        set => SetValue(LunchRowMinHeightProperty, value);
+    }
+
+    public double DayColumnMinWidth
+    {
+        get => (double)GetValue(DayColumnMinWidthProperty);
+        set => SetValue(DayColumnMinWidthProperty, value);
+    }
+
+    private static void OnLayoutMetricsChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is TimetableGridControl control)
+            control.Rebuild();
+    }
+
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (e.OldValue is TimetableGridViewModel oldVm)
@@ -53,6 +98,7 @@ public partial class TimetableGridControl : UserControl
         HeaderGrid.ColumnDefinitions.Clear();
         BodyGrid.Children.Clear();
         BodyGrid.ColumnDefinitions.Clear();
+        ApplyBodyRowHeights();
         if (DataContext is not TimetableGridViewModel vm) return;
 
         var layout = BuildParallelLayout(vm);
@@ -142,13 +188,26 @@ public partial class TimetableGridControl : UserControl
         return block;
     }
 
-    private static void BuildColumns(Grid grid, IReadOnlyList<int> dayWidths)
+    private void BuildColumns(Grid grid, IReadOnlyList<int> dayWidths)
     {
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(44) });
         grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
         foreach (var width in dayWidths)
             for (var i = 0; i < width; i++)
-                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = 76 });
+                grid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star), MinWidth = DayColumnMinWidth });
+    }
+
+    private void ApplyBodyRowHeights()
+    {
+        while (BodyGrid.RowDefinitions.Count < 9)
+            BodyGrid.RowDefinitions.Add(new RowDefinition());
+
+        for (var i = 0; i < 9; i++)
+        {
+            var row = BodyGrid.RowDefinitions[i];
+            row.Height = new GridLength(1, GridUnitType.Star);
+            row.MinHeight = i == 4 ? LunchRowMinHeight : PeriodRowMinHeight;
+        }
     }
 
     private GridLayout BuildParallelLayout(TimetableGridViewModel vm)

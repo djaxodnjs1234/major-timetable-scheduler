@@ -323,7 +323,7 @@ public static class ConflictDetector
                         continue;
                     list.Add(new ConflictItem(
                         ConflictType.GradeConflict, ConflictSeverity.Error,
-                        $"{c1.Grade}학년 과목이 {DayName(g.Key.Day)} {g.Key.Period}교시에 중복: {c1.Name}, {c2.Name}",
+                        $"{AcademicLevels.DisplayName(c1.Grade)} 과목이 {DayName(g.Key.Day)} {g.Key.Period}교시에 중복: {c1.Name}, {c2.Name}",
                         g.Key.Day, g.Key.Period,
                         new[] { rows[i].Assignment, rows[j].Assignment }));
                 }

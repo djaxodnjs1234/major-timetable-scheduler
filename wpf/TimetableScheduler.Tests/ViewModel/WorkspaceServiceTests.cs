@@ -140,6 +140,44 @@ public class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void SchedulingSnapshot_NormalizesSharedSectionValuesWithoutMutatingWorkspace()
+    {
+        var ws = new WorkspaceService(_repo);
+        ws.AddCourse(new Course
+        {
+            Id = "A-01",
+            Name = "A",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P1",
+            Section = 1,
+            FixedRooms = new List<string> { "R1" },
+            BlockStructure = new List<int> { 1 },
+        });
+        ws.AddCourse(new Course
+        {
+            Id = "A-02",
+            Name = "A",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P2",
+            Section = 2,
+            FixedRooms = new List<string> { "R2" },
+            BlockStructure = new List<int> { 1 },
+        });
+
+        var raw = ws.Snapshot();
+        var scheduling = ws.SchedulingSnapshot();
+
+        Assert.Equal("P2", raw.Courses.Single(course => course.Id == "A-02").ProfessorId);
+        Assert.Equal("P2", ws.Courses.Single(course => course.Id == "A-02").ProfessorId);
+
+        var normalizedSecond = scheduling.Courses.Single(course => course.Id == "A-02");
+        Assert.Equal("P1", normalizedSecond.ProfessorId);
+        Assert.Equal(new[] { "R1" }, normalizedSecond.FixedRooms);
+    }
+
+    [Fact]
     public void SaveTimetable_EmbedsWorkspaceSnapshot()
     {
         var ws = new WorkspaceService(_repo);
@@ -155,6 +193,26 @@ public class WorkspaceServiceTests : IDisposable
         var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(saved.SnapshotJson!)!;
         Assert.Equal("S-01", snapshot.Courses.Single().Id);
         Assert.Equal("SP", snapshot.Professors.Single().Id);
+    }
+
+    [Fact]
+    public void SaveTimetable_WithExistingId_UpdatesTheOriginalRecord()
+    {
+        var ws = new WorkspaceService(_repo);
+        var original = ws.SaveTimetable(
+            "before",
+            Array.Empty<TimetableScheduler.Solver.SolutionAssignment>());
+
+        var updated = ws.SaveTimetable(
+            "after",
+            new[] { new TimetableScheduler.Solver.SolutionAssignment("C-01", 0, 1, "R-01") },
+            id: original.Id);
+
+        var saved = Assert.Single(ws.SavedTimetables);
+        Assert.Equal(original.Id, updated.Id);
+        Assert.Equal("after", saved.Name);
+        Assert.Single(saved.Assignments);
+        Assert.Equal("C-01", saved.Assignments[0].CourseId);
     }
 
     [Fact]

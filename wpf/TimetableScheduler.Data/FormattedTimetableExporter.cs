@@ -15,6 +15,7 @@ public static class FormattedTimetableExporter
         XLColor.FromHtml("#EAF5DC"), // 2학년: soft green
         XLColor.FromHtml("#E6F1FA"), // 3학년: soft blue
         XLColor.FromHtml("#FBE7EA"), // 4학년: soft pink
+        XLColor.FromHtml("#EDE7F6"), // 대학원: soft lavender
     };
 
     private static readonly XLColor TitleBg      = XLColor.FromHtml("#6F879F");
@@ -64,18 +65,19 @@ public static class FormattedTimetableExporter
             expandAllGrades,
             splitByGrade: true);
 
-        foreach (var grade in new[] { 1, 2, 3, 4 })
+        foreach (var grade in AcademicLevels.AllGrades)
         {
             var gradeRows = aList
                 .Where(a => cMap.TryGetValue(a.CourseId, out var course) && course.Grade == grade)
                 .ToList();
             if (gradeRows.Count == 0) continue;
+            var gradeName = AcademicLevels.DisplayName(grade);
 
             AddTimetableSheet(
                 wb,
                 sheetNames,
-                $"학년별_{grade}학년",
-                $"{timetableName} - {grade}학년",
+                $"학년별_{gradeName}",
+                $"{timetableName} - {gradeName}",
                 gradeRows,
                 courses,
                 professors,
@@ -324,7 +326,7 @@ public static class FormattedTimetableExporter
                 continue;
             }
 
-            foreach (int grade in new[] { 1, 2, 3, 4 })
+            foreach (int grade in AcademicLevels.AllGrades)
             {
                 var gradeBlocks = BuildCourseBlocks(dayA
                     .Where(a => cMap.TryGetValue(a.CourseId, out var c) && c.Grade == grade)
@@ -413,7 +415,7 @@ public static class FormattedTimetableExporter
                 var gradeRange = gl.SubColCount > 1
                     ? ws.Range(5, sc, 5, ec).Merge()
                     : ws.Cell(5, sc).AsRange();
-                gradeRange.Value = gl.Grade > 0 ? $"{gl.Grade}학년" : "";
+                gradeRange.Value = gl.Grade > 0 ? AcademicLevels.DisplayName(gl.Grade) : "";
                 gradeRange.Style.Font.Bold = true;
                 gradeRange.Style.Font.FontSize = 9;
                 gradeRange.Style.Font.FontColor = TextMuted;
@@ -455,7 +457,7 @@ public static class FormattedTimetableExporter
                     ? ws.Cell(startRow, xlCol).AsRange()
                     : ws.Range(startRow, xlCol, endRow, xlCol).Merge();
 
-                var fill = course.Grade is >= 1 and <= 4
+                var fill = course.Grade is >= 1 and <= AcademicLevels.GraduateGrade
                     ? GradeFills[course.Grade]
                     : XLColor.White;
 
@@ -520,16 +522,16 @@ public static class FormattedTimetableExporter
         ws.Cell(row, 1).Style.Font.FontColor = TextMuted;
         ws.Cell(row, 1).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
 
-        string[] gradeLabels = { "1학년", "2학년", "3학년", "4학년" };
-        for (int i = 0; i < 4; i++)
+        var grades = AcademicLevels.AllGrades;
+        for (int i = 0; i < grades.Count; i++)
         {
             int swatchCol = 2 + (i * 2);
             var swatch = ws.Cell(row, swatchCol).AsRange();
-            swatch.Style.Fill.BackgroundColor = GradeFills[i + 1];
+            swatch.Style.Fill.BackgroundColor = GradeFills[grades[i]];
             ApplyCourseBorder(swatch);
 
             var label = ws.Cell(row, swatchCol + 1);
-            label.Value = gradeLabels[i];
+            label.Value = AcademicLevels.DisplayName(grades[i]);
             label.Style.Font.FontSize = 9;
             label.Style.Font.FontColor = TextMuted;
             label.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Left;

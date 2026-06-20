@@ -53,7 +53,9 @@ public sealed record CrossCandidateGradeGroup(string Header, ObservableCollectio
 
 public sealed partial class ProfessorItem : ObservableObject
 {
-    public Professor Professor { get; init; } = new();
+    [ObservableProperty]
+    private Professor professor = new();
+
     public string HeaderId => Professor.Id;
     public string HeaderName => Professor.Name;
     public string HeaderUnavailableSlots { get; init; } = "없음";
@@ -65,7 +67,9 @@ public sealed partial class ProfessorItem : ObservableObject
 
 public sealed partial class RoomItem : ObservableObject
 {
-    public Room Room { get; init; } = new();
+    [ObservableProperty]
+    private Room room = new();
+
     public string HeaderId => Room.Id;
     public string HeaderName => Room.Name;
     public string HeaderLab => Room.IsLab ? "실습실" : "일반";
@@ -96,10 +100,13 @@ public sealed partial class CourseGroupItem : ObservableObject
     public string HeaderFixedRooms { get; init; } = "";
     public string HeaderCoteachProfessors { get; init; } = "";
     public string HeaderFixedTimes { get; init; } = "";
+    public string HeaderFixedMarker { get; init; } = "";
     public string HeaderCrossGroups { get; init; } = "";
     public bool IsImportedFromExcel { get; init; }
     /// <summary>All sections in this group (N>1 for grouped, 1 for individual fixed).</summary>
-    public List<Course> Sections { get; init; } = new();
+    [ObservableProperty]
+    private List<Course> sections = new();
+
     public bool IsFixedIndividual => Sections.Count == 1 && Sections[0].IsFixed;
     public string ReadOnlyProfessor => string.IsNullOrWhiteSpace(HeaderProfessor) ? "없음" : HeaderProfessor;
     public string ReadOnlyBlockStructure => HeaderBlockStructure;
@@ -113,6 +120,8 @@ public sealed partial class CourseGroupItem : ObservableObject
 
     [ObservableProperty]
     private FixedSlotEditorViewModel? fixedSlotEditor;
+
+    partial void OnSectionsChanged(List<Course> value) => OnPropertyChanged(nameof(IsFixedIndividual));
 }
 
 public sealed record FixedTimeOverlapInfo(
@@ -152,8 +161,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     public string LastCourseGroupWarning { get; private set; } = "";
 
-    public int[] GradeOptions { get; } = { 1, 2, 3, 4 };
-    public int[] HourOptions { get; } = { 1, 2, 3, 4 };
+    public IReadOnlyList<AcademicLevel> GradeOptions { get; } = AcademicLevels.All;
+    public int[] HourOptions { get; } = { 1, 2, 3, 4, 5 };
     public string[] CourseTypeOptions { get; } = { "전필", "전선", "교양" };
     public string[] BlockStructureOptions { get; } = GenerateBlockStructureOptions(3).ToArray();
 
@@ -209,7 +218,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             case InputCategory.Professor:
                 if (string.IsNullOrWhiteSpace(NewName))
                 {
-                    StatusMessage = "IE-002: 교수명을 입력해야 추가할 수 있습니다.";
+                    StatusMessage = "IE-002: 교수 관리 > 추가: 교수명을 입력해야 추가할 수 있습니다.";
                     return;
                 }
                 _workspace.AddProfessor(new Professor { Id = NextProfessorId(), Name = NewName.Trim() });
@@ -217,7 +226,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             case InputCategory.Course:
                 if (string.IsNullOrWhiteSpace(NewName))
                 {
-                    StatusMessage = "IE-001: 과목명을 입력해야 추가할 수 있습니다.";
+                    StatusMessage = "IE-001: 교과목 관리 > 추가: 과목명을 입력해야 추가할 수 있습니다.";
                     return;
                 }
                 _workspace.AddCourse(new Course
@@ -232,7 +241,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             case InputCategory.Room:
                 if (string.IsNullOrWhiteSpace(NewName))
                 {
-                    StatusMessage = "IE-003: 강의실명을 입력해야 추가할 수 있습니다.";
+                    StatusMessage = "IE-003: 강의실 관리 > 추가: 강의실명을 입력해야 추가할 수 있습니다.";
                     return;
                 }
                 _workspace.AddRoom(new Room { Id = NextRoomId(), Name = NewName.Trim() });
@@ -254,6 +263,12 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         var chosen = _selectedCrossCandidateIds.ToList();
 
         var groups = CourseBaseGroups();
+        if (chosen.Any(id => !groups.TryGetValue(id, out var courses) || courses.Count < 2))
+        {
+            CrossStatusMessage = "Cross는 분반이 2개 이상인 과목만 선택할 수 있습니다.";
+            return;
+        }
+
         var sectionCounts = chosen.Select(id => groups[id].Count).Distinct().ToList();
         if (sectionCounts.Count > 1)
         {
@@ -265,6 +280,18 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         if (hours.Count > 1)
         {
             CrossStatusMessage = "Cross로 묶으려면 총 시수가 동일해야 합니다.";
+            return;
+        }
+
+        var blockTexts = chosen
+            .Select(id => FormatBlockStructure(EffectiveBlocks(groups[id][0])))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (blockTexts.Count > 1)
+        {
+            var detail = string.Join(", ", chosen.Select(id =>
+                $"{id}: {FormatBlockStructure(EffectiveBlocks(groups[id][0]))}"));
+            CrossStatusMessage = $"Cross로 묶으려면 블록구조가 같아야 합니다. ({detail})";
             return;
         }
 
@@ -348,17 +375,17 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             {
                 case Professor p:
                     if (IsProfessorUsedByCurrentResults(p.Id))
-                        return BlockDelete("이 교수는 교과목 또는 시간표에서 사용 중이므로 삭제할 수 없습니다.");
+                        return BlockDelete("이 교수는 현재 생성된 시간표에서 사용 중이므로 삭제할 수 없습니다.");
                     _workspace.DeleteProfessor(p.Id);
                     return true;
                 case Course c:
                     if (IsCourseUsedByCurrentResults(c.Id))
-                        return BlockDelete("이 교과목은 시간표 또는 관련 조건에서 사용 중이므로 삭제할 수 없습니다.");
+                        return BlockDelete("이 교과목은 현재 생성된 시간표에서 사용 중이므로 삭제할 수 없습니다.");
                     _workspace.DeleteCourse(c);
                     return true;
                 case Room r:
                     if (IsRoomUsedByCurrentResults(r.Id))
-                        return BlockDelete("이 강의실은 교과목 또는 시간표에서 사용 중이므로 삭제할 수 없습니다.");
+                        return BlockDelete("이 강의실은 현재 생성된 시간표에서 사용 중이므로 삭제할 수 없습니다.");
                     _workspace.DeleteRoom(r.Id);
                     return true;
                 default:
@@ -409,7 +436,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             case Professor p:
                 if (string.IsNullOrWhiteSpace(p.Name))
                 {
-                    StatusMessage = "IE-002: 교수명을 입력해야 저장할 수 있습니다.";
+                    StatusMessage = $"IE-002: {ProfessorInputLocation(p)}: 교수명을 입력해야 저장할 수 있습니다.";
                     return;
                 }
                 _workspace.UpdateProfessor(p);
@@ -417,7 +444,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             case Course c:
                 if (string.IsNullOrWhiteSpace(c.Name))
                 {
-                    StatusMessage = "IE-001: 과목명을 입력해야 저장할 수 있습니다.";
+                    StatusMessage = $"IE-001: {CourseInputLocation(c)}: 과목명을 입력해야 저장할 수 있습니다.";
                     return;
                 }
                 _workspace.UpdateCourse(c);
@@ -425,7 +452,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             case Room r:
                 if (string.IsNullOrWhiteSpace(r.Name))
                 {
-                    StatusMessage = "IE-003: 강의실명을 입력해야 저장할 수 있습니다.";
+                    StatusMessage = $"IE-003: {RoomInputLocation(r)}: 강의실명을 입력해야 저장할 수 있습니다.";
                     return;
                 }
                 _workspace.UpdateRoom(r);
@@ -446,10 +473,21 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         if (item is null) return;
         if (string.IsNullOrWhiteSpace(item.Professor.Name))
         {
-            StatusMessage = "IE-002: 교수명을 입력해야 저장할 수 있습니다.";
+            StatusMessage = $"IE-002: {ProfessorInputLocation(item.Professor)}: 교수명을 입력해야 저장할 수 있습니다.";
             return;
         }
         _workspace.UpdateProfessor(item.Professor);
+        item.IsEditing = false;
+    }
+
+    [RelayCommand]
+    private void CancelProfessor(ProfessorItem item)
+    {
+        if (item is null) return;
+        var savedProfessor = _workspace.Professors.FirstOrDefault(professor => professor.Id == item.Professor.Id);
+        if (savedProfessor == null) return;
+
+        item.Professor = CloneProfessor(savedProfessor);
         item.IsEditing = false;
     }
 
@@ -473,10 +511,21 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         if (item is null) return;
         if (string.IsNullOrWhiteSpace(item.Room.Name))
         {
-            StatusMessage = "IE-003: 강의실명을 입력해야 저장할 수 있습니다.";
+            StatusMessage = $"IE-003: {RoomInputLocation(item.Room)}: 강의실명을 입력해야 저장할 수 있습니다.";
             return;
         }
         _workspace.UpdateRoom(item.Room);
+        item.IsEditing = false;
+    }
+
+    [RelayCommand]
+    private void CancelRoom(RoomItem item)
+    {
+        if (item is null) return;
+        var savedRoom = _workspace.Rooms.FirstOrDefault(room => room.Id == item.Room.Id);
+        if (savedRoom == null) return;
+
+        item.Room = CloneRoom(savedRoom);
         item.IsEditing = false;
     }
 
@@ -511,7 +560,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         }
         LastCourseGroupWarning = "";
         OnPropertyChanged(nameof(LastCourseGroupWarning));
-        PromoteMissingSharedValues(item.Sections);
+        PromoteMissingSharedValues(item.Sections, promoteListValues: false);
         DetectProfessorConflict("SaveGroup", item.BaseId, item.Sections);
         var rep = item.Sections[0];
         foreach (var sec in item.Sections)
@@ -569,14 +618,31 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         item.IsEditing = false;
     }
 
+    [RelayCommand]
+    private void CancelGroup(CourseGroupItem item)
+    {
+        if (item is null) return;
+
+        var savedSections = _workspace.Courses
+            .Where(course => DomainHelpers.BaseId(course.Id) == item.BaseId)
+            .OrderBy(course => course.Section)
+            .Select(CloneCourse)
+            .ToList();
+        if (savedSections.Count == 0) return;
+
+        item.Sections = savedSections;
+        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, savedSections[0].IsFixed);
+        item.IsEditing = false;
+    }
+
     private TimetableDiagnostic? FirstCourseSaveError(IReadOnlyList<Course> sections)
     {
         var roomIds = _workspace.Rooms.Select(room => room.Id).ToHashSet(StringComparer.Ordinal);
         foreach (var course in sections)
         {
-            var courseName = string.IsNullOrWhiteSpace(course.Name) ? course.Id : course.Name;
+            var courseName = CourseInputLocation(course);
             if (string.IsNullOrWhiteSpace(course.Name))
-                return new TimetableDiagnostic("IE-001", $"{course.Id} 과목명을 입력해야 저장할 수 있습니다.");
+                return new TimetableDiagnostic("IE-001", $"{courseName}: 과목명을 입력해야 저장할 수 있습니다.");
 
             if (course.BlockStructure.Count > 0 && course.BlockStructure.Sum() != course.HoursPerWeek)
                 return new TimetableDiagnostic("IE-007", $"{courseName} 블록구조 합계가 주당 수업시간과 일치하지 않습니다.");
@@ -635,6 +701,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void AddSection(CourseGroupItem item)
     {
         if (item is null || item.Sections.Count == 0) return;
+        ClearFixedTimeForSectionAdjustment(item);
         var rep = item.Sections[0];
         var next = item.Sections.Max(s => s.Section) + 1;
         var newId = $"{item.BaseId}-{next:D2}";
@@ -661,21 +728,28 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void RemoveSection(CourseGroupItem item)
     {
         if (item is null || item.Sections.Count <= 1) return;
+        ClearFixedTimeForSectionAdjustment(item);
         var last = item.Sections.OrderByDescending(s => s.Section).First();
-        TryDeleteItem(last);
+        _workspace.DeleteCourse(last);
+    }
+
+    private void ClearFixedTimeForSectionAdjustment(CourseGroupItem item)
+    {
+        if (!item.Sections.Any(section => section.IsFixed || section.FixedSlots.Count > 0)) return;
+
+        foreach (var section in item.Sections)
+        {
+            section.IsFixed = false;
+            section.FixedSlots.Clear();
+            _workspace.UpdateCourse(section);
+        }
     }
 
     [ObservableProperty]
     private int totalSolutions = 3;
 
     [ObservableProperty]
-    private int timeLimitSec = 120;
-
-    [ObservableProperty]
-    private bool useAdvancedPerSolveTimeSec;
-
-    [ObservableProperty]
-    private int perSolveTimeSec = new DiverseSolverOptions().PerSolveTimeSec;
+    private int timeLimitSec = new DiverseSolverOptions().TimeLimitSec;
 
     [ObservableProperty]
     private bool considerRetakeStudents;
@@ -703,6 +777,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(SolveCommand))]
+    [NotifyCanExecuteChangedFor(nameof(CancelCommand))]
     private bool isSolving;
 
     [ObservableProperty]
@@ -746,7 +821,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         return new ManualEditHandoff(solution, _editBaseManualCrossLinks, _editBaseId);
     }
 
-    public AppData CurrentSnapshot() => _workspace.Snapshot();
+    public AppData CurrentSnapshot() => _workspace.SchedulingSnapshot();
 
     public override void OnNavigatedTo()
     {
@@ -924,7 +999,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 ? $"  ({string.Join("·", sections.Select(s => SectionLetter(s.Section)))}분반)"
                 : "";
             var fixedPart = fixedAny ? "  ★" : "";
-            var label = $"{g.Key}  {rep.Name}  {rep.Grade}학년  {rep.HoursPerWeek}h{secPart}{fixedPart}";
+            var label = $"{g.Key}  {rep.Name}  {AcademicLevels.DisplayName(rep.Grade)}  {rep.HoursPerWeek}h{secPart}{fixedPart}";
             var item = new CourseGroupItem
             {
                 BaseId = g.Key,
@@ -932,7 +1007,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 HeaderCode = g.Key,
                 HeaderName = rep.Name,
                 HeaderCourseType = rep.CourseType,
-                HeaderGrade = $"{rep.Grade}학년",
+                HeaderGrade = AcademicLevels.DisplayName(rep.Grade),
                 HeaderHours = $"{rep.HoursPerWeek}시간",
                 HeaderSectionInfo = $"{sections.Count}개",
                 HeaderProfessor = CourseDisplayName(rep.ProfessorId, profNames),
@@ -941,6 +1016,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 HeaderFixedRooms = FormatCourseNames(rep.FixedRooms, roomNames),
                 HeaderCoteachProfessors = FormatCourseNames(rep.CoteachProfs, profNames),
                 HeaderFixedTimes = FormatFixedTimes(sections),
+                HeaderFixedMarker = fixedAny ? "★" : "",
                 HeaderCrossGroups = FormatCrossGroups(g.Key),
                 IsImportedFromExcel = sections.Any(s => !string.IsNullOrWhiteSpace(s.Department)),
                 Sections = sections,
@@ -950,7 +1026,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         }
     }
 
-    private void PromoteMissingSharedValues(IReadOnlyList<Course> sections)
+    private void PromoteMissingSharedValues(IReadOnlyList<Course> sections, bool promoteListValues = true)
     {
         if (sections.Count == 0) return;
         var rep = sections[0];
@@ -962,6 +1038,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         var courseType = FirstNonEmpty(sections.Select(s => s.CourseType));
         if (string.IsNullOrWhiteSpace(rep.CourseType) && courseType != null)
             rep.CourseType = courseType;
+
+        if (!promoteListValues)
+            return;
 
         if (rep.UnavailableRooms.Count == 0)
         {
@@ -1142,7 +1221,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             {
                 CrossCandidateItems.Add(vm);
             }
-            CrossCandidateGradeGroups.Add(new CrossCandidateGradeGroup($"{gradeGroup.Key}학년", new ObservableCollection<CrossCandidateItemViewModel>(viewModels)));
+            CrossCandidateGradeGroups.Add(new CrossCandidateGradeGroup(AcademicLevels.DisplayName(gradeGroup.Key), new ObservableCollection<CrossCandidateItemViewModel>(viewModels)));
         }
 
         UpdateCrossCandidateEnabledState();
@@ -1178,14 +1257,23 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         {
             bool isUsed = usedInOtherCrossGroups.Contains(vm.Id);
             bool isSelected = _selectedCrossCandidateIds.Contains(vm.Id);
+            bool hasEnoughSections = groups.TryGetValue(vm.Id, out var courses) && courses.Count >= 2;
 
-            if (isUsed && !isSelected)
+            if (_selectedCrossCandidateIds.Count >= 2 && !isSelected)
+            {
+                vm.IsEnabled = false;
+            }
+            else if (!hasEnoughSections)
+            {
+                vm.IsEnabled = false;
+            }
+            else if (isUsed && !isSelected)
             {
                 vm.IsEnabled = false;
             }
             else if (selectedSectionCount.HasValue && selectedHours.HasValue && selectedGrade.HasValue && !isSelected)
             {
-                if (groups.TryGetValue(vm.Id, out var courses) && courses.Count > 0)
+                if (groups.TryGetValue(vm.Id, out courses) && courses.Count > 0)
                 {
                     vm.IsEnabled = (courses.Count == selectedSectionCount.Value && courses[0].HoursPerWeek == selectedHours.Value && courses[0].Grade == selectedGrade.Value);
                 }
@@ -1193,10 +1281,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 {
                     vm.IsEnabled = false;
                 }
-            }
-            else if (_selectedCrossCandidateIds.Count >= 2 && !isSelected)
-            {
-                vm.IsEnabled = false;
             }
             else
             {
@@ -1274,6 +1358,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         2 => new[] { "2" },
         3 => new[] { "1+2", "3" },
         4 => new[] { "2+2", "4" },
+        5 => new[] { "1+2+2", "2+3" },
         _ => new[] { weeklyHours.ToString() },
     };
 
@@ -1402,18 +1487,24 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     [RelayCommand(CanExecute = nameof(CanSolve))]
     private async Task SolveAsync()
     {
+        var scheduleSnapshot = _workspace.SchedulingSnapshot();
+        var unsavedEditLabels = GetUnsavedEditLabels();
         var inputErrors = TimetableDiagnostics.GetInputErrors(
-            _workspace.Courses.ToList(),
-            _workspace.Professors.ToList(),
-            _workspace.Rooms.ToList(),
-            _workspace.CrossGroups.ToList(),
-            hasUnsavedEdits: HasUnsavedEdits());
+            scheduleSnapshot.Courses,
+            scheduleSnapshot.Professors,
+            scheduleSnapshot.Rooms,
+            scheduleSnapshot.CrossGroups,
+            hasUnsavedEdits: unsavedEditLabels.Count > 0,
+            unsavedEditSummary: string.Join(", ", unsavedEditLabels));
         if (inputErrors.Count > 0)
         {
             StatusMessage = FormatDiagnostics("입력 오류", inputErrors);
             IsSolveComplete = false;
             return;
         }
+
+        var cts = new CancellationTokenSource();
+        _cts = cts;
 
         IsSolving = true;
         IsSolveComplete = false;
@@ -1422,7 +1513,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         ProgressTotal = TotalSolutions;
         UniqueSolutionsFound = 0;
 
-        _cts = new CancellationTokenSource();
         var progress = new Progress<SolverProgress>(p =>
         {
             StatusMessage = ToUserProgressMessage(p);
@@ -1436,33 +1526,33 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             var options = new DiverseSolverOptions
             {
                 TotalSolutions = TotalSolutions,
-                TimeLimitSec = TimeLimitSec,
-                PerSolveTimeSec = UseAdvancedPerSolveTimeSec
-                    ? Math.Max(1, PerSolveTimeSec)
-                    : new DiverseSolverOptions().PerSolveTimeSec,
+                TimeLimitSec = Math.Max(1, TimeLimitSec),
+                PerSolveTimeSec = 0,
                 ConsiderRetakeStudents = ConsiderRetakeStudents,
                 UseSc01 = UseSc01,
                 UseSc02 = UseSc02,
                 UseSc03 = UseSc03,
             };
-            var result = await _solver.SolveAsync(_workspace, options, progress, _cts.Token);
+            var result = await _solver.SolveAsync(_workspace, options, progress, cts.Token);
             var ranked = _solver.Rank(_workspace, result, topM: 10);
             RankedResults.Clear();
             foreach (var r in ranked) RankedResults.Add(r);
             StatusMessage = result.Status switch
             {
+                "CANCELLED" => "취소됨",
                 "INFEASIBLE" => InfeasibleMessage(),
                 "UNKNOWN" when ranked.Count == 0 => UnknownMessageWithId(),
                 _ when ranked.Count == 0 => NoSolutionMessageWithId(result.Status),
                 _ => $"완료: {result.Status}, {result.Solutions.Count}개 해, 미리보기 {ranked.Count}개",
             };
-            IsSolveComplete = ranked.Count > 0;
-            if (ranked.Count > 0)
+            IsSolveComplete = result.Status != "CANCELLED" && ranked.Count > 0;
+            if (IsSolveComplete)
                 SolveCompleted?.Invoke(this, ranked);
         }
-        catch (OperationCanceledException)
+        catch (Exception ex) when (IsCancellationException(ex))
         {
             StatusMessage = "취소됨";
+            IsSolveComplete = false;
         }
         catch (Exception ex)
         {
@@ -1470,14 +1560,43 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         }
         finally
         {
+            if (ReferenceEquals(_cts, cts))
+            {
+                _cts.Dispose();
+                _cts = null;
+            }
             IsSolving = false;
         }
     }
 
     private bool CanSolve() => !IsSolving && _workspace.Courses.Count > 0;
 
-    [RelayCommand]
-    private void Cancel() => _cts?.Cancel();
+    [RelayCommand(CanExecute = nameof(CanCancel))]
+    private void Cancel()
+    {
+        try
+        {
+            _cts?.Cancel();
+            CancelCommand.NotifyCanExecuteChanged();
+        }
+        catch (ObjectDisposedException)
+        {
+            StatusMessage = "취소됨";
+        }
+    }
+
+    private bool CanCancel() => IsSolving && _cts is { IsCancellationRequested: false };
+
+    private static bool IsCancellationException(Exception exception)
+    {
+        if (exception is OperationCanceledException)
+            return true;
+
+        if (exception is AggregateException aggregate)
+            return aggregate.Flatten().InnerExceptions.All(IsCancellationException);
+
+        return false;
+    }
 
     private static string ToUserProgressMessage(SolverProgress progress)
     {
@@ -1496,20 +1615,21 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     private string InfeasibleMessage()
     {
+        var scheduleSnapshot = _workspace.SchedulingSnapshot();
         var diagnostics = TimetableDiagnostics.GetGenerationErrors(
-            _workspace.Courses.ToList(),
-            _workspace.Professors.ToList(),
-            _workspace.Rooms.ToList(),
-            _workspace.CrossGroups.ToList(),
-            _workspace.RetakeScenarios.ToList(),
+            scheduleSnapshot.Courses,
+            scheduleSnapshot.Professors,
+            scheduleSnapshot.Rooms,
+            scheduleSnapshot.CrossGroups,
+            scheduleSnapshot.RetakeScenarios,
             ConsiderRetakeStudents);
         if (diagnostics.Count > 0)
             return FormatDiagnostics("INFEASIBLE", diagnostics);
 
         var reasons = new List<string>();
-        var professorsById = _workspace.Professors.ToDictionary(professor => professor.Id);
+        var professorsById = scheduleSnapshot.Professors.ToDictionary(professor => professor.Id);
 
-        foreach (var course in _workspace.Courses)
+        foreach (var course in scheduleSnapshot.Courses)
         {
             if (course.IsFixed && course.FixedSlots.Count == 0)
                 reasons.Add($"fixed time conflict: {course.Name} 고정 시간이 비어 있습니다");
@@ -1520,10 +1640,10 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             if (course.BlockStructure.Count > 0 && course.BlockStructure.Sum() != course.HoursPerWeek)
                 reasons.Add($"insufficient available time slots: {course.Name} 블록 합이 시수와 다릅니다");
 
-            var availableRoomCount = _workspace.Rooms.Count(room =>
+            var availableRoomCount = scheduleSnapshot.Rooms.Count(room =>
                 !course.UnavailableRooms.Contains(room.Id) &&
                 (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)));
-            if (_workspace.Rooms.Count > 0 && availableRoomCount == 0)
+            if (scheduleSnapshot.Rooms.Count > 0 && availableRoomCount == 0)
                 reasons.Add($"room capacity/type conflict: {course.Name} 에 사용 가능한 강의실이 없습니다");
 
             if (professorsById.TryGetValue(course.ProfessorId, out var professor))
@@ -1531,12 +1651,12 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 if (course.IsFixed && course.FixedSlots.Any(slot => professor.UnavailableSlots.Any(p => p.Day == slot.Day && p.Period == slot.Period)))
                     reasons.Add($"professor unavailable time conflict: {course.Name} / {professor.Name}");
 
-                var availableProfessorRooms = _workspace.Rooms.Count(room =>
+                var availableProfessorRooms = scheduleSnapshot.Rooms.Count(room =>
                     !course.UnavailableRooms.Contains(room.Id) &&
                     !professor.UnavailableRooms.Contains(room.Id) &&
                     (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)) &&
                     (professor.AllowedRooms.Count == 0 || professor.AllowedRooms.Contains(room.Id) || course.FixedRooms.Contains(room.Id)));
-                if (_workspace.Rooms.Count > 0 && availableProfessorRooms == 0)
+                if (scheduleSnapshot.Rooms.Count > 0 && availableProfessorRooms == 0)
                     reasons.Add($"room capacity/type conflict: {course.Name} / {professor.Name} 조건을 만족하는 강의실이 없습니다");
 
                 if (!course.IsFixed)
@@ -1551,14 +1671,14 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             }
         }
 
-        foreach (var prof in _workspace.Professors)
-            if (_workspace.Rooms.Count > 0 && prof.UnavailableRooms.Count >= _workspace.Rooms.Count)
+        foreach (var prof in scheduleSnapshot.Professors)
+            if (scheduleSnapshot.Rooms.Count > 0 && prof.UnavailableRooms.Count >= scheduleSnapshot.Rooms.Count)
                 reasons.Add($"room capacity/type conflict: {prof.Name} 교수의 사용 가능 강의실이 없습니다");
-        foreach (var course in _workspace.Courses)
-            if (_workspace.Rooms.Count > 0 && course.UnavailableRooms.Count >= _workspace.Rooms.Count)
+        foreach (var course in scheduleSnapshot.Courses)
+            if (scheduleSnapshot.Rooms.Count > 0 && course.UnavailableRooms.Count >= scheduleSnapshot.Rooms.Count)
                 reasons.Add($"room capacity/type conflict: {course.Name} 과목의 사용 가능 강의실이 없습니다");
 
-        foreach (var cross in _workspace.CrossGroups)
+        foreach (var cross in scheduleSnapshot.CrossGroups)
         {
             if (cross.BaseIds.Count != 2)
             {
@@ -1567,7 +1687,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             }
 
             var groupedCourses = cross.BaseIds
-                .Select(id => new { Id = id, Courses = _workspace.Courses.Where(course => DomainHelpers.BaseId(course.Id) == id).ToList() })
+                .Select(id => new { Id = id, Courses = scheduleSnapshot.Courses.Where(course => DomainHelpers.BaseId(course.Id) == id).ToList() })
                 .ToList();
             if (groupedCourses.Any(group => group.Courses.Count == 0))
             {
@@ -1583,26 +1703,54 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         }
 
         return reasons.Count == 0
-            ? "INFEASIBLE: detailed reason unavailable"
+            ? InfeasibleFallbackMessage()
             : $"INFEASIBLE: {string.Join(" / ", reasons.Distinct())}";
     }
 
-    private bool HasUnsavedEdits() =>
-        CourseGroups.Any(item => item.IsEditing) ||
-        ProfessorItems.Any(item => item.IsEditing) ||
-        RoomItems.Any(item => item.IsEditing);
+    private static string InfeasibleFallbackMessage() =>
+        "INFEASIBLE: GE-025: 정확한 충돌 원인은 자동으로 특정하지 못했습니다. 수정 후보: 시간 고정, 교수 불가시간, 불가 강의실, 고정 강의실, Cross, 재수강 조건을 하나씩 줄인 뒤 다시 생성해 보세요.";
+
+    private IReadOnlyList<string> GetUnsavedEditLabels() =>
+        CourseGroups.Where(item => item.IsEditing)
+            .Select(item => $"교과목 관리 > {EditItemLabel(item.HeaderName, item.BaseId)}")
+            .Concat(ProfessorItems.Where(item => item.IsEditing)
+                .Select(item => $"교수 관리 > {EditItemLabel(item.HeaderName, item.HeaderId)}"))
+            .Concat(RoomItems.Where(item => item.IsEditing)
+                .Select(item => $"강의실 관리 > {EditItemLabel(item.HeaderName, item.HeaderId)}"))
+            .ToList();
+
+    private static string EditItemLabel(string name, string id) =>
+        string.IsNullOrWhiteSpace(name) ? id : $"{name} ({id})";
+
+    private static string CourseInputLocation(Course course) =>
+        $"교과목 관리 > {EditItemLabel(course.Name, course.Id)}";
+
+    private static string ProfessorInputLocation(Professor professor) =>
+        $"교수 관리 > {EditItemLabel(professor.Name, professor.Id)}";
+
+    private static string RoomInputLocation(Room room) =>
+        $"강의실 관리 > {EditItemLabel(room.Name, room.Id)}";
 
     private static string FormatDiagnostics(string title, IReadOnlyList<TimetableDiagnostic> diagnostics)
     {
-        var shown = diagnostics.Take(5).Select(diagnostic => diagnostic.ToString()).ToList();
+        var ordered = OrderDiagnosticsForStatus(diagnostics);
+        var shown = ordered.Take(5).Select(diagnostic => diagnostic.ToString()).ToList();
         var suffix = diagnostics.Count > shown.Count
             ? $" / 외 {diagnostics.Count - shown.Count}건"
             : "";
         return $"{title}: {string.Join(" / ", shown)}{suffix}";
     }
 
+    private static IReadOnlyList<TimetableDiagnostic> OrderDiagnosticsForStatus(IReadOnlyList<TimetableDiagnostic> diagnostics) =>
+        diagnostics
+            .Select((diagnostic, index) => new { Diagnostic = diagnostic, Index = index })
+            .OrderBy(item => item.Diagnostic.Id == "IE-004" ? 0 : 1)
+            .ThenBy(item => item.Index)
+            .Select(item => item.Diagnostic)
+            .ToList();
+
     private static string UnknownMessageWithId() =>
-        "GE-022: 시간 초과(UNKNOWN): 제한 시간 안에 해를 찾거나 불가능함을 확정하지 못했습니다. 제한 시간을 늘려 다시 시도해 보세요.";
+        "GE-022: 전체 생성 제한 시간 안에 해를 찾거나 불가능함을 확정하지 못했습니다. 제한 시간을 늘려 다시 시도해 보세요.";
 
     private static string NoSolutionMessageWithId(string status) =>
         status == "MODEL_INVALID"
@@ -1610,7 +1758,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             : $"GE-024: 해를 찾지 못했습니다({status}). 불가 시간, 불가 강의실, 시간 고정, Cross 설정을 줄이거나 제한 시간을 늘려보세요.";
 
     private string UnknownMessage() =>
-        "시간 초과(UNKNOWN): 제한 시간 안에 해를 찾거나 불가능함을 확정하지 못했습니다. 제한 시간을 늘려 다시 시도해 보세요.";
+        "전체 생성 제한 시간 안에 해를 찾거나 불가능함을 확정하지 못했습니다. 제한 시간을 늘려 다시 시도해 보세요.";
 
     private string NoSolutionMessage(string status) =>
         $"해를 찾지 못했습니다({status}). 불가 시간, 불가 강의실, 시간 고정, Cross 설정을 줄이거나 제한 시간을 늘려보세요.";

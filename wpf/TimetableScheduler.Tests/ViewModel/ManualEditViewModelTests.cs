@@ -1740,7 +1740,7 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Empty(vm.Conflicts);
         Assert.Equal(5, vm.Grid.DayGroups.Count);
         Assert.True(vm.Grid.ExpandAllGrades);
-        Assert.All(vm.Grid.DayGroups, dg => Assert.Equal(4, dg.Grades.Count));
+        Assert.All(vm.Grid.DayGroups, dg => Assert.Equal(AcademicLevels.AllGrades.Count, dg.Grades.Count));
     }
 
     [Fact]
@@ -3364,8 +3364,15 @@ public class ManualEditViewModelTests : IDisposable
 
         input.LoadForExistingTimetable(saved);
         var handoff = Assert.IsType<ManualEditHandoff>(input.BuildEditHandoff());
-        vm.LoadFromSnapshot(input.CurrentSnapshot(), handoff.Solution, "handoff", handoff.ManualCrossLinks);
+        vm.LoadFromSnapshot(
+            input.CurrentSnapshot(),
+            handoff.Solution,
+            "handoff",
+            handoff.ManualCrossLinks,
+            handoff.SavedTimetableId);
 
+        Assert.Equal(saved.Id, handoff.SavedTimetableId);
+        Assert.Equal(saved.Id, vm.EditingSavedTimetableId);
         Assert.Single(handoff.ManualCrossLinks);
         Assert.Single(vm.WorkingCrossLinks);
         Assert.Equal(1, vm.LastSavedCrossLinkCount);
@@ -3754,7 +3761,6 @@ public class ManualEditViewModelTests : IDisposable
             Array.Empty<TimetableScheduler.Data.SavedManualCrossLinkRow>(),
             System.Text.Json.JsonSerializer.Serialize(savedSnapshot));
 
-        _ws.DeleteProfessor("P1");
         _ws.UpdateCourse(new Course
         {
             Id = "X-01",
@@ -3764,6 +3770,7 @@ public class ManualEditViewModelTests : IDisposable
             ProfessorId = "",
             CourseType = "",
         });
+        _ws.DeleteProfessor("P1");
 
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         vm.LoadFromSavedTimetable(saved);

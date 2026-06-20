@@ -48,11 +48,13 @@ public static class XlsxLoader
         "수강학과",
         "강의시간(강의실)",
     };
+    private static readonly int[] LegacyColumnNumbers = { 5, 6, 7, 8, 9, 17, 18, 19 };
 
     private static List<int> DefaultBlockStructureForHours(int hours) => hours switch
     {
         3 => new List<int> { 1, 2 },
         4 => new List<int> { 2, 2 },
+        5 => new List<int> { 1, 2, 2 },
         _ => new List<int> { hours },
     };
 
@@ -81,8 +83,6 @@ public static class XlsxLoader
 
         foreach (var row in sheet.RowsUsed().Where(r => r.RowNumber() > headerMap.RowNumber))
         {
-            string Cell(string header) => row.Cell(headerMap.Columns[NormalizeHeader(header)]).GetString().Trim();
-
             if (IsIgnorableRow(row, headerMap))
                 continue;
 
@@ -95,8 +95,7 @@ public static class XlsxLoader
             var department = RequiredCell(row, headerMap, "수강학과");
             var scheduleText = RequiredCell(row, headerMap, "강의시간(강의실)");
 
-            var grade = ParseRequiredInt(gradeRaw, "이수 대상 학년", row.RowNumber());
-            if (grade is < 1 or > 4)
+            if (!AcademicLevels.TryParse(gradeRaw, out var grade) || !AcademicLevels.AllGrades.Contains(grade))
                 Fail($"Invalid grade at row {row.RowNumber()}: {gradeRaw}");
             var courseType = typeRaw == RequiredType ? MajorRequiredType : MajorElectiveType;
 
@@ -115,7 +114,7 @@ public static class XlsxLoader
             var xlsxBlocks = schedule.Select(entry => entry.Periods.Count).ToList();
 
             List<int> blockStructure;
-            if (hours is 3 or 4) blockStructure = DefaultBlockStructureForHours(hours);
+            if (hours is 3 or 4 or 5) blockStructure = DefaultBlockStructureForHours(hours);
             else if (xlsxBlocks.Count > 0 && xlsxBlocks.Sum() == hours) blockStructure = xlsxBlocks;
             else blockStructure = DefaultBlockStructureForHours(hours);
 
@@ -249,12 +248,27 @@ public static class XlsxLoader
                 return new HeaderMap(row.RowNumber(), columns);
         }
 
+        if (bestCount == 0 && HasLegacyColumnLayout(sheet))
+        {
+            var columns = RequiredHeaders
+                .Select((header, index) => new { Header = NormalizeHeader(header), Column = LegacyColumnNumbers[index] })
+                .ToDictionary(pair => pair.Header, pair => pair.Column, StringComparer.Ordinal);
+            return new HeaderMap(0, columns);
+        }
+
         var missing = RequiredHeaders
             .Where(header => best == null || !best.Columns.ContainsKey(NormalizeHeader(header)))
             .ToList();
         Fail($"Missing required Excel headers: {string.Join(", ", missing)}");
         throw new UnreachableException();
     }
+
+    private static bool HasLegacyColumnLayout(IXLWorksheet sheet) =>
+        sheet.RowsUsed().Any(row =>
+            !string.IsNullOrWhiteSpace(row.Cell(LegacyColumnNumbers[0]).GetString()) &&
+            !string.IsNullOrWhiteSpace(row.Cell(LegacyColumnNumbers[2]).GetString()) &&
+            !string.IsNullOrWhiteSpace(row.Cell(LegacyColumnNumbers[4]).GetString()) &&
+            !string.IsNullOrWhiteSpace(row.Cell(LegacyColumnNumbers[7]).GetString()));
 
     private static string NormalizeHeader(string? value) =>
         Regex.Replace((value ?? "").Trim(), @"[\s\t\r\n]+", "");

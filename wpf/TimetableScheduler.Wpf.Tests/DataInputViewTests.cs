@@ -30,6 +30,21 @@ public class DataInputViewTests
     }
 
     [Fact]
+    public void CancelButton_UsesCancelCommandCanExecute()
+    {
+        var xaml = File.ReadAllText(FindDataInputViewXaml());
+        var commandIndex = xaml.IndexOf("Command=\"{Binding CancelCommand}\"", StringComparison.Ordinal);
+
+        Assert.True(commandIndex >= 0);
+
+        var snippetStart = Math.Max(0, commandIndex - 80);
+        var snippetLength = Math.Min(220, xaml.Length - snippetStart);
+        var cancelButtonSnippet = xaml.Substring(snippetStart, snippetLength);
+        Assert.Contains("Content=\"취소\"", cancelButtonSnippet);
+        Assert.DoesNotContain("IsEnabled=\"{Binding IsSolving}\"", cancelButtonSnippet);
+    }
+
+    [Fact]
     public void BlockStructureChanged_RefreshesFixedCheckbox()
     {
         var source = File.ReadAllText(FindDataInputViewCodeBehind());
@@ -42,6 +57,47 @@ public class DataInputViewTests
         var methodBody = source[methodStart..nextMethodStart];
         Assert.Contains("Vm.HandleCourseBlockStructureChanged(item);", methodBody);
         Assert.Contains("RefreshFixedTimeCheckBox(expander);", methodBody);
+    }
+
+    [Fact]
+    public void UnavailableRoomQuickButtons_UseRoomClassificationAndClearAll()
+    {
+        var xaml = File.ReadAllText(FindDataInputViewXaml());
+        var source = File.ReadAllText(FindDataInputViewCodeBehind());
+
+        Assert.DoesNotContain("CourseUnavailableAllRoomsButton", xaml);
+        Assert.Contains("x:Name=\"CourseUnavailableLabRoomsButton\"", xaml);
+        Assert.Contains("Click=\"OnCourseUnavailableLabRoomsClick\"", xaml);
+        Assert.Contains("x:Name=\"CourseUnavailableNonLabRoomsButton\"", xaml);
+        Assert.Contains("Click=\"OnCourseUnavailableNonLabRoomsClick\"", xaml);
+        Assert.Contains("x:Name=\"CourseUnavailableClearRoomsButton\"", xaml);
+        Assert.Contains("Click=\"OnCourseUnavailableClearRoomsClick\"", xaml);
+        Assert.Contains("SetUnavailableRoomSelection(sender, room => room.IsLab);", source);
+        Assert.Contains("SetUnavailableRoomSelection(sender, room => !room.IsLab);", source);
+        Assert.Contains("item.IsChecked = false;", source);
+    }
+
+    [Fact]
+    public void ItemEditors_DeclareCancelButtons()
+    {
+        var xaml = File.ReadAllText(FindDataInputViewXaml());
+        var source = File.ReadAllText(FindDataInputViewCodeBehind());
+
+        Assert.Contains("Click=\"OnProfessorCancelClick\"", xaml);
+        Assert.Contains("Click=\"OnCourseGroupCancelClick\"", xaml);
+        Assert.Contains("DataContext.CancelRoomCommand", xaml);
+        Assert.Contains("Vm.CancelProfessorCommand.Execute(item);", source);
+        Assert.Contains("Vm.CancelGroupCommand.Execute(item);", source);
+    }
+
+    [Fact]
+    public void GenerationSettings_ExposeOnlyTheTotalTimeLimit()
+    {
+        var xaml = File.ReadAllText(FindDataInputViewXaml());
+
+        Assert.Contains("Text=\"{Binding TimeLimitSec, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}\"", xaml);
+        Assert.Contains("전체 생성 제한 시간 (초)", xaml);
+        Assert.DoesNotContain("PerSolveTimeSec", xaml);
     }
 
     [Fact]
@@ -361,7 +417,7 @@ public class DataInputViewTests
     }
 
     [Fact]
-    public void CourseRoomPickers_KeepUnavailableAndMultiRoomsExclusive()
+    public void CourseRoomPickers_KeepUnavailableAndMultiRoomsExclusive_AndSupportRoomTypeSelection()
     {
         RunSta(() =>
         {
@@ -373,7 +429,8 @@ public class DataInputViewTests
                 var repo = new SqliteRepository(dbPath);
                 var workspace = new WorkspaceService(repo);
                 workspace.AddRoom(new Room { Id = "R1", Name = "Room One" });
-                workspace.AddRoom(new Room { Id = "R2", Name = "Room Two" });
+                workspace.AddRoom(new Room { Id = "R2", Name = "Room Two", IsLab = true });
+                workspace.AddRoom(new Room { Id = "R3", Name = "Room Three", IsLab = true });
                 workspace.AddCourse(new Course
                 {
                     Id = "ROOM-01",
@@ -409,15 +466,23 @@ public class DataInputViewTests
 
                 var unavailablePicker = FindDescendant<CheckListPickerControl>(expander, picker => picker.Name == "GroupUnavailableRoomsPicker");
                 var fixedPicker = FindDescendant<CheckListPickerControl>(expander, picker => picker.Name == "GroupFixedRoomsPicker");
-                var allButton = FindDescendant<Button>(expander, button => button.Name == "CourseUnavailableAllRoomsButton");
+                var labButton = FindDescendant<Button>(expander, button => button.Name == "CourseUnavailableLabRoomsButton");
+                var nonLabButton = FindDescendant<Button>(expander, button => button.Name == "CourseUnavailableNonLabRoomsButton");
+                var clearButton = FindDescendant<Button>(expander, button => button.Name == "CourseUnavailableClearRoomsButton");
                 Assert.NotNull(unavailablePicker);
                 Assert.NotNull(fixedPicker);
-                Assert.NotNull(allButton);
-                Assert.False(allButton!.IsVisible);
+                Assert.NotNull(labButton);
+                Assert.NotNull(nonLabButton);
+                Assert.NotNull(clearButton);
+                Assert.False(labButton!.IsVisible);
+                Assert.False(nonLabButton!.IsVisible);
+                Assert.False(clearButton!.IsVisible);
 
                 group.IsEditing = true;
                 view.UpdateLayout();
-                Assert.True(allButton.IsVisible);
+                Assert.True(labButton.IsVisible);
+                Assert.True(nonLabButton.IsVisible);
+                Assert.True(clearButton.IsVisible);
 
                 var unavailableItems = ((IEnumerable<CheckListItem>)unavailablePicker!.DataContext).ToList();
                 var fixedItems = ((IEnumerable<CheckListItem>)fixedPicker!.DataContext).ToList();
@@ -430,9 +495,15 @@ public class DataInputViewTests
                 Assert.Contains("R2", group.Sections[0].FixedRooms);
                 Assert.DoesNotContain("R2", group.Sections[0].UnavailableRooms);
 
-                allButton!.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                labButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
                 Assert.Empty(group.Sections[0].FixedRooms);
-                Assert.Equal(new[] { "R1", "R2" }, group.Sections[0].UnavailableRooms.OrderBy(id => id));
+                Assert.Equal(new[] { "R1", "R2", "R3" }, group.Sections[0].UnavailableRooms.OrderBy(id => id));
+
+                clearButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.Empty(group.Sections[0].UnavailableRooms);
+
+                nonLabButton.RaiseEvent(new RoutedEventArgs(Button.ClickEvent));
+                Assert.Equal(new[] { "R1" }, group.Sections[0].UnavailableRooms);
 
                 window.Close();
             }

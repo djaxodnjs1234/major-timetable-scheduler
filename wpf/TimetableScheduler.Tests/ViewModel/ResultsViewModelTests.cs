@@ -84,4 +84,43 @@ public class ResultsViewModelTests : IDisposable
         var occupied = Assert.Single(coteacherView.Grid.Cells.Where(c => c.IsOccupied));
         Assert.Equal("C-01", Assert.Single(occupied.Items).CourseId);
     }
+
+    [Fact]
+    public void SetSolutions_AddsGraduateGradeView()
+    {
+        var workspace = new WorkspaceService(_repo);
+        var vm = new ResultsViewModel(workspace);
+        var snapshot = new AppData(
+            new List<Course>
+            {
+                new()
+                {
+                    Id = "GR-01",
+                    Name = "Graduate Seminar",
+                    Grade = AcademicLevels.GraduateGrade,
+                    Section = 1,
+                    HoursPerWeek = 1,
+                    ProfessorId = "P1",
+                    BlockStructure = new List<int> { 1 },
+                },
+            },
+            new List<Professor> { new() { Id = "P1", Name = "Professor" } },
+            new List<Room> { new() { Id = "R1", Name = "Room" } },
+            new List<CrossGroup>(),
+            new List<RetakeScenario>());
+
+        var ranked = new[]
+        {
+            new RankedSolution(
+                new[] { new SolutionAssignment("GR-01", 0, 1, "R1") },
+                new SolutionScore(0, 0, 0, 0)),
+        };
+
+        vm.SetSolutions(ranked, snapshot);
+
+        var graduateView = vm.GradeViews.Single(view => view.Id == AcademicLevels.GraduateGrade.ToString());
+        Assert.Equal("대학원", graduateView.Name);
+        var cell = Assert.Single(graduateView.Grid.Cells.Where(c => c.IsOccupied));
+        Assert.Equal("GR-01", Assert.Single(cell.Items).CourseId);
+    }
 }
