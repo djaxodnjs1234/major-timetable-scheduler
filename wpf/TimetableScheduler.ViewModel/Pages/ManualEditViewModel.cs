@@ -2538,7 +2538,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .ToList();
         return FormatSelectedAndRelatedConflict(
             conflict,
-            $"{RoomDisplayName(group.Key)} / {FormatConflictTimeLabel(conflict.Day, conflict.Period, conflict.Period)}",
+            $"{string.Join(", ", courses)} / {RoomDisplayName(group.Key)} / {FormatConflictTimeLabel(conflict.Day, conflict.Period, conflict.Period)}",
             group.ToList());
     }
 
@@ -2572,7 +2572,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .ToList();
         return FormatSelectedAndRelatedConflict(
             conflict,
-            $"{ProfessorDisplayName(conflictGroup.Key)} / {FormatConflictTimeLabel(conflict.Day, conflict.Period, conflict.Period)}",
+            $"{string.Join(", ", courses)} / {ProfessorDisplayName(conflictGroup.Key)} / {FormatConflictTimeLabel(conflict.Day, conflict.Period, conflict.Period)}",
             conflictGroup.Value.Select(x => x.Assignment).ToList());
     }
 
@@ -2838,7 +2838,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var selectedLabel = BuildConflictCourseLabel(ResolveCourseForAssignment(selected), selected.CourseId);
         return related.Count == 0
             ? $"선택 수업: {selectedLabel}. {baseDescription}"
-            : $"선택: {selectedLabel}. 충돌: {string.Join(", ", related)}. {baseDescription}";
+            : $"선택 수업: {selectedLabel}. 충돌 상대: {string.Join(", ", related)}. {baseDescription}";
     }
 
     private bool IsSelectedConflictAssignment(SolutionAssignment assignment) =>

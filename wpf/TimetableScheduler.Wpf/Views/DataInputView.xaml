@@ -923,7 +923,8 @@
                                                    ToolTip="자동 생성 후 비교해 볼 시간표 후보 개수입니다.&#x0a;숫자가 클수록 더 많이 찾지만 시간이 더 걸릴 수 있습니다." />
                                     </StackPanel>
                                     <TextBox Grid.Row="0" Grid.Column="1" Padding="6,4" Margin="0,4" Width="120" HorizontalAlignment="Left"
-                                             Text="{Binding TotalSolutions, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                             LostFocus="OnNumericTextBoxLostFocus"
+                                             Text="{Binding TotalSolutions, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, Converter={StaticResource NullableIntText}}" />
                                     <StackPanel Grid.Row="1" Grid.Column="0" Orientation="Horizontal" Margin="0,4" VerticalAlignment="Center">
                                         <TextBlock Text="전체 생성 제한 시간 (초)" />
                                         <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"

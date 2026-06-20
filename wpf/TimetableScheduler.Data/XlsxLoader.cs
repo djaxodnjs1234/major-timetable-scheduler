@@ -1,3 +1,4 @@
+using System.Diagnostics;
 using System.Text.RegularExpressions;
 using ClosedXML.Excel;
 using TimetableScheduler.Domain;
@@ -36,6 +37,18 @@ public static class XlsxLoader
     private static readonly Regex DayPeriodRegex =
         new($"^([{KoreanMonday}{KoreanTuesday}{KoreanWednesday}{KoreanThursday}{KoreanFriday}])(\\d+)$", RegexOptions.Compiled);
     private static readonly Regex SplitRegex = new(@"[,\s]+", RegexOptions.Compiled);
+    private static readonly IReadOnlyList<string> RequiredHeaders = new[]
+    {
+        "이수 대상 학년",
+        "이수 구분",
+        "교과목명",
+        "학점",
+        "교과목코드",
+        "담당교수",
+        "수강학과",
+        "강의시간(강의실)",
+    };
+    private static readonly int[] LegacyColumnNumbers = { 5, 6, 7, 8, 9, 17, 18, 19 };
 
     private static List<int> DefaultBlockStructureForHours(int hours) => hours switch
     {
@@ -49,6 +62,7 @@ public static class XlsxLoader
     {
         using var wb = new XLWorkbook(path);
         var sheet = wb.Worksheet(1);
+        var headerMap = BuildHeaderMap(sheet);
 
         var profNames = new HashSet<string>();
         var roomIds = new HashSet<string>();
@@ -67,32 +81,35 @@ public static class XlsxLoader
             return importedBaseId;
         }
 
-        foreach (var row in sheet.RowsUsed())
+        foreach (var row in sheet.RowsUsed().Where(r => r.RowNumber() > headerMap.RowNumber))
         {
-            string Cell(string col) => row.Cell(col).GetString().Trim();
+            if (IsIgnorableRow(row, headerMap))
+                continue;
 
-            var gradeRaw = Cell("E");
-            var name = Cell("G");
-            if (string.IsNullOrEmpty(gradeRaw) || string.IsNullOrEmpty(name)) continue;
+            var gradeRaw = RequiredCell(row, headerMap, "이수 대상 학년");
+            var typeRaw = RequiredCell(row, headerMap, "이수 구분");
+            var name = RequiredCell(row, headerMap, "교과목명");
+            var creditsRaw = RequiredCell(row, headerMap, "학점");
+            var code = RequiredCell(row, headerMap, "교과목코드");
+            var professorName = RequiredCell(row, headerMap, "담당교수");
+            var department = RequiredCell(row, headerMap, "수강학과");
+            var scheduleText = RequiredCell(row, headerMap, "강의시간(강의실)");
 
-            if (!AcademicLevels.TryParse(gradeRaw, out var grade)) continue;
-
-            var typeRaw = Cell("F");
+            if (!AcademicLevels.TryParse(gradeRaw, out var grade) || !AcademicLevels.AllGrades.Contains(grade))
+                Fail($"Invalid grade at row {row.RowNumber()}: {gradeRaw}");
             var courseType = typeRaw == RequiredType ? MajorRequiredType : MajorElectiveType;
 
-            var creditsRaw = Cell("H");
-            if (!int.TryParse(creditsRaw, out var hours))
-            {
-                if (!double.TryParse(creditsRaw, out var hoursDouble)) continue;
-                hours = (int)hoursDouble;
-            }
+            var hours = ParseRequiredInt(creditsRaw, "학점", row.RowNumber());
+            if (hours <= 0)
+                Fail($"Invalid credits at row {row.RowNumber()}: {creditsRaw}");
+            if (string.IsNullOrWhiteSpace(code))
+                Fail($"Missing course code at row {row.RowNumber()}");
+            if (string.IsNullOrWhiteSpace(professorName))
+                Fail($"Missing professor at row {row.RowNumber()}");
 
-            var code = Cell("I");
-            var professorName = Cell("Q");
-            var department = Cell("R");
-            var scheduleText = Cell("S");
-
-            var schedule = ParseSchedule(scheduleText);
+            var schedule = ParseSchedule(scheduleText, row.RowNumber());
+            if (schedule.Count == 0)
+                Fail($"Missing schedule entries at row {row.RowNumber()}");
             var fixedRoom = schedule.Count > 0 ? schedule[0].Room : null;
             var xlsxBlocks = schedule.Select(entry => entry.Periods.Count).ToList();
 
@@ -203,29 +220,130 @@ public static class XlsxLoader
         return new XlsxLoadResult(courses, professors, rooms);
     }
 
+    private sealed record HeaderMap(int RowNumber, IReadOnlyDictionary<string, int> Columns);
+
+    private static HeaderMap BuildHeaderMap(IXLWorksheet sheet)
+    {
+        var required = RequiredHeaders.Select(NormalizeHeader).ToHashSet(StringComparer.Ordinal);
+        HeaderMap? best = null;
+        var bestCount = -1;
+
+        foreach (var row in sheet.RowsUsed())
+        {
+            var columns = new Dictionary<string, int>(StringComparer.Ordinal);
+            foreach (var cell in row.CellsUsed())
+            {
+                var key = NormalizeHeader(cell.GetString());
+                if (string.IsNullOrWhiteSpace(key)) continue;
+                columns.TryAdd(key, cell.Address.ColumnNumber);
+            }
+
+            var count = required.Count(columns.ContainsKey);
+            if (count > bestCount)
+            {
+                best = new HeaderMap(row.RowNumber(), columns);
+                bestCount = count;
+            }
+            if (required.All(columns.ContainsKey))
+                return new HeaderMap(row.RowNumber(), columns);
+        }
+
+        if (bestCount == 0 && HasLegacyColumnLayout(sheet))
+        {
+            var columns = RequiredHeaders
+                .Select((header, index) => new { Header = NormalizeHeader(header), Column = LegacyColumnNumbers[index] })
+                .ToDictionary(pair => pair.Header, pair => pair.Column, StringComparer.Ordinal);
+            return new HeaderMap(0, columns);
+        }
+
+        var missing = RequiredHeaders
+            .Where(header => best == null || !best.Columns.ContainsKey(NormalizeHeader(header)))
+            .ToList();
+        Fail($"Missing required Excel headers: {string.Join(", ", missing)}");
+        throw new UnreachableException();
+    }
+
+    private static bool HasLegacyColumnLayout(IXLWorksheet sheet) =>
+        sheet.RowsUsed().Any(row =>
+            !string.IsNullOrWhiteSpace(row.Cell(LegacyColumnNumbers[0]).GetString()) &&
+            !string.IsNullOrWhiteSpace(row.Cell(LegacyColumnNumbers[2]).GetString()) &&
+            !string.IsNullOrWhiteSpace(row.Cell(LegacyColumnNumbers[4]).GetString()) &&
+            !string.IsNullOrWhiteSpace(row.Cell(LegacyColumnNumbers[7]).GetString()));
+
+    private static string NormalizeHeader(string? value) =>
+        Regex.Replace((value ?? "").Trim(), @"[\s\t\r\n]+", "");
+
+    private static bool IsIgnorableRow(IXLRow row, HeaderMap headerMap)
+    {
+        var values = RequiredHeaders
+            .Select(header => row.Cell(headerMap.Columns[NormalizeHeader(header)]).GetString().Trim())
+            .ToList();
+        if (values.All(string.IsNullOrWhiteSpace))
+            return true;
+
+        var grade = values[0];
+        var name = values[2];
+        var code = values[4];
+        return string.IsNullOrWhiteSpace(grade)
+            && string.IsNullOrWhiteSpace(name)
+            && string.IsNullOrWhiteSpace(code);
+    }
+
+    private static string RequiredCell(IXLRow row, HeaderMap headerMap, string header)
+    {
+        var value = row.Cell(headerMap.Columns[NormalizeHeader(header)]).GetString().Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            Fail($"Missing required cell '{header}' at row {row.RowNumber()}");
+        return value;
+    }
+
+    private static int ParseRequiredInt(string raw, string header, int rowNumber)
+    {
+        if (int.TryParse(raw, out var value))
+            return value;
+        if (double.TryParse(raw, out var doubleValue) && Math.Abs(doubleValue - Math.Truncate(doubleValue)) < 0.000001)
+            return (int)doubleValue;
+        Fail($"Invalid numeric value for '{header}' at row {rowNumber}: {raw}");
+        throw new UnreachableException();
+    }
+
     private record ScheduleEntry(int Day, List<int> Periods, string Room);
 
-    private static List<ScheduleEntry> ParseSchedule(string text)
+    private static List<ScheduleEntry> ParseSchedule(string text, int rowNumber)
     {
         var result = new List<ScheduleEntry>();
-        if (string.IsNullOrEmpty(text)) return result;
+        if (string.IsNullOrWhiteSpace(text))
+            Fail($"Missing schedule at row {rowNumber}");
 
         foreach (var part in SplitRegex.Split(text.Trim()))
         {
-            if (string.IsNullOrEmpty(part) || !part.Contains('/')) continue;
+            if (string.IsNullOrEmpty(part)) continue;
+            if (!part.Contains('/'))
+                Fail($"Invalid schedule token at row {rowNumber}: {part}");
 
             var slash = part.IndexOf('/');
             var timePart = part[..slash];
             var room = part[(slash + 1)..].Trim();
+            if (string.IsNullOrWhiteSpace(room))
+                Fail($"Missing room in schedule at row {rowNumber}: {part}");
 
             var match = DayPeriodRegex.Match(timePart);
-            if (!match.Success) continue;
+            if (!match.Success)
+                Fail($"Invalid schedule time at row {rowNumber}: {part}");
 
             var day = DayMap[match.Groups[1].Value];
             var periods = match.Groups[2].Value.Select(ch => ch - '0').ToList();
+            if (periods.Count == 0 || periods.Any(p => p <= 0 || p > 9))
+                Fail($"Invalid period in schedule at row {rowNumber}: {part}");
             result.Add(new ScheduleEntry(day, periods, room));
         }
 
         return result;
+    }
+
+    private static void Fail(string message)
+    {
+        Debug.WriteLine($"[XLSX_IMPORT] {message}");
+        throw new InvalidDataException(message);
     }
 }

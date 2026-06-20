@@ -3754,7 +3754,6 @@ public class ManualEditViewModelTests : IDisposable
             Array.Empty<TimetableScheduler.Data.SavedManualCrossLinkRow>(),
             System.Text.Json.JsonSerializer.Serialize(savedSnapshot));
 
-        _ws.DeleteProfessor("P1");
         _ws.UpdateCourse(new Course
         {
             Id = "X-01",
@@ -3764,6 +3763,7 @@ public class ManualEditViewModelTests : IDisposable
             ProfessorId = "",
             CourseType = "",
         });
+        _ws.DeleteProfessor("P1");
 
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         vm.LoadFromSavedTimetable(saved);
