@@ -3840,9 +3840,30 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             var byId = _working
                 .Where(a => string.Equals(a.AssignmentId, assignmentId, StringComparison.Ordinal))
                 .ToList();
-            if (byId.Count == 1)
-                return BuildRestoredEndpoint(byId[0], section, rowSpan: GetWorkingRowSpan(byId[0]), new[] { byId[0].RoomId });
-            return null;
+
+            if (byId.Count > 0)
+            {
+                var blocks = BuildRestoredAssignmentBlocks(byId);
+
+                if (blocks.Count == 1)
+                    return BuildRestoredEndpoint(blocks[0], section);
+
+                var matchingBlocks = blocks
+                    .Where(block => SavedEndpointMatchesBlock(
+                        block,
+                        courseId,
+                        section,
+                        day,
+                        period,
+                        roomId))
+                    .ToList();
+
+                if (matchingBlocks.Count == 1)
+                    return BuildRestoredEndpoint(matchingBlocks[0], section);
+
+                if (byId.Count > 1)
+                    return null;
+            }
         }
 
         var exact = _working
@@ -3882,6 +3903,158 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         }
 
         return null;
+    }
+
+    private sealed record RestoredAssignmentBlock(
+        SolutionAssignment Representative,
+        string AssignmentId,
+        string CourseId,
+        string Section,
+        string ProfessorId,
+        int Day,
+        int StartPeriod,
+        int RowSpan,
+        IReadOnlyList<string> RoomIds);
+
+    private RestoredCrossEndpoint BuildRestoredEndpoint(
+        RestoredAssignmentBlock block,
+        string savedSection) =>
+        BuildRestoredEndpoint(
+            block.Representative,
+            string.IsNullOrWhiteSpace(savedSection)
+                ? block.Section
+                : savedSection,
+            block.RowSpan,
+            block.RoomIds);
+
+    private List<RestoredAssignmentBlock> BuildRestoredAssignmentBlocks(
+        IReadOnlyList<SolutionAssignment> rows)
+    {
+        var blocks = new List<RestoredAssignmentBlock>();
+
+        var indexedRows = rows
+            .Select(a => new
+            {
+                Assignment = a,
+                Course = ResolveCourseForAssignment(a),
+            })
+            .GroupBy(x => new
+            {
+                AssignmentId = x.Assignment.AssignmentId ?? "",
+                x.Assignment.CourseId,
+                Section = x.Course == null
+                    ? ""
+                    : NormalizeManualCrossSection(x.Course.Section),
+                ProfessorId = x.Course?.ProfessorId ?? "",
+                x.Assignment.Day,
+            });
+
+        foreach (var group in indexedRows)
+        {
+            var groupRows = group
+                .Select(x => x.Assignment)
+                .ToList();
+
+            var periods = groupRows
+                .Select(a => a.Period)
+                .Distinct()
+                .OrderBy(p => p)
+                .ToList();
+
+            var i = 0;
+
+            while (i < periods.Count)
+            {
+                var start = periods[i];
+                var end = start;
+                i++;
+
+                while (i < periods.Count && periods[i] == end + 1)
+                {
+                    end = periods[i];
+                    i++;
+                }
+
+                var runPeriods = Enumerable
+                    .Range(start, end - start + 1)
+                    .ToList();
+
+                var firstRoomSet = RoomSetForPeriod(groupRows, start);
+
+                if (firstRoomSet.Count == 0)
+                    continue;
+
+                if (runPeriods.Any(
+                        p => !firstRoomSet.SequenceEqual(
+                            RoomSetForPeriod(groupRows, p))))
+                {
+                    continue;
+                }
+
+                var representative = groupRows
+                    .Where(a => a.Period == start)
+                    .OrderBy(a => a.RoomId, StringComparer.Ordinal)
+                    .First();
+
+                blocks.Add(new RestoredAssignmentBlock(
+                    representative,
+                    group.Key.AssignmentId,
+                    group.Key.CourseId,
+                    group.Key.Section,
+                    group.Key.ProfessorId,
+                    group.Key.Day,
+                    start,
+                    runPeriods.Count,
+                    firstRoomSet));
+            }
+        }
+
+        return blocks;
+    }
+
+    private static List<string> RoomSetForPeriod(
+        IEnumerable<SolutionAssignment> rows,
+        int period) =>
+        rows
+            .Where(a => a.Period == period)
+            .Select(a => NormalizeRoomId(a.RoomId))
+            .Where(room => !string.IsNullOrWhiteSpace(room))
+            .Distinct(StringComparer.Ordinal)
+            .OrderBy(room => room, StringComparer.Ordinal)
+            .ToList();
+
+    private static bool SavedEndpointMatchesBlock(
+        RestoredAssignmentBlock block,
+        string courseId,
+        string section,
+        int day,
+        int period,
+        string roomId)
+    {
+        if (!string.Equals(
+                block.CourseId,
+                courseId,
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (!string.IsNullOrWhiteSpace(section)
+            && !string.Equals(
+                block.Section,
+                section,
+                StringComparison.Ordinal))
+        {
+            return false;
+        }
+
+        if (block.Day != day || block.StartPeriod != period)
+            return false;
+
+        return string.IsNullOrWhiteSpace(roomId)
+            || block.RoomIds.Contains(
+                NormalizeRoomId(roomId),
+                StringComparer.Ordinal);
     }
 
     private RestoredCrossEndpoint BuildRestoredEndpoint(
