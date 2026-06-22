@@ -112,6 +112,8 @@ public class DataInputViewTests
             {
                 var repo = new SqliteRepository(dbPath);
                 var workspace = new WorkspaceService(repo);
+                workspace.AddProfessor(new Professor { Id = "P1", Name = "교수1" });
+                workspace.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
                 workspace.AddCourse(new Course
                 {
                     Id = "GA1005-01",
@@ -120,6 +122,7 @@ public class DataInputViewTests
                     HoursPerWeek = 4,
                     Section = 1,
                     CourseType = "전필",
+                    ProfessorId = "P1",
                     BlockStructure = new List<int> { 2, 2 },
                     IsFixed = true,
                     FixedSlots = new List<TimeSlot> { new(0, 1), new(0, 2), new(1, 1), new(1, 2) },
@@ -151,12 +154,17 @@ public class DataInputViewTests
                 var hoursCombo = FindDescendant<ComboBox>(expander, combo => Equals(combo.SelectedItem, 4));
                 var blockCombo = FindDescendant<ComboBox>(expander, combo => Equals(combo.SelectedItem, "2+2"));
                 var fixedCheckBox = FindDescendant<CheckBox>(expander, cb => cb.Content is string text && text == "시간 고정");
+                var professorCombo = FindDescendant<ComboBox>(expander, combo =>
+                    combo.SelectedValuePath == "Id" && combo.Items.OfType<Professor>().Any());
 
                 Assert.NotNull(hoursCombo);
                 Assert.NotNull(blockCombo);
                 Assert.NotNull(fixedCheckBox);
+                Assert.NotNull(professorCombo);
                 Assert.True(fixedCheckBox!.IsChecked == true);
+                Assert.Equal("P1", professorCombo!.SelectedValue);
 
+                professorCombo.SelectedValue = "P2";
                 hoursCombo!.SelectedItem = 3;
                 view.UpdateLayout();
 
@@ -165,6 +173,12 @@ public class DataInputViewTests
                 Assert.False(item.Sections[0].IsFixed);
                 Assert.True(fixedCheckBox.IsChecked == false);
                 Assert.Equal("1+2", blockCombo!.SelectedItem);
+                Assert.Equal("P2", item.Sections[0].ProfessorId);
+                Assert.Equal("P2", professorCombo.SelectedValue);
+
+                vm.SaveGroupCommand.Execute(item);
+                vm.OnNavigatedTo();
+                Assert.Equal("P2", vm.CourseGroups.Single().Sections[0].ProfessorId);
 
                 window.Close();
             }

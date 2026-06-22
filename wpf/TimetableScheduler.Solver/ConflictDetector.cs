@@ -226,40 +226,19 @@ public static class ConflictDetector
                 g.Select(x => x.Assignment).ToList()));
         }
 
-        // HC-21: professor's auto-placed courses (no FixedRooms) should all share one room
-        var autoRoomsByProf = new Dictionary<string, HashSet<string>>();
-        foreach (var a in assignment)
-        {
-            var c = ResolveCourseForAssignment(a, courses);
-            if (c == null) continue;
-            if (c.FixedRooms.Count > 0) continue;
-            var pid = c.ProfessorId;
-            if (string.IsNullOrEmpty(pid)) continue;
-            if (!autoRoomsByProf.TryGetValue(pid, out var set))
-                autoRoomsByProf[pid] = set = new HashSet<string>();
-            set.Add(a.RoomId);
-        }
-        foreach (var (pid, rooms) in autoRoomsByProf)
-        {
-            if (rooms.Count <= 1) continue;
-            list.Add(new ConflictItem(
-                ConflictType.ProfRoomInconsistent, ConflictSeverity.Warning,
-                $"교수 {pid}의 자동 배정 과목들이 서로 다른 강의실 사용: {string.Join(",", rooms)}",
-                0, 0));
-        }
-
-        // HC-21 candidate-room subset for auto-assigned courses.
+        // HC-21: professor room eligibility for auto-assigned courses.
         foreach (var a in assignment)
         {
             var c = ResolveCourseForAssignment(a, courses);
             if (c == null) continue;
             if (c.FixedRooms.Count > 0) continue;
             if (!profMap.TryGetValue(c.ProfessorId, out var prof)) continue;
-            if (prof.UnavailableRooms.Contains(a.RoomId))
+            if (prof.UnavailableRooms.Contains(a.RoomId)
+                || (prof.AllowedRooms.Count > 0 && !prof.AllowedRooms.Contains(a.RoomId)))
             {
                 list.Add(new ConflictItem(
                     ConflictType.ProfAllowedRoomViolation, ConflictSeverity.Error,
-                    $"{c.Name}({c.Id})은 교수 {c.ProfessorId}의 불가 강의실 [{string.Join(",", prof.UnavailableRooms)}]에 배정할 수 없습니다.",
+                    $"{c.Name}({c.Id})은 교수 {c.ProfessorId}의 강의실 조건을 만족하지 않습니다.",
                     a.Day, a.Period,
                     new[] { a }));
                 continue;

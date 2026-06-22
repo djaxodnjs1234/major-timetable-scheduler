@@ -42,6 +42,7 @@ public class HcCoverageTests
         var (courses, profs, rooms) = MakeBaseSetup();
         rooms.Add(new Room { Id = "R3", Name = "R3" });
         courses[0].FixedRooms = new List<string> { "R2" };
+        profs[0].AllowedRooms = new List<string> { "R1" };
 
         var build = ModelBuilder.Build(courses, profs, rooms);
         var solver = new CpSolver();
@@ -254,15 +255,15 @@ public class HcCoverageTests
     }
 
     [Fact]
-    public void HC21_ProfRoomConsistent_GroupsAutoCoursesIntoSameRoom()
+    public void HC21_PerCourseRoomEligibility_AllowsDifferentRoomsForSameProfessor()
     {
-        // Prof P1 teaches 2 auto-allocated courses. Both must end up in same room.
+        // Each course's unavailable room is local to that course, not all of P1's courses.
         var courses = new List<Course>
         {
-            new() { Id = "A-01", Name = "A", Grade = 1, HoursPerWeek = 1, ProfessorId = "P1" },
-            new() { Id = "B-01", Name = "B", Grade = 2, HoursPerWeek = 1, ProfessorId = "P1" },
+            new() { Id = "A-01", Name = "A", Grade = 1, HoursPerWeek = 1, ProfessorId = "P1", UnavailableRooms = new List<string> { "R1" } },
+            new() { Id = "B-01", Name = "B", Grade = 2, HoursPerWeek = 1, ProfessorId = "P1", UnavailableRooms = new List<string> { "R2" } },
         };
-        var profs = new List<Professor> { new() { Id = "P1", Name = "P" } };
+        var profs = new List<Professor> { new() { Id = "P1", Name = "P", AllowedRooms = new List<string> { "R1", "R2" } } };
         var rooms = new List<Room>
         {
             new() { Id = "R1", Name = "R1" },
@@ -273,7 +274,7 @@ public class HcCoverageTests
         var solver = new CpSolver();
         Assert.True(solver.Solve(build.Model) is CpSolverStatus.Feasible or CpSolverStatus.Optimal);
 
-        // Find which room each course lands in; they must match.
+        // A can only use R2 and B can only use R1.
         string? roomA = null, roomB = null;
         for (int d = 0; d < Constants.Days; d++)
             foreach (var p in Constants.ValidPeriods)
@@ -281,9 +282,59 @@ public class HcCoverageTests
                 {
                     if (solver.Value(build.X[("A-01", d, p, r.Id)]) == 1) roomA = r.Id;
                     if (solver.Value(build.X[("B-01", d, p, r.Id)]) == 1) roomB = r.Id;
-                }
-        Assert.NotNull(roomA);
-        Assert.NotNull(roomB);
-        Assert.Equal(roomA, roomB);
+        }
+        Assert.Equal("R2", roomA);
+        Assert.Equal("R1", roomB);
+    }
+
+    [Fact]
+    public void HC22_AutoSectionsOfSameCourse_MustUseOneSharedRoom()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "A-01", Name = "A", Grade = 1, HoursPerWeek = 1, ProfessorId = "P1" },
+            new() { Id = "A-02", Name = "A", Grade = 1, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 },
+        };
+        var profs = new List<Professor>
+        {
+            new() { Id = "P1", Name = "P1" },
+            new() { Id = "P2", Name = "P2" },
+        };
+        var rooms = new List<Room>
+        {
+            new() { Id = "R1", Name = "R1" },
+            new() { Id = "R2", Name = "R2" },
+        };
+
+        var build = ModelBuilder.Build(courses, profs, rooms);
+        build.Model.Add(build.X[("A-01", 0, 1, "R1")] == 1);
+        build.Model.Add(build.X[("A-02", 1, 1, "R2")] == 1);
+
+        var solver = new CpSolver();
+        Assert.Equal(CpSolverStatus.Infeasible, solver.Solve(build.Model));
+    }
+
+    [Fact]
+    public void HC22_ExplicitFixedRooms_KeepCourseRoomPriority()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "A-01", Name = "A", Grade = 1, HoursPerWeek = 1, ProfessorId = "P1", FixedRooms = new List<string> { "R1" } },
+            new() { Id = "A-02", Name = "A", Grade = 1, HoursPerWeek = 1, ProfessorId = "P2", Section = 2, FixedRooms = new List<string> { "R2" } },
+        };
+        var profs = new List<Professor>
+        {
+            new() { Id = "P1", Name = "P1" },
+            new() { Id = "P2", Name = "P2" },
+        };
+        var rooms = new List<Room>
+        {
+            new() { Id = "R1", Name = "R1" },
+            new() { Id = "R2", Name = "R2" },
+        };
+
+        var build = ModelBuilder.Build(courses, profs, rooms);
+        var solver = new CpSolver();
+        Assert.True(solver.Solve(build.Model) is CpSolverStatus.Feasible or CpSolverStatus.Optimal);
     }
 }

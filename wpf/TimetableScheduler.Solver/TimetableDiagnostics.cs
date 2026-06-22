@@ -333,6 +333,9 @@ public static class TimetableDiagnostics
 
             if (CrossFixedConflict(cross, groups))
                 Add(issues, "IE-034", $"{InputCrossLocation(cross)}: Cross와 시간고정 조건을 동시에 만족할 수 없습니다. Cross 또는 시간고정을 수정하세요.");
+
+            if (CrossFixedRoomConflict(cross, groups))
+                Add(issues, "IE-039", $"{InputCrossLocation(cross)}: Cross 과목들이 공통 고정 강의실을 사용하므로 같은 시간에 배치할 수 없습니다. Cross 또는 고정 강의실을 수정하세요.");
         }
     }
 
@@ -372,6 +375,9 @@ public static class TimetableDiagnostics
 
             if (CrossFixedConflict(cross, groups))
                 Add(issues, "GE-020", $"{cross.Id} Cross와 시간고정 조건이 충돌합니다. Cross를 해제하거나 시간고정을 수정하세요.");
+
+            if (CrossFixedRoomConflict(cross, groups))
+                Add(issues, "GE-028", $"{cross.Id} Cross 과목들이 공통 고정 강의실을 사용하므로 같은 시간에 배치할 수 없습니다. Cross를 해제하거나 고정 강의실을 수정하세요.");
         }
     }
 
@@ -501,6 +507,25 @@ public static class TimetableDiagnostics
             var right = second[(index + 1) % second.Count];
             if (!left.IsFixed || !right.IsFixed) continue;
             if (!SlotSet(left.FixedSlots).SetEquals(right.FixedSlots))
+                return true;
+        }
+        return false;
+    }
+
+    private static bool CrossFixedRoomConflict(CrossGroup cross, IReadOnlyDictionary<string, List<Course>> groups)
+    {
+        if (cross.BaseIds.Count != 2) return false;
+        if (!groups.TryGetValue(cross.BaseIds[0], out var first)) return false;
+        if (!groups.TryGetValue(cross.BaseIds[1], out var second)) return false;
+        if (first.Count != second.Count || first.Count == 0) return false;
+
+        first = first.OrderBy(course => course.Section).ToList();
+        second = second.OrderBy(course => course.Section).ToList();
+        for (var index = 0; index < first.Count; index++)
+        {
+            var left = first[index];
+            var right = second[(index + 1) % second.Count];
+            if (left.FixedRooms.Intersect(right.FixedRooms, StringComparer.Ordinal).Any())
                 return true;
         }
         return false;
