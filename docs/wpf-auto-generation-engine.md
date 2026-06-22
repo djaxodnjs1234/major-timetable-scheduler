@@ -20,7 +20,7 @@
 이 흐름에서 중요한 점은 다음 두 가지입니다.
 
 - 솔버는 DB를 직접 수정하지 않습니다.
-- 솔버가 받는 입력은 항상 `WorkspaceService.Snapshot()`으로 복사된 값입니다.
+- 솔버가 받는 입력은 항상 `WorkspaceService.SchedulingSnapshot()`으로 복사·정규화한 값입니다.
 
 즉, 화면이 들고 있는 편집 상태와 솔버 계산 상태를 분리하는 구조입니다.
 
@@ -68,7 +68,7 @@
 - `CrossGroups`
 - `RetakeScenarios`
 
-이 스냅샷은 `WorkspaceService.Snapshot()`에서 만들어집니다. 따라서 솔버는 계산 도중 화면의 실시간 수정에 영향을 받지 않습니다.
+이 스냅샷은 `WorkspaceService.SchedulingSnapshot()`에서 만들어집니다. 따라서 솔버는 계산 도중 화면의 실시간 수정에 영향을 받지 않습니다.
 
 그 다음 `Task.Run(...)`으로 백그라운드에서 `DiverseSolver.Solve(...)`를 실행합니다.
 
@@ -148,10 +148,11 @@
 | HC-15 | `BlockHcs.AddHc15_SectionBackToBack` | 같은 교수 2분반 인접 |
 | HC-16 | `GroupingHcs.AddHc16_Cross` | Cross cyclic shift |
 | HC-17 | `GroupingHcs.AddHc17_Retake` | 재수강 안전 분반 |
-| HC-18 | `BlockHcs.AddHc18_BlockDayGap` | 블록 요일 차 최대 2 |
+| HC-18 | SC-03으로 이동 | 블록 요일 차 선호 조건 |
 | HC-19 | `BlockHcs.AddHc19_Len2StartPeriods` | 2시간 블록 시작 교시 제한 |
 | HC-20 | `BlockHcs.AddHc20_BlockDaysDistinct` | 같은 과목 블록 다른 요일 |
-| HC-21 | `BlockHcs.AddHc21_ProfRoomConsistent` | 교수 자동 배정 방 일관성 |
+| HC-21 | `BlockHcs.AddHc21_ProfRoomEligibility` | 자동 배정 과목에 담당 교수의 허용/불가 강의실 조건 적용 |
+| HC-22 | `BlockHcs.AddHc22_SectionRoomConsistent` | 동일 과목 자동 분반의 공통 강의실 |
 
 ## 6. 소프트 제약과 4단계 lex 솔브
 
@@ -194,7 +195,7 @@
 |---|---|---|
 | SC-01 | 월오전/금오후 회피 | `PenalizedSlots`, `Sc01PenaltyTerm()` |
 | SC-02 | 교수 요일 3일 이하 집중 | `Sc02PenaltyTerm()` |
-| SC-03 | 같은 과목 블록 간격 확보 | `Sc03PenaltyTerm()` |
+| SC-03 | 같은 과목 블록 요일 차 2 선호 | `Sc03PenaltyTerm()` |
 
 각 SC는 phase별로 objective나 bound로 사용됩니다.
 
@@ -313,6 +314,7 @@ StatusMessage = result.Status switch
 | Cross 대상 과목이 없음 | `cross constraint conflict` |
 | Cross 묶인 과목들의 분반 수가 다름 | `cross constraint conflict` |
 | Cross 묶인 과목들의 총 시수가 다름 | `cross constraint conflict` |
+| Cross 대응 분반이 공통 고정 강의실을 사용함 | `GE-028` |
 
 아무것도 잡지 못하면 아래 문구가 나옵니다.
 
@@ -329,11 +331,12 @@ INFEASIBLE: detailed reason unavailable
 - 같은 base 과목 분반끼리의 직접 충돌 (`HC-08`)
 - 같은 학년 수업끼리의 직접 충돌 (`HC-11`)
 - 팀티칭 보조 교수(coteach) 쪽 불가 시간/중복 충돌 (`HC-02`, `HC-03` 관련)
-- 블록은 합이 맞지만 시작 교시/요일 제약 때문에 실제 배치가 불가능한 경우 (`HC-06`, `HC-18`, `HC-19`, `HC-20`)
+- 블록은 합이 맞지만 시작 교시/요일 제약 때문에 실제 배치가 불가능한 경우 (`HC-06`, `HC-19`, `HC-20`)
 - 같은 교수 2분반 인접 배치 실패 (`HC-15`)
 - Cross의 실제 시간 정렬 실패 (`HC-16`, `HC-19`)
 - 재수강 안전 분반 확보 실패 (`HC-17`)
-- 여러 자동배정 과목을 같은 방 후보 안에서 일관되게 묶지 못하는 경우 (`HC-21`)
+- Cross 대응 분반이 공통 고정 강의실을 사용해 같은 시간에 같은 방을 점유하는 경우 (`GE-028`)
+- 동일 과목 자동 분반의 공통 강의실 조건을 포함한 전체 강의실 자원 경쟁 (`HC-22`)
 - 개별 과목은 가능해 보여도 전체 자원 경쟁 때문에 동시에 불가능한 집합적 실패
 
 즉, **현재 INFEASIBLE 메시지는 “설명 가능한 대표 원인”은 보여주지만, 모든 하드 제약 위반 원인을 완전하게 커버하지는 않습니다.**
@@ -385,7 +388,7 @@ INFEASIBLE: detailed reason unavailable
 | 단계 | 담당 |
 |---|---|
 | 입력 편집과 옵션 수집 | `DataInputViewModel` |
-| 현재 데이터 고정 | `WorkspaceService.Snapshot()` |
+| 현재 데이터 고정 | `WorkspaceService.SchedulingSnapshot()` |
 | 비동기 솔브 실행 | `SolverService.SolveAsync()` |
 | HC 모델 생성 | `ModelBuilder` + `BasicHcs` + `BlockHcs` + `GroupingHcs` |
 | SC 단계별 최적화와 다양한 해 생성 | `DiverseSolver.Solve()` |

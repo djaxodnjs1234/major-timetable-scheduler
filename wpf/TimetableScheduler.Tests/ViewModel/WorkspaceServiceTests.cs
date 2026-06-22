@@ -73,6 +73,39 @@ public class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void UpdateCourse_DetachesCallerOwnedCourse()
+    {
+        var ws = new WorkspaceService(_repo);
+        ws.AddCourse(new Course
+        {
+            Id = "C",
+            Name = "old",
+            Grade = 1,
+            HoursPerWeek = 1,
+            ProfessorId = "P1",
+            BlockStructure = new List<int> { 1 },
+        });
+        var editorCourse = new Course
+        {
+            Id = "C",
+            Name = "new",
+            Grade = 2,
+            HoursPerWeek = 3,
+            ProfessorId = "P2",
+            BlockStructure = new List<int> { 1, 2 },
+        };
+
+        ws.UpdateCourse(editorCourse);
+        editorCourse.ProfessorId = "";
+        editorCourse.BlockStructure.Clear();
+
+        var saved = Assert.Single(ws.Courses);
+        Assert.Equal("P2", saved.ProfessorId);
+        Assert.Equal(new[] { 1, 2 }, saved.BlockStructure);
+        Assert.NotSame(editorCourse, saved);
+    }
+
+    [Fact]
     public void AddProfessor_PersistsImmediately()
     {
         var ws = new WorkspaceService(_repo);

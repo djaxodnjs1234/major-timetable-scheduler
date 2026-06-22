@@ -306,11 +306,24 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             return;
         }
 
-        _workspace.AddCrossGroup(new CrossGroup
+        var cross = new CrossGroup
         {
             Id = NextCrossId(),
             BaseIds = chosen,
-        });
+        };
+        var crossRoomError = TimetableDiagnostics.GetInputErrors(
+                _workspace.Courses,
+                _workspace.Professors,
+                _workspace.Rooms,
+                new[] { cross })
+            .FirstOrDefault(diagnostic => diagnostic.Id == "IE-039");
+        if (crossRoomError != null)
+        {
+            CrossStatusMessage = crossRoomError.ToString();
+            return;
+        }
+
+        _workspace.AddCrossGroup(cross);
         CrossStatusMessage = "Cross를 추가했습니다.";
         RebuildCrossManager(clearCandidateSelection: true);
         RebuildCourseGroups();
@@ -584,8 +597,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             {
                 sec.FixedSlots.Clear();
             }
-            _workspace.UpdateCourse(sec);
         }
+        _workspace.UpdateCourses(item.Sections);
         item.IsEditing = false;
     }
 
@@ -796,6 +809,21 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     [RelayCommand(CanExecute = nameof(CanGoToSelection))]
     private void GoToSelection()
     {
+        var unsavedEditLabels = GetUnsavedEditLabels();
+        if (unsavedEditLabels.Count > 0)
+        {
+            var scheduleSnapshot = _workspace.SchedulingSnapshot();
+            var inputErrors = TimetableDiagnostics.GetInputErrors(
+                scheduleSnapshot.Courses,
+                scheduleSnapshot.Professors,
+                scheduleSnapshot.Rooms,
+                scheduleSnapshot.CrossGroups,
+                hasUnsavedEdits: true,
+                unsavedEditSummary: string.Join(", ", unsavedEditLabels));
+            StatusMessage = FormatDiagnostics("입력 오류", inputErrors);
+            return;
+        }
+
         GoToSelectionRequested?.Invoke(this, EventArgs.Empty);
     }
     private bool CanGoToSelection() => IsSolveComplete;

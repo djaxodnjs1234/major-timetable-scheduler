@@ -173,6 +173,7 @@ public partial class DataInputView : UserControl
         var expander = FindAncestor<Expander>(dep);
         if (expander == null) return;
 
+        UpdateSectionProfessorSelectionSources(expander);
         Vm.HandleCourseHoursChanged(item, weeklyHours);
         RefreshCourseBlockStructureCombo(expander, item);
         RefreshFixedTimeCheckBox(expander);
@@ -275,6 +276,28 @@ public partial class DataInputView : UserControl
         return null;
     }
 
+    private static IEnumerable<T> FindDescendants<T>(DependencyObject start) where T : DependencyObject
+    {
+        int count = System.Windows.Media.VisualTreeHelper.GetChildrenCount(start);
+        for (int i = 0; i < count; i++)
+        {
+            var child = System.Windows.Media.VisualTreeHelper.GetChild(start, i);
+            if (child is T match)
+                yield return match;
+            foreach (var descendant in FindDescendants<T>(child))
+                yield return descendant;
+        }
+    }
+
+    private static void UpdateSectionProfessorSelectionSources(Expander expander)
+    {
+        foreach (var combo in FindDescendants<ComboBox>(expander)
+            .Where(combo => combo.SelectedValuePath == "Id" && combo.Items.OfType<Professor>().Any()))
+        {
+            UpdateCourseSharedSelectionSource(combo);
+        }
+    }
+
     private static CourseGroupItem? FindCourseGroupItem(DependencyObject start)
     {
         var current = System.Windows.Media.VisualTreeHelper.GetParent(start);
@@ -296,6 +319,8 @@ public partial class DataInputView : UserControl
         var expander = FindAncestor<Expander>(dep);
         if (expander?.FindName("CourseTypeComboBox") is ComboBox courseTypeCombo)
             UpdateCourseSharedSelectionSource(courseTypeCombo);
+        if (expander != null)
+            UpdateSectionProfessorSelectionSources(expander);
 
         var rep = item.Sections[0];
         if (rep.BlockStructure.Count > 0 && rep.BlockStructure.Sum() != rep.HoursPerWeek)

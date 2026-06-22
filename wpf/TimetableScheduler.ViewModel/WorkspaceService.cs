@@ -162,7 +162,21 @@ public sealed class WorkspaceService
     {
         var idx = IndexOfCourse(c.Id, c.Section);
         if (idx < 0) return;
-        Courses[idx] = c;
+        Courses[idx] = CloneCourse(c);
+        Persist();
+    }
+
+    public void UpdateCourses(IEnumerable<Course> courses)
+    {
+        var updates = courses.ToList();
+        if (updates.Count == 0) return;
+
+        foreach (var course in updates)
+        {
+            var idx = IndexOfCourse(course.Id, course.Section);
+            if (idx >= 0)
+                Courses[idx] = CloneCourse(course);
+        }
         Persist();
     }
 
