@@ -374,18 +374,27 @@
                                                Foreground="{StaticResource OnSurfaceVariant}"
                                                Margin="0,2,0,0" />
                                 </StackPanel>
-                                <TextBlock Text="담당교수"
+                                <TextBlock Text="분반별 담당교수"
                                            FontSize="11" FontWeight="Bold" Margin="0,4,0,4"
                                            Foreground="{StaticResource OnSurfaceVariant}"
                                            Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
-                                <ComboBox x:Name="ProfessorComboBox"
-                                          Height="30" MaxWidth="180" HorizontalAlignment="Left" Padding="6,3"
-                                          ItemsSource="{Binding DataContext.Workspace.Professors, RelativeSource={RelativeSource AncestorType=UserControl}}"
-                                          DisplayMemberPath="Name"
-                                          SelectedValuePath="Id"
-                                          SelectedValue="{Binding ProfessorId, Mode=TwoWay, UpdateSourceTrigger=Explicit}"
-                                          SelectionChanged="OnCourseSharedSelectionChanged"
-                                          Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
+                                <ItemsControl ItemsSource="{Binding DataContext.Sections, RelativeSource={RelativeSource AncestorType=Expander}}"
+                                              Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}">
+                                    <ItemsControl.ItemTemplate>
+                                        <DataTemplate>
+                                            <StackPanel Orientation="Horizontal" Margin="0,0,0,4">
+                                                <TextBlock Width="52"
+                                                           VerticalAlignment="Center"
+                                                           Text="{Binding SectionLabel, StringFormat={}{0}분반}" />
+                                                <ComboBox Height="30" Width="180" Padding="6,3"
+                                                          ItemsSource="{Binding DataContext.Workspace.Professors, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                          DisplayMemberPath="Name"
+                                                          SelectedValuePath="Id"
+                                                          SelectedValue="{Binding ProfessorId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                            </StackPanel>
+                                        </DataTemplate>
+                                    </ItemsControl.ItemTemplate>
+                                </ItemsControl>
 
                                 <TextBlock Text="팀티칭 교수"
                                            FontSize="11" FontWeight="Bold" Margin="0,12,0,4"
@@ -423,7 +432,7 @@
                                 <ctrl:CheckListPickerControl x:Name="GroupUnavailableRoomsPicker"
                                                              Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
 
-                                <TextBlock Text="고정 강의실(다중 강의실 가능)"
+                                <TextBlock Text="강의실 (다중 선택 가능)"
                                            FontSize="11" FontWeight="Bold" Margin="0,12,0,4"
                                            Foreground="{StaticResource OnSurfaceVariant}"
                                            Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
@@ -784,7 +793,7 @@
                                 <TextBlock Grid.Column="8" Text="블록" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                                 <TextBlock Grid.Column="9" Text="팀티칭 교수" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                                 <TextBlock Grid.Column="10" Text="불가 강의실" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="11" Text="고정 강의실" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="11" Text="강의실" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                                 <TextBlock Grid.Column="12" Text="시간 고정" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                             </Grid>
                             <ItemsControl ItemsSource="{Binding CourseGroups}"

@@ -249,7 +249,6 @@ public sealed class WorkspaceService
                 section.Grade = rep.Grade;
                 section.HoursPerWeek = rep.HoursPerWeek;
                 section.CourseType = rep.CourseType;
-                section.ProfessorId = rep.ProfessorId;
                 section.Department = rep.Department;
                 section.IsFixed = rep.IsFixed;
                 if (!section.IsFixed)

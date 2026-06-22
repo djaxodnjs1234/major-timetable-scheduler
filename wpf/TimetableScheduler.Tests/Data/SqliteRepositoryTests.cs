@@ -113,6 +113,33 @@ public class SqliteRepositoryTests : IDisposable
     }
 
     [Fact]
+    public void SaveAll_LoadAll_PreservesDifferentProfessorsForSameCourseIdSections()
+    {
+        var repo = new SqliteRepository(_dbPath);
+        repo.EnsureCreated();
+
+        repo.SaveAll(new AppData(
+            Courses: new List<Course>
+            {
+                new() { Id = "X", Name = "테스트과목", Grade = 2, HoursPerWeek = 1, CourseType = "전필", ProfessorId = "P1", Section = 1 },
+                new() { Id = "X", Name = "테스트과목", Grade = 2, HoursPerWeek = 1, CourseType = "전필", ProfessorId = "P2", Section = 2 },
+            },
+            Professors: new List<Professor>
+            {
+                new() { Id = "P1", Name = "교수 A" },
+                new() { Id = "P2", Name = "교수 B" },
+            },
+            Rooms: new List<Room>(),
+            CrossGroups: new List<CrossGroup>(),
+            RetakeScenarios: new List<RetakeScenario>()));
+
+        var loaded = repo.LoadAll().Courses.OrderBy(course => course.Section).ToList();
+        Assert.Equal(2, loaded.Count);
+        Assert.Equal("P1", loaded[0].ProfessorId);
+        Assert.Equal("P2", loaded[1].ProfessorId);
+    }
+
+    [Fact]
     public void EnsureCreated_OnOldRoomSchema_AddsImportedFlagDefaultFalse()
     {
         using (var conn = new Microsoft.Data.Sqlite.SqliteConnection(
@@ -164,6 +191,46 @@ public class SqliteRepositoryTests : IDisposable
             new List<TimetableAssignmentRow>(), SnapshotJson: "{\"snapshot\":true}"));
         Assert.Equal("{\"snapshot\":true}",
             repo.LoadSavedTimetables().Single(t => t.Name == "new").SnapshotJson);
+    }
+
+    [Fact]
+    public void SavedManualCrossLinks_DoNotPolluteCrossGroupsAndRoundTripAssignmentIds()
+    {
+        var repo = new SqliteRepository(_dbPath);
+        repo.EnsureCreated();
+        repo.SaveAll(new AppData(
+            new List<Course>
+            {
+                new() { Id = "A-01", Name = "A", Grade = 2, HoursPerWeek = 1, CourseType = "전필", ProfessorId = "P1", Section = 1 },
+                new() { Id = "B-01", Name = "B", Grade = 2, HoursPerWeek = 1, CourseType = "전필", ProfessorId = "P2", Section = 1 },
+            },
+            new List<Professor>(),
+            new List<Room>(),
+            new List<CrossGroup>(),
+            new List<RetakeScenario>()));
+
+        repo.UpsertSavedTimetable(new SavedTimetableRecord(
+            "saved-1",
+            "manual-cross",
+            DateTime.Now,
+            new List<TimetableAssignmentRow>(),
+            new[]
+            {
+                new SavedManualCrossLinkRow(
+                    "A-01", 2, "1", 0, 1, "R1",
+                    "B-01", 2, "1", 0, 1, "R2",
+                    "HC11_ONLY_EXCEPTION",
+                    "assign-a",
+                    "assign-b"),
+            }));
+
+        var loadedInputs = repo.LoadAll();
+        Assert.Empty(loadedInputs.CrossGroups);
+
+        var saved = Assert.Single(repo.LoadSavedTimetables());
+        var link = Assert.Single(saved.ManualCrossLinks!);
+        Assert.Equal("assign-a", link.SourceAssignmentId);
+        Assert.Equal("assign-b", link.TargetAssignmentId);
     }
 
     [Fact]

@@ -28,6 +28,7 @@ public static class ModelBuilder
         IReadOnlyList<CrossGroup>? crosses = null,
         IReadOnlyList<RetakeScenario>? retakes = null)
     {
+        ValidateCrossGroups(courses, crosses);
         var model = new CpModel();
         var profMap = professors.ToDictionary(p => p.Id);
 
@@ -84,5 +85,44 @@ public static class ModelBuilder
             Courses = courses,
             Rooms = rooms,
         };
+    }
+
+    private static void ValidateCrossGroups(
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<CrossGroup>? crosses)
+    {
+        if (crosses == null || crosses.Count == 0) return;
+
+        var courseBaseIds = courses
+            .Select(c => DomainHelpers.BaseId(c.Id))
+            .ToHashSet(StringComparer.Ordinal);
+
+        foreach (var cross in crosses)
+        {
+            var rawIds = cross.BaseIds
+                .Select(id => id?.Trim() ?? "")
+                .ToList();
+            if (rawIds.Any(string.IsNullOrWhiteSpace))
+                throw new InvalidOperationException(
+                    $"Invalid CrossGroup '{cross.Id}': BaseIds contains an empty course id.");
+
+            var distinct = rawIds
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            if (distinct.Count != rawIds.Count)
+                throw new InvalidOperationException(
+                    $"Invalid CrossGroup '{cross.Id}': duplicate course id '{rawIds.GroupBy(id => id, StringComparer.Ordinal).First(g => g.Count() > 1).Key}'.");
+
+            if (distinct.Count < 2)
+                throw new InvalidOperationException(
+                    $"Invalid CrossGroup '{cross.Id}': at least two different course base ids are required.");
+
+            var missing = distinct
+                .Where(id => !courseBaseIds.Contains(id))
+                .ToList();
+            if (missing.Count > 0)
+                throw new InvalidOperationException(
+                    $"Invalid CrossGroup '{cross.Id}': unknown course base id(s): {string.Join(", ", missing)}.");
+        }
     }
 }

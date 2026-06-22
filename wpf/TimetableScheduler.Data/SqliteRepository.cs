@@ -45,6 +45,7 @@ public sealed class SqliteRepository
         MigrateRoomMetadata(conn);
         MigrateCoursePkIfNeeded(conn);
         MigrateSavedTimetableSnapshot(conn);
+        MigrateSavedManualCrossAssignmentIds(conn);
     }
 
     private static void MigrateCourseUnavailableRooms(SqliteConnection conn)
@@ -61,6 +62,17 @@ public sealed class SqliteRepository
             .Select(row => (string)row.name);
         if (columns.Contains("SnapshotJson")) return;
         conn.Execute("ALTER TABLE SavedTimetables ADD COLUMN SnapshotJson TEXT");
+    }
+
+    private static void MigrateSavedManualCrossAssignmentIds(SqliteConnection conn)
+    {
+        var columns = conn.Query("PRAGMA table_info(SavedTimetableManualCrossLinks)")
+            .Select(row => (string)row.name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!columns.Contains("SourceAssignmentId"))
+            conn.Execute("ALTER TABLE SavedTimetableManualCrossLinks ADD COLUMN SourceAssignmentId TEXT");
+        if (!columns.Contains("TargetAssignmentId"))
+            conn.Execute("ALTER TABLE SavedTimetableManualCrossLinks ADD COLUMN TargetAssignmentId TEXT");
     }
 
     private static void MigrateProfessorUnavailableRooms(SqliteConnection conn)
@@ -185,6 +197,8 @@ public sealed class SqliteRepository
         public int TargetPeriod { get; set; }
         public string TargetRoomId { get; set; } = "";
         public string PolicyType { get; set; } = "";
+        public string? SourceAssignmentId { get; set; }
+        public string? TargetAssignmentId { get; set; }
     }
 
     public List<SavedTimetableRecord> LoadSavedTimetables()
@@ -209,7 +223,9 @@ public sealed class SqliteRepository
                         r.TargetDay,
                         r.TargetPeriod,
                         r.TargetRoomId,
-                        r.PolicyType))
+                        r.PolicyType,
+                        r.SourceAssignmentId,
+                        r.TargetAssignmentId))
                     .ToList());
 
         return conn.Query<SavedTimetableRow>(
@@ -248,10 +264,12 @@ public sealed class SqliteRepository
             conn.Execute(
                 @"INSERT INTO SavedTimetableManualCrossLinks
                   (Id, SavedTimetableId, SourceCourseId, SourceGrade, SourceSection, SourceDay, SourcePeriod, SourceRoomId,
-                   TargetCourseId, TargetGrade, TargetSection, TargetDay, TargetPeriod, TargetRoomId, PolicyType, CreatedAt)
+                   TargetCourseId, TargetGrade, TargetSection, TargetDay, TargetPeriod, TargetRoomId, PolicyType,
+                   SourceAssignmentId, TargetAssignmentId, CreatedAt)
                   VALUES
                   (@Id, @SavedTimetableId, @SourceCourseId, @SourceGrade, @SourceSection, @SourceDay, @SourcePeriod, @SourceRoomId,
-                   @TargetCourseId, @TargetGrade, @TargetSection, @TargetDay, @TargetPeriod, @TargetRoomId, @PolicyType, @CreatedAt)",
+                   @TargetCourseId, @TargetGrade, @TargetSection, @TargetDay, @TargetPeriod, @TargetRoomId, @PolicyType,
+                   @SourceAssignmentId, @TargetAssignmentId, @CreatedAt)",
                 new
                 {
                     Id = Guid.NewGuid().ToString(),
@@ -269,6 +287,8 @@ public sealed class SqliteRepository
                     link.TargetPeriod,
                     link.TargetRoomId,
                     link.PolicyType,
+                    link.SourceAssignmentId,
+                    link.TargetAssignmentId,
                     CreatedAt = t.CreatedAt.ToString("O"),
                 },
                 tx);

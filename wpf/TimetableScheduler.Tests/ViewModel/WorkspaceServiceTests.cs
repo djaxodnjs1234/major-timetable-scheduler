@@ -173,7 +173,7 @@ public class WorkspaceServiceTests : IDisposable
         Assert.Equal("P2", ws.Courses.Single(course => course.Id == "A-02").ProfessorId);
 
         var normalizedSecond = scheduling.Courses.Single(course => course.Id == "A-02");
-        Assert.Equal("P1", normalizedSecond.ProfessorId);
+        Assert.Equal("P2", normalizedSecond.ProfessorId);
         Assert.Equal(new[] { "R1" }, normalizedSecond.FixedRooms);
     }
 

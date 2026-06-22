@@ -66,8 +66,16 @@ public static class DiverseSolver
             p1.Model.Minimize(term);
             if (!TryGetSolveTimeLimit(options, totalSw, 2d, out var sc01TimeLimit))
                 return Unknown(sc01Bound, sc02Bound, sc03Bound);
-            var s = NewSolver(sc01TimeLimit);
-            var st = SolveWithCancellation(s, p1.Model, cancellationToken);
+            using var s = NewSolver(sc01TimeLimit);
+            CpSolverStatus st;
+            try
+            {
+                st = SolveWithCancellation(s, p1.Model, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return Cancelled(sc01Bound, sc02Bound, sc03Bound);
+            }
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound);
             if (!IsFeasible(st))
@@ -90,8 +98,16 @@ public static class DiverseSolver
             p2.Model.Minimize(term);
             if (!TryGetSolveTimeLimit(options, totalSw, 2d, out var sc02TimeLimit))
                 return Unknown(sc01Bound, sc02Bound, sc03Bound);
-            var s = NewSolver(sc02TimeLimit);
-            var st = SolveWithCancellation(s, p2.Model, cancellationToken);
+            using var s = NewSolver(sc02TimeLimit);
+            CpSolverStatus st;
+            try
+            {
+                st = SolveWithCancellation(s, p2.Model, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return Cancelled(sc01Bound, sc02Bound, sc03Bound);
+            }
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound);
             if (!IsFeasible(st))
@@ -116,8 +132,16 @@ public static class DiverseSolver
             p3.Model.Minimize(term);
             if (!TryGetSolveTimeLimit(options, totalSw, 2d, out var sc03TimeLimit))
                 return Unknown(sc01Bound, sc02Bound, sc03Bound);
-            var s = NewSolver(sc03TimeLimit);
-            var st = SolveWithCancellation(s, p3.Model, cancellationToken);
+            using var s = NewSolver(sc03TimeLimit);
+            CpSolverStatus st;
+            try
+            {
+                st = SolveWithCancellation(s, p3.Model, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return Cancelled(sc01Bound, sc02Bound, sc03Bound);
+            }
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound);
             if (!IsFeasible(st))
@@ -152,8 +176,20 @@ public static class DiverseSolver
                 break;
             attempts++;
 
-            var solver = NewSolver(perSolveTimeLimit, seed: options.BaseSeed + i, randomize: true);
-            var status = SolveWithCancellation(solver, build.Model, cancellationToken);
+            var seed = options.BaseSeed + i;
+            using var solver = NewSolver(
+                perSolveTimeLimit,
+                seed: seed,
+                randomize: true);
+            CpSolverStatus status;
+            try
+            {
+                status = SolveWithCancellation(solver, build.Model, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return Cancelled(sc01Bound, sc02Bound, sc03Bound, attempts);
+            }
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound, attempts);
             lastStatus = StatusName(status);
@@ -185,15 +221,21 @@ public static class DiverseSolver
         CpModel model,
         CancellationToken cancellationToken)
     {
-        if (cancellationToken.IsCancellationRequested)
-            return CpSolverStatus.Unknown;
-        using var registration = cancellationToken.Register(static state =>
-        {
-            if (state is CpSolver cpSolver)
-                cpSolver.StopSearch();
-        }, solver);
+        cancellationToken.ThrowIfCancellationRequested();
+        ValidateModelBeforeSolve(model);
         var status = solver.Solve(model);
+        cancellationToken.ThrowIfCancellationRequested();
         return status;
+    }
+
+    private static void ValidateModelBeforeSolve(CpModel model)
+    {
+        var validationError = model.Validate();
+        if (!string.IsNullOrWhiteSpace(validationError))
+        {
+            throw new InvalidOperationException(
+                $"CP-SAT model validation failed: {validationError}");
+        }
     }
 
     private static DiverseSolverResult Cancelled(
@@ -230,7 +272,10 @@ public static class DiverseSolver
         return true;
     }
 
-    private static CpSolver NewSolver(double? maxTimeSec, int? seed = null, bool randomize = false)
+    private static CpSolver NewSolver(
+        double? maxTimeSec,
+        int? seed = null,
+        bool randomize = false)
     {
         var s = new CpSolver();
         var parts = new List<string>();

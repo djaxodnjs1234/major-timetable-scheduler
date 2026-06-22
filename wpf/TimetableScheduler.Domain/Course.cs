@@ -11,6 +11,10 @@ public class Course
 
     public string ProfessorId { get; set; } = "";
     public int Section { get; set; } = 1;
+    public string SectionLabel =>
+        Section > 0 && Section <= 26
+            ? ((char)('A' + Section - 1)).ToString()
+            : Section.ToString();
     public string Department { get; set; } = "";
 
     public List<string> FixedRooms { get; set; } = new();

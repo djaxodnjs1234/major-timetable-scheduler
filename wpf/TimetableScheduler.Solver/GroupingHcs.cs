@@ -56,13 +56,26 @@ public static class GroupingHcs
         {
             int G = sc.CurrentGrade;
             string R = sc.RetakeBaseId;
+            if (string.IsNullOrWhiteSpace(R))
+                throw new InvalidOperationException(
+                    $"Invalid retake scenario: CurrentGrade={G}, RetakeBaseId is empty.");
+
             if (!baseGroups.TryGetValue(R, out var sections) || sections.Count == 0)
-                continue;
+                throw new InvalidOperationException(
+                    $"Invalid retake scenario: CurrentGrade={G}, RetakeBaseId='{R}' does not match any course base id.");
+
+            sections = sections
+                .GroupBy(c => c.Id, StringComparer.Ordinal)
+                .Select(g => g.First())
+                .OrderBy(c => c.Section)
+                .ThenBy(c => c.Id, StringComparer.Ordinal)
+                .ToList();
 
             var majors = courses.Where(c =>
                 c.Grade == G && c.CourseType == "전필"
                 && DomainHelpers.BaseId(c.Id) != R).ToList();
-            if (majors.Count == 0) continue;
+            if (majors.Count == 0)
+                continue;
 
             var safeVars = new List<BoolVar>();
             foreach (var s in sections)

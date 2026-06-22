@@ -80,6 +80,22 @@ public class XlsxLoaderTests
     }
 
     [Fact]
+    public void Load_ExplicitSectionIds_PreserveDifferentSectionProfessors()
+    {
+        var path = CreateWorkbook(
+            ("2", "\uD544\uC218", "\uD14C\uC2A4\uD2B8\uACFC\uBAA9", "3", "GA1004-01", "\uAD50\uC218 A", "\uCEF4\uD4E8\uD130", "\uC6D423/A101"),
+            ("2", "\uD544\uC218", "\uD14C\uC2A4\uD2B8\uACFC\uBAA9", "3", "GA1004-02", "\uAD50\uC218 B", "\uCEF4\uD4E8\uD130", "\uD65423/A102"));
+
+        var data = XlsxLoader.Load(path);
+
+        var bySection = data.Courses.ToDictionary(course => course.Section);
+        var professors = data.Professors.ToDictionary(professor => professor.Id, professor => professor.Name);
+        Assert.Equal("\uAD50\uC218 A", professors[bySection[1].ProfessorId]);
+        Assert.Equal("\uAD50\uC218 B", professors[bySection[2].ProfessorId]);
+        Assert.NotEqual(bySection[1].ProfessorId, bySection[2].ProfessorId);
+    }
+
+    [Fact]
     public void Load_MixedCourses_AssignsSequentialImportedBaseIdsFromOne()
     {
         var path = CreateWorkbook(

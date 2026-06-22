@@ -580,47 +580,52 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
-    public void CourseGroup_UsesNonEmptyProfessorFromAnySection()
+    public void CourseGroup_KeepsSectionProfessorsIndependent()
     {
         _workspace.AddProfessor(new Professor { Id = "P1", Name = "Prof One" });
+        _workspace.AddProfessor(new Professor { Id = "P2", Name = "Prof Two" });
         var sectionA = MakeCourse("GA1005-01", 1);
         var sectionB = MakeCourse("GA1005-02", 2);
-        sectionA.ProfessorId = "";
-        sectionB.ProfessorId = "P1";
+        sectionA.ProfessorId = "P1";
+        sectionB.ProfessorId = "P2";
         _workspace.AddCourse(sectionA);
         _workspace.AddCourse(sectionB);
 
         var vm = MakeVm();
 
         var group = Assert.Single(vm.CourseGroups);
-        Assert.Equal("Prof One", group.HeaderProfessor);
+        Assert.Contains("A분반: Prof One", group.HeaderProfessor);
+        Assert.Contains("B분반: Prof Two", group.HeaderProfessor);
         Assert.Equal("P1", group.Sections[0].ProfessorId);
-        Assert.Equal("P1", group.Sections[1].ProfessorId);
+        Assert.Equal("P2", group.Sections[1].ProfessorId);
     }
 
     [Fact]
-    public void SaveGroup_DoesNotPropagateEmptyProfessorOverValidSection()
+    public void SaveGroup_ChangingOneSectionProfessor_DoesNotChangeSiblingSection()
     {
         _workspace.AddProfessor(new Professor { Id = "P1", Name = "Prof One" });
+        _workspace.AddProfessor(new Professor { Id = "P2", Name = "Prof Two" });
+        _workspace.AddProfessor(new Professor { Id = "P3", Name = "Prof Three" });
         var sectionA = MakeCourse("GA1005-01", 1);
         var sectionB = MakeCourse("GA1005-02", 2);
-        sectionA.ProfessorId = "";
-        sectionB.ProfessorId = "P1";
+        sectionA.ProfessorId = "P1";
+        sectionB.ProfessorId = "P2";
         _workspace.AddCourse(sectionA);
         _workspace.AddCourse(sectionB);
 
         var vm = MakeVm();
         var group = Assert.Single(vm.CourseGroups);
-        group.Sections[0].ProfessorId = "";
-        group.Sections[1].ProfessorId = "P1";
+        group.Sections[0].ProfessorId = "P3";
 
         vm.SaveGroupCommand.Execute(group);
 
-        Assert.All(_workspace.Courses, course => Assert.Equal("P1", course.ProfessorId));
+        var saved = _workspace.Courses.OrderBy(course => course.Section).ToList();
+        Assert.Equal("P3", saved[0].ProfessorId);
+        Assert.Equal("P2", saved[1].ProfessorId);
     }
 
     [Fact]
-    public void SaveGroup_DetectsInconsistentNonEmptyProfessors()
+    public void SchedulingSnapshot_PreservesSectionProfessorIds()
     {
         _workspace.AddProfessor(new Professor { Id = "P1", Name = "Prof One" });
         _workspace.AddProfessor(new Professor { Id = "P2", Name = "Prof Two" });
@@ -636,9 +641,10 @@ public class CourseGroupsTests : IDisposable
 
         vm.SaveGroupCommand.Execute(group);
 
-        Assert.Contains("Inconsistent ProfessorId values", vm.LastCourseGroupWarning);
-        Assert.Contains("P1", vm.LastCourseGroupWarning);
-        Assert.Contains("P2", vm.LastCourseGroupWarning);
+        var snapshot = _workspace.SchedulingSnapshot();
+        var saved = snapshot.Courses.OrderBy(course => course.Section).ToList();
+        Assert.Equal("P1", saved[0].ProfessorId);
+        Assert.Equal("P2", saved[1].ProfessorId);
     }
 
     [Fact]
@@ -1300,7 +1306,7 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
-    public async Task Solve_CrossWithLoadedSectionProfessorMismatch_UsesNormalizedSchedulingSnapshot()
+    public void SchedulingSnapshot_WithCrossPreservesLoadedSectionProfessorMismatch()
     {
         _workspace.AddRoom(new Room { Id = "R1", Name = "Room 1" });
         _workspace.AddRoom(new Room { Id = "R2", Name = "Room 2" });
@@ -1347,19 +1353,13 @@ public class CourseGroupsTests : IDisposable
             BlockStructure = new List<int> { 1 },
         });
         _workspace.AddCrossGroup(new CrossGroup { Id = "X001", BaseIds = new List<string> { "A", "B" } });
-        var vm = new DataInputViewModel(_workspace, new SolverService())
-        {
-            TotalSolutions = 1,
-            UseSc01 = false,
-            UseSc02 = false,
-            UseSc03 = false,
-        };
-
-        await vm.SolveCommand.ExecuteAsync(null);
-
-        Assert.True(vm.IsSolveComplete, vm.StatusMessage);
-        Assert.NotEmpty(vm.RankedResults);
-        Assert.DoesNotContain("GE-025", vm.StatusMessage);
+        var snapshot = _workspace.SchedulingSnapshot();
+        var byCourse = snapshot.Courses.ToDictionary(course => course.Id);
+        Assert.Equal("P1", byCourse["A-01"].ProfessorId);
+        Assert.Equal("P2", byCourse["A-02"].ProfessorId);
+        Assert.Equal("P2", byCourse["B-01"].ProfessorId);
+        Assert.Equal("P1", byCourse["B-02"].ProfessorId);
+        Assert.Single(snapshot.CrossGroups);
     }
 
     [Fact]

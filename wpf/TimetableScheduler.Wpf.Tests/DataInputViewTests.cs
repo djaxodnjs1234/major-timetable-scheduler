@@ -337,7 +337,7 @@ public class DataInputViewTests
     }
 
     [Fact]
-    public void ValidSharedComboSelections_SaveToAllSections()
+    public void SectionProfessorCombos_SaveIndependentlyWhileSharedComboSavesToAllSections()
     {
         RunSta(() =>
         {
@@ -391,19 +391,26 @@ public class DataInputViewTests
                 var expander = FindDescendant<Expander>(view, item => item.DataContext == group);
                 Assert.NotNull(expander);
                 expander!.IsExpanded = true;
+                vm.EditCourseCommand.Execute(group);
                 view.UpdateLayout();
 
-                var professorCombo = FindDescendant<ComboBox>(expander, combo => combo.Name == "ProfessorComboBox");
+                var professorCombos = FindDescendants<ComboBox>(expander)
+                    .Where(combo => combo.SelectedValuePath == "Id"
+                        && combo.Items.OfType<Professor>().Any())
+                    .ToList();
                 var courseTypeCombo = FindDescendant<ComboBox>(expander, combo => combo.Name == "CourseTypeComboBox");
-                Assert.NotNull(professorCombo);
+                Assert.Equal(2, professorCombos.Count);
                 Assert.NotNull(courseTypeCombo);
 
-                professorCombo!.SelectedValue = "P2";
+                professorCombos[0].SelectedValue = "P2";
+                professorCombos[1].SelectedValue = "P1";
                 courseTypeCombo!.SelectedItem = "전선";
                 view.UpdateLayout();
                 vm.SaveGroupCommand.Execute(group);
 
-                Assert.All(workspace.Courses, course => Assert.Equal("P2", course.ProfessorId));
+                var saved = workspace.Courses.OrderBy(course => course.Section).ToList();
+                Assert.Equal("P2", saved[0].ProfessorId);
+                Assert.Equal("P1", saved[1].ProfessorId);
                 Assert.All(workspace.Courses, course => Assert.Equal("전선", course.CourseType));
 
                 window.Close();

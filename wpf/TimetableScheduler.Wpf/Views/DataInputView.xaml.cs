@@ -294,8 +294,6 @@ public partial class DataInputView : UserControl
         if (item == null) return;
 
         var expander = FindAncestor<Expander>(dep);
-        if (expander?.FindName("ProfessorComboBox") is ComboBox professorCombo)
-            UpdateCourseSharedSelectionSource(professorCombo);
         if (expander?.FindName("CourseTypeComboBox") is ComboBox courseTypeCombo)
             UpdateCourseSharedSelectionSource(courseTypeCombo);
 

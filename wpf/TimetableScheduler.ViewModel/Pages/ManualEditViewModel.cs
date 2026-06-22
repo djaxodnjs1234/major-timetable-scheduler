@@ -3066,7 +3066,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             SessionCourses,
             SessionProfessors,
             _workingCrossGroups,
-            strictManualCrossValidation ? IsManualGradeOverlapAllowedStrict : IsManualGradeOverlapAllowed);
+            strictManualCrossValidation ? IsManualGradeOverlapAllowedStrict : IsManualGradeOverlapAllowed)
+            .Where(c => c.Type is not ConflictType.FixedRoomViolation and not ConflictType.ProfAllowedRoomViolation)
+            .ToList();
 
     private void ClearSelectionCore()
     {

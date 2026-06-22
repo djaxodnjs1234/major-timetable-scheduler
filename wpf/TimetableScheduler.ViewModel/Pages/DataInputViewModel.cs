@@ -561,7 +561,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         LastCourseGroupWarning = "";
         OnPropertyChanged(nameof(LastCourseGroupWarning));
         PromoteMissingSharedValues(item.Sections, promoteListValues: false);
-        DetectProfessorConflict("SaveGroup", item.BaseId, item.Sections);
         var rep = item.Sections[0];
         foreach (var sec in item.Sections)
         {
@@ -571,7 +570,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 sec.Grade = rep.Grade;
                 sec.HoursPerWeek = rep.HoursPerWeek;
                 sec.CourseType = rep.CourseType;
-                sec.ProfessorId = rep.ProfessorId;
                 sec.Department = rep.Department;
                 sec.IsFixed = rep.IsFixed;
                 if (!sec.IsFixed)
@@ -992,7 +990,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             var sections = g.OrderBy(c => c.Section).Select(CloneCourse).ToList();
 
             PromoteMissingSharedValues(sections);
-            DetectProfessorConflict("RebuildCourseGroups", g.Key, sections);
             var rep = sections[0];
             var fixedAny = sections.Any(c => c.IsFixed);
             var secPart = sections.Count > 1
@@ -1010,7 +1007,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 HeaderGrade = AcademicLevels.DisplayName(rep.Grade),
                 HeaderHours = $"{rep.HoursPerWeek}시간",
                 HeaderSectionInfo = $"{sections.Count}개",
-                HeaderProfessor = CourseDisplayName(rep.ProfessorId, profNames),
+                HeaderProfessor = FormatSectionProfessors(sections, profNames),
                 HeaderBlockStructure = FormatBlocks(rep),
                 HeaderUnavailableRooms = FormatCourseNames(rep.UnavailableRooms, roomNames),
                 HeaderFixedRooms = FormatCourseNames(rep.FixedRooms, roomNames),
@@ -1030,10 +1027,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     {
         if (sections.Count == 0) return;
         var rep = sections[0];
-
-        var professorId = FirstNonEmpty(sections.Select(s => s.ProfessorId));
-        if (string.IsNullOrWhiteSpace(rep.ProfessorId) && professorId != null)
-            rep.ProfessorId = professorId;
 
         var courseType = FirstNonEmpty(sections.Select(s => s.CourseType));
         if (string.IsNullOrWhiteSpace(rep.CourseType) && courseType != null)
@@ -1062,19 +1055,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             if (coteachProfs != null)
                 rep.CoteachProfs = new List<string>(coteachProfs);
         }
-    }
-
-    private void DetectProfessorConflict(string context, string baseId, IReadOnlyList<Course> sections)
-    {
-        var nonEmptyProfessorIds = sections
-            .Select(s => s.ProfessorId)
-            .Where(id => !string.IsNullOrWhiteSpace(id))
-            .Distinct(StringComparer.Ordinal)
-            .ToList();
-        if (nonEmptyProfessorIds.Count <= 1) return;
-
-        LastCourseGroupWarning = $"Inconsistent ProfessorId values in {baseId}: {string.Join(", ", nonEmptyProfessorIds)}";
-        OnPropertyChanged(nameof(LastCourseGroupWarning));
     }
 
     private static string? FirstNonEmpty(IEnumerable<string> values) =>
@@ -1298,6 +1278,29 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     private static string CourseDisplayName(string id, IReadOnlyDictionary<string, string> names) =>
         string.IsNullOrWhiteSpace(id) ? "" : names.TryGetValue(id, out var name) ? name : id;
+
+    private static string FormatSectionProfessors(IReadOnlyList<Course> sections, IReadOnlyDictionary<string, string> names)
+    {
+        if (sections.Count == 0) return "";
+        var professorIds = sections
+            .Select(section => section.ProfessorId)
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+        if (professorIds.Count == 0) return "";
+        if (sections.Count == 1 || professorIds.Count == 1)
+            return CourseDisplayName(professorIds[0], names);
+
+        return string.Join(", ", sections
+            .OrderBy(section => section.Section)
+            .Select(section =>
+            {
+                var professor = CourseDisplayName(section.ProfessorId, names);
+                return string.IsNullOrWhiteSpace(professor)
+                    ? $"{SectionLetter(section.Section)}분반: 없음"
+                    : $"{SectionLetter(section.Section)}분반: {professor}";
+            }));
+    }
 
     private static string FormatNames(IReadOnlyList<string> ids, IReadOnlyDictionary<string, string> names) =>
         ids.Count == 0 ? "-" : string.Join(", ", ids.Select(id => DisplayName(id, names)));

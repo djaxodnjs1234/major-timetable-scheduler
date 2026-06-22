@@ -171,6 +171,15 @@ public class ManualEditViewModelTests : IDisposable
         field.SetValue(vm, assignments.ToList());
     }
 
+    private static IReadOnlyList<SolutionAssignment> WorkingAssignments(ManualEditViewModel vm)
+    {
+        var field = typeof(ManualEditViewModel).GetField(
+            "_working",
+            System.Reflection.BindingFlags.NonPublic | System.Reflection.BindingFlags.Instance);
+        Assert.NotNull(field);
+        return Assert.IsAssignableFrom<IReadOnlyList<SolutionAssignment>>(field.GetValue(vm));
+    }
+
     private static void AddWorkingCrossLink(
         ManualEditViewModel vm,
         ManualEditViewModel.ManualCrossLink link)
@@ -2957,7 +2966,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void FixedRoomConflictDisplay_UsesRoomNames()
+    public void FixedRoomConflictDisplay_IsSuppressedInManualEdit()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         var course = _ws.Courses.Single(c => c.Id == "X-01");
@@ -2966,11 +2975,7 @@ public class ManualEditViewModelTests : IDisposable
         vm.LoadFromSolution(MakeSolution(
             new SolutionAssignment("X-01", 0, 1, "R2")));
 
-        var conflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.FixedRoomViolation));
-        Assert.Contains("강의실1", conflict.DisplayDescription);
-        Assert.Contains("강의실2", conflict.DisplayDescription);
-        Assert.DoesNotContain("FixedRoomViolation", conflict.DisplayDescription);
-        Assert.DoesNotContain("HC-", conflict.DisplayDescription);
+        Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.FixedRoomViolation);
     }
 
     [Fact]
@@ -7544,6 +7549,118 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
+    public void RoomChange_FixedRoomCourse_AllowsNonFixedRoomAndUpdatesAllPeriodsAndViews()
+    {
+        var vm = BuildFixedTwoHourRoomChangeVm();
+
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal("강의실을 변경했습니다.", vm.RoomChangeStatusMessage);
+        Assert.All(
+            vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"),
+            cell => Assert.Equal(new[] { "R2" }, cell.Assignment.Rooms));
+        var roomCell = Assert.Single(vm.RoomViews.Single(view => view.Id == "R2").Grid.Cells
+            .Where(cell => cell.Items.Any(item => item.CourseId == "X-01")));
+        Assert.Equal(1, roomCell.Period);
+        Assert.Equal(2, roomCell.Items.Single(item => item.CourseId == "X-01").RowSpan);
+        Assert.Equal(new[] { 1, 2 }, WorkingAssignments(vm)
+            .Where(a => a.CourseId == "X-01" && a.RoomId == "R2")
+            .Select(a => a.Period)
+            .OrderBy(period => period)
+            .ToArray());
+        Assert.Equal(new[] { "R2" }, vm.SelectedAssignment!.Rooms);
+        Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.FixedRoomViolation);
+    }
+
+    [Fact]
+    public void RoomChange_CourseUnavailableRoom_BlocksChange()
+    {
+        _ws.Courses.Single(c => c.Id == "X-01").UnavailableRooms = new List<string> { "R2" };
+        var vm = BuildFixedTwoHourRoomChangeVm();
+
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Contains("사용할 수 없습니다", vm.RoomChangeStatusMessage);
+        Assert.All(
+            vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"),
+            cell => Assert.Equal(new[] { "R1" }, cell.Assignment.Rooms));
+    }
+
+    [Fact]
+    public void RoomChange_RoomConflict_BlocksChange()
+    {
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "다른교수" });
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "다른수업", Grade = 3, HoursPerWeek = 1, ProfessorId = "P2" });
+        var vm = BuildFixedTwoHourRoomChangeVm(new SolutionAssignment("Y-01", 0, 1, "R2"));
+
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal("해당 시간에 이미 사용 중인 강의실입니다.", vm.RoomChangeStatusMessage);
+        Assert.All(
+            vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"),
+            cell => Assert.Equal(new[] { "R1" }, cell.Assignment.Rooms));
+    }
+
+    [Fact]
+    public void RoomChange_ProfessorAllowedRoomRestriction_DoesNotBlockManualChange()
+    {
+        _ws.Professors.Single(p => p.Id == "P1").AllowedRooms = new List<string> { "R1" };
+        var vm = BuildFixedTwoHourRoomChangeVm();
+
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        Assert.Equal("강의실을 변경했습니다.", vm.RoomChangeStatusMessage);
+        Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.ProfAllowedRoomViolation);
+        Assert.All(
+            vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"),
+            cell => Assert.Equal(new[] { "R2" }, cell.Assignment.Rooms));
+    }
+
+    [Fact]
+    public void RoomChange_UndoRedo_RestoresOldAndNewRooms()
+    {
+        var vm = BuildFixedTwoHourRoomChangeVm();
+
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+        vm.UndoCommand.Execute(null);
+
+        Assert.All(
+            vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"),
+            cell => Assert.Equal(new[] { "R1" }, cell.Assignment.Rooms));
+
+        vm.RedoCommand.Execute(null);
+
+        Assert.All(
+            vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"),
+            cell => Assert.Equal(new[] { "R2" }, cell.Assignment.Rooms));
+    }
+
+    [Fact]
+    public void RoomChange_SaveAndReload_PreservesChangedRoom()
+    {
+        var vm = BuildFixedTwoHourRoomChangeVm();
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        vm.SaveName = "changed-room";
+        vm.SaveTimetableCommand.Execute(null);
+
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "changed-room"));
+        Assert.All(saved.Assignments.Where(a => a.CourseId == "X-01"), row => Assert.Equal("R2", row.RoomId));
+
+        var reloaded = _sp.GetRequiredService<ManualEditViewModel>();
+        reloaded.LoadFromSavedTimetable(saved);
+        Assert.All(
+            reloaded.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"),
+            cell => Assert.Equal(new[] { "R2" }, cell.Assignment.Rooms));
+    }
+
+    [Fact]
     public void ManualEditDisplay_StripsHcCodeFromInspectorMessages()
     {
         var text = ManualEditViewModel.StripConstraintCodeForDisplay(
@@ -7765,6 +7882,25 @@ public class ManualEditViewModelTests : IDisposable
         vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
         var assignment = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01").Assignment;
         vm.SelectCell(0, 1, 2, 0, assignment);
+        return vm;
+    }
+
+    private ManualEditViewModel BuildFixedTwoHourRoomChangeVm(params SolutionAssignment[] extraAssignments)
+    {
+        _ws.Courses.Single(c => c.Id == "X-01").FixedRooms = new List<string> { "R1" };
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        var assignments = new List<SolutionAssignment>
+        {
+            new("X-01", 0, 1, "R1"),
+            new("X-01", 0, 2, "R1"),
+        };
+        assignments.AddRange(extraAssignments);
+        vm.LoadFromSolution(MakeSolution(assignments.ToArray()));
+        var cell = vm.Grid.Cells
+            .Where(c => c.Assignment.CourseId == "X-01")
+            .OrderBy(c => c.Period)
+            .First();
+        vm.SelectCell(cell.Day, cell.Period, cell.Grade, cell.SubColumnIdx, cell.Assignment);
         return vm;
     }
 

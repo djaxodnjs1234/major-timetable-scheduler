@@ -72,6 +72,8 @@ CREATE TABLE IF NOT EXISTS SavedTimetableManualCrossLinks (
     TargetPeriod    INTEGER NOT NULL,
     TargetRoomId    TEXT NOT NULL,
     PolicyType      TEXT NOT NULL,
+    SourceAssignmentId TEXT NULL,
+    TargetAssignmentId TEXT NULL,
     CreatedAt       TEXT NOT NULL
 );
 ";

@@ -196,6 +196,64 @@ public class HcCoverageTests
     }
 
     [Fact]
+    public void CrossGroup_WithUnknownBaseId_ThrowsManagedValidationError()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "A-01", Name = "A", Grade = 1, Section = 1, HoursPerWeek = 1, ProfessorId = "PA" },
+            new() { Id = "B-01", Name = "B", Grade = 1, Section = 1, HoursPerWeek = 1, ProfessorId = "PB" },
+        };
+        var profs = new List<Professor>
+        {
+            new() { Id = "PA", Name = "PA" },
+            new() { Id = "PB", Name = "PB" },
+        };
+        var rooms = new List<Room> { new() { Id = "R1", Name = "R1" } };
+        var crosses = new List<CrossGroup>
+        {
+            new() { Id = "manual-assignment-id-looking-row", BaseIds = new List<string> { "A", "missing-assignment-id" } },
+        };
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            ModelBuilder.Build(courses, profs, rooms, crosses));
+        Assert.Contains("unknown course base id", ex.Message);
+        Assert.Contains("missing-assignment-id", ex.Message);
+    }
+
+    [Fact]
+    public void CrossGroup_WithDuplicateBaseId_ThrowsManagedValidationError()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "A-01", Name = "A", Grade = 1, Section = 1, HoursPerWeek = 1, ProfessorId = "PA" },
+        };
+        var profs = new List<Professor> { new() { Id = "PA", Name = "PA" } };
+        var rooms = new List<Room> { new() { Id = "R1", Name = "R1" } };
+        var crosses = new List<CrossGroup>
+        {
+            new() { Id = "dup", BaseIds = new List<string> { "A", "A" } },
+        };
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            ModelBuilder.Build(courses, profs, rooms, crosses));
+        Assert.Contains("duplicate course id", ex.Message);
+    }
+
+    [Fact]
+    public void CrossGroup_WithEmptyBaseId_ThrowsManagedValidationError()
+    {
+        var (courses, profs, rooms) = MakeBaseSetup();
+        var crosses = new List<CrossGroup>
+        {
+            new() { Id = "empty", BaseIds = new List<string> { "X", "" } },
+        };
+
+        var ex = Assert.Throws<InvalidOperationException>(() =>
+            ModelBuilder.Build(courses, profs, rooms, crosses));
+        Assert.Contains("empty course id", ex.Message);
+    }
+
+    [Fact]
     public void HC21_ProfRoomConsistent_GroupsAutoCoursesIntoSameRoom()
     {
         // Prof P1 teaches 2 auto-allocated courses. Both must end up in same room.
