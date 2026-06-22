@@ -365,7 +365,7 @@
                                                FontSize="11"
                                                Foreground="{StaticResource OnSurfaceVariant}"
                                                Margin="0,2,0,0" />
-                                    <TextBlock Text="{Binding DataContext.ReadOnlyFixedRooms, RelativeSource={RelativeSource AncestorType=Expander}, StringFormat=고정 강의실(다중 강의실 가능): {0}}"
+                                    <TextBlock Text="{Binding DataContext.ReadOnlyFixedRooms, RelativeSource={RelativeSource AncestorType=Expander}, StringFormat=강의실(다중 선택 가능): {0}}"
                                                FontSize="11"
                                                Foreground="{StaticResource OnSurfaceVariant}"
                                                Margin="0,2,0,0" />
