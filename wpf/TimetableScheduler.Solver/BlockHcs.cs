@@ -170,25 +170,6 @@ public static class BlockHcs
         }
     }
 
-    public static void AddHc18_BlockDayGap(CpModel model, DayVarMap dayVarsByCourse)
-    {
-        foreach (var (cid, dayVars) in dayVarsByCourse)
-        {
-            if (dayVars.Count < 2) continue;
-            for (int i = 0; i < dayVars.Count; i++)
-                for (int j = i + 1; j < dayVars.Count; j++)
-                {
-                    var diff = model.NewIntVar(
-                        -(Constants.Days - 1), Constants.Days - 1, $"hc18_diff_{cid}_{i}_{j}");
-                    var absDiff = model.NewIntVar(
-                        0, Constants.Days - 1, $"hc18_abs_{cid}_{i}_{j}");
-                    model.Add(diff == dayVars[i] - dayVars[j]);
-                    model.AddAbsEquality(absDiff, diff);
-                    model.Add(absDiff <= 2);
-                }
-        }
-    }
-
     public static void AddHc19_Len2StartPeriods(
         CpModel model, StartVarMap startVarsByBlock,
         IReadOnlyList<Course> courses, IReadOnlyList<CrossGroup>? crosses = null)
@@ -291,6 +272,11 @@ public static class BlockHcs
                 int b = blocks1[i];
                 if (!startVarsByBlock.TryGetValue((c1.Id, i), out var sv1)) continue;
                 if (!startVarsByBlock.TryGetValue((c2.Id, i), out var sv2)) continue;
+                var hasAnyAdjacentPair = sv1.Keys.Any(start =>
+                    sv2.ContainsKey((start.Day, start.StartPeriod + b)) ||
+                    sv2.ContainsKey((start.Day, start.StartPeriod - b)));
+                if (!hasAnyAdjacentPair) continue;
+
                 foreach (var ((d, sp), v1) in sv1)
                 {
                     var candidates = new List<BoolVar>();

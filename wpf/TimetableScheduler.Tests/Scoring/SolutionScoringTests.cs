@@ -66,7 +66,7 @@ public class SolutionScoringTests
     }
 
     [Fact]
-    public void Sc03_MultiBlockCourse_GapOne_Bad()
+    public void Sc03_MultiBlockCourse_GapOne_High()
     {
         var courses = new List<Course>
         {
@@ -75,9 +75,42 @@ public class SolutionScoringTests
         var assignment = new List<SolutionAssignment>
         {
             new("X-01", 0, 1, "R1"),  // Mon
-            new("X-01", 1, 1, "R1"),  // Tue (gap = 1, BAD)
+            new("X-01", 1, 1, "R1"),  // Tue (gap = 1)
         };
-        Assert.Equal(0.0, SolutionScoring.Sc03MinGap(assignment, courses), 6);
+        Assert.Equal(0.8, SolutionScoring.Sc03MinGap(assignment, courses), 6);
+    }
+
+    [Theory]
+    [InlineData(3)]
+    [InlineData(4)]
+    public void Sc03_MultiBlockCourse_GapThreeOrFour_VeryLow(int day)
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "X-01", BlockStructure = new List<int> { 1, 1 } },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("X-01", 0, 1, "R1"),
+            new("X-01", day, 1, "R1"),
+        };
+        Assert.Equal(0.2, SolutionScoring.Sc03MinGap(assignment, courses), 6);
+    }
+
+    [Fact]
+    public void Sc03_ThreeBlocks_UsesAveragePairScore()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "X-01", BlockStructure = new List<int> { 1, 1, 1 } },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("X-01", 0, 1, "R1"),
+            new("X-01", 1, 1, "R1"),
+            new("X-01", 3, 1, "R1"),
+        };
+        Assert.Equal((0.8 + 0.2 + 1.0) / 3.0, SolutionScoring.Sc03MinGap(assignment, courses), 6);
     }
 
     [Fact]

@@ -70,7 +70,7 @@ TimetableScheduler.Tests       xUnit (94개)
 | 15 | 같은 교수 분반 인접 | blocks |
 | 16 | Cross cyclic shift (**y**) | grouping |
 | 17 | 재수강 안전 분반 (**y**) | grouping |
-| 18 | 블록 페어 요일 차 ≤ 2 | blocks |
+| 18 | SC-03으로 이동: 블록 페어 요일 차 선호 | soft |
 | 19 | 블록 시작 교시 ∈ {1,3,6,8} | blocks |
 | 20 | 같은 과목 블록들 다른 요일 | blocks |
 | 21 | 교수 단위 강의실 일관성 | blocks |
@@ -79,7 +79,7 @@ TimetableScheduler.Tests       xUnit (94개)
 |----|------|--------|
 | 01 | 월오전/금오후 회피 | 1 |
 | 02 | 교수당 강의 요일 ≤ 3 | 1 |
-| 03 | 블록 페어 요일 간격 ≥ 2 | 1 |
+| 03 | 블록 페어 요일 차 2 선호 (1 높음, 3~4 낮음) | 1 |
 
 ## 4단계 lex 솔버 흐름
 

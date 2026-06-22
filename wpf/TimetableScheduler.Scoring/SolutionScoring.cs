@@ -100,18 +100,28 @@ public static class SolutionScoring
             set.Add(a.Day);
         }
 
-        int good = 0;
+        double totalScore = 0.0;
         foreach (var c in multi)
         {
             if (!daysByCid.TryGetValue(c.Id, out var set) || set.Count < 2) continue;
             var ds = set.OrderBy(d => d).ToList();
-            int minDiff = int.MaxValue;
+            var pairScores = new List<double>();
             for (int i = 0; i < ds.Count - 1; i++)
-                minDiff = Math.Min(minDiff, ds[i + 1] - ds[i]);
-            if (minDiff >= 2) good++;
+                for (int j = i + 1; j < ds.Count; j++)
+                    pairScores.Add(Sc03GapScore(ds[j] - ds[i]));
+            if (pairScores.Count > 0)
+                totalScore += pairScores.Average();
         }
-        return (double)good / multi.Count;
+        return totalScore / multi.Count;
     }
+
+    private static double Sc03GapScore(int gap) => gap switch
+    {
+        2 => 1.0,
+        1 => 0.8,
+        3 or 4 => 0.2,
+        _ => 0.0,
+    };
 
     public static SolutionScore Score(
         IReadOnlyList<SolutionAssignment> assignment,

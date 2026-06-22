@@ -103,13 +103,12 @@ public static class SoftConstraints
     public static LinearExpr Sc03PenaltyTerm(
         CpModel model, DayVarMap dayVarsByCourse, IReadOnlyList<Course> courses)
     {
-        var badIndicators = new List<BoolVar>();
+        var pairPenalties = new List<IntVar>();
         foreach (var c in courses)
         {
             if (c.BlockStructure.Count < 2) continue;
             if (!dayVarsByCourse.TryGetValue(c.Id, out var dayVars) || dayVars.Count < 2) continue;
 
-            var pairBads = new List<BoolVar>();
             for (int i = 0; i < dayVars.Count - 1; i++)
                 for (int j = i + 1; j < dayVars.Count; j++)
                 {
@@ -120,20 +119,21 @@ public static class SoftConstraints
                     model.Add(diff == dayVars[i] - dayVars[j]);
                     model.AddAbsEquality(absDiff, diff);
 
-                    var pairBad = model.NewBoolVar($"sc03_pairbad_{c.Id}_{i}_{j}");
-                    model.Add(absDiff <= 1).OnlyEnforceIf(pairBad);
-                    model.Add(absDiff >= 2).OnlyEnforceIf(pairBad.Not());
-                    pairBads.Add(pairBad);
+                    var pairPenalty = model.NewIntVar(0, 4, $"sc03_penalty_{c.Id}_{i}_{j}");
+                    model.AddAllowedAssignments(new LinearExpr[] { absDiff, pairPenalty })
+                        .AddTuples(new long[,]
+                        {
+                            { 0, 4 },
+                            { 1, 1 },
+                            { 2, 0 },
+                            { 3, 4 },
+                            { 4, 4 },
+                            { 5, 4 },
+                        });
+                    pairPenalties.Add(pairPenalty);
                 }
-
-            if (pairBads.Count == 0) continue;
-
-            var courseBad = model.NewBoolVar($"sc03_coursebad_{c.Id}");
-            model.AddBoolOr(pairBads).OnlyEnforceIf(courseBad);
-            model.AddBoolAnd(pairBads.Select(pb => pb.Not()).ToArray()).OnlyEnforceIf(courseBad.Not());
-            badIndicators.Add(courseBad);
         }
 
-        return badIndicators.Count > 0 ? LinearExpr.Sum(badIndicators) : LinearExpr.Constant(0);
+        return pairPenalties.Count > 0 ? LinearExpr.Sum(pairPenalties) : LinearExpr.Constant(0);
     }
 }

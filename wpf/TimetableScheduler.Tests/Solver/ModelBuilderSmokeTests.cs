@@ -102,7 +102,77 @@ public class ModelBuilderSmokeTests
         var d1 = solver.Value(dayVars[0]);
         var d2 = solver.Value(dayVars[1]);
         Assert.NotEqual(d1, d2);
-        Assert.True(Math.Abs(d1 - d2) <= 2, $"HC-18 violated: |{d1}-{d2}| > 2");
+    }
+
+    [Fact]
+    public void TwoBlockCourse_DistantDaysAllowed()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "X-01", Name = "X", Grade = 1, HoursPerWeek = 5,
+                BlockStructure = new List<int> { 2, 3 }, ProfessorId = "P1",
+            },
+        };
+        var profs = new List<Professor>
+        {
+            new()
+            {
+                Id = "P1",
+                Name = "P",
+                UnavailableSlots = Constants.ValidPeriods
+                    .SelectMany(p => Enumerable.Range(0, Constants.Days).Select(d => new TimeSlot(d, p)))
+                    .Where(slot =>
+                        !(slot.Day == 0 && slot.Period is 1 or 2) &&
+                        !(slot.Day == 4 && slot.Period is 6 or 7 or 8))
+                    .ToList(),
+            },
+        };
+        var rooms = new List<Room> { new() { Id = "R1", Name = "R" } };
+
+        var build = ModelBuilder.Build(courses, profs, rooms);
+        var solver = new CpSolver();
+        var status = solver.Solve(build.Model);
+        Assert.True(status is CpSolverStatus.Feasible or CpSolverStatus.Optimal);
+
+        var days = build.DayVarsByCourse["X-01"]
+            .Select(dayVar => solver.Value(dayVar))
+            .OrderBy(day => day)
+            .ToList();
+        Assert.Equal(new long[] { 0, 4 }, days);
+    }
+
+    [Fact]
+    public void SameProfessorTwoSection_ThreeHourBlocksRemainFeasible()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "X-01", Name = "X", Grade = 1, Section = 1,
+                HoursPerWeek = 5, BlockStructure = new List<int> { 2, 3 },
+                ProfessorId = "P1",
+            },
+            new()
+            {
+                Id = "X-02", Name = "X", Grade = 1, Section = 2,
+                HoursPerWeek = 5, BlockStructure = new List<int> { 2, 3 },
+                ProfessorId = "P1",
+            },
+        };
+        var profs = new List<Professor> { new() { Id = "P1", Name = "P" } };
+        var rooms = new List<Room>
+        {
+            new() { Id = "R1", Name = "R1" },
+            new() { Id = "R2", Name = "R2" },
+        };
+
+        var build = ModelBuilder.Build(courses, profs, rooms);
+        var solver = new CpSolver();
+        var status = solver.Solve(build.Model);
+
+        Assert.True(status is CpSolverStatus.Feasible or CpSolverStatus.Optimal, status.ToString());
     }
 
     [Fact]
