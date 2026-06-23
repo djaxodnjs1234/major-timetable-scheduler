@@ -8,6 +8,8 @@ namespace TimetableScheduler.Wpf.Views;
 
 public partial class ManualEditView : UserControl
 {
+    public TimetableZoom Zoom { get; } = new();
+
     public ManualEditView()
     {
         InitializeComponent();
@@ -33,6 +35,12 @@ public partial class ManualEditView : UserControl
         if (DataContext is ManualEditViewModel vm)
             vm.HandleCellClick(e.Day, e.Period, e.Grade, e.SubColumnIdx, e.Assignment);
     }
+
+    private void OnZoomOutClick(object sender, System.Windows.RoutedEventArgs e) => Zoom.ZoomOut();
+
+    private void OnZoomResetClick(object sender, System.Windows.RoutedEventArgs e) => Zoom.Reset();
+
+    private void OnZoomInClick(object sender, System.Windows.RoutedEventArgs e) => Zoom.ZoomIn();
 
     private CrossHoverState EvaluateCrossHover(UnifiedTimetableControl.CellClickedEventArgs e)
     {

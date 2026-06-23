@@ -556,7 +556,7 @@ public static class FormattedTimetableExporter
         foreach (int p in periods)
         {
             int r = PeriodRow(p);
-            string label = p == 5 ? "점심" : p.ToString();
+            string label = FormatPeriodLabel(p);
 
             var left = ws.Cell(r, 1);
             left.Value = label;
@@ -565,6 +565,7 @@ public static class FormattedTimetableExporter
             left.Style.Fill.BackgroundColor = GradeHeaderBg;
             left.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
             left.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
+            left.Style.Alignment.WrapText   = true;
             ApplyHeaderBorder(left.AsRange());
 
             var right = ws.Cell(r, lastLabelCol);
@@ -574,9 +575,14 @@ public static class FormattedTimetableExporter
             right.Style.Fill.BackgroundColor = GradeHeaderBg;
             right.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
             right.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
+            right.Style.Alignment.WrapText   = true;
             ApplyHeaderBorder(right.AsRange());
         }
     }
+
+    private static string FormatPeriodLabel(int period) => period == 5
+        ? "점심\n13:00~14:00"
+        : $"{period}교시\n{8 + period:00}:00~{9 + period:00}:00";
 
     private static void SetColumnWidths(
         IXLWorksheet ws,
@@ -584,8 +590,8 @@ public static class FormattedTimetableExporter
         DayLayout[] layouts,
         int lastLabelCol)
     {
-        ws.Column(1).Width            = 4;
-        ws.Column(lastLabelCol).Width = 4;
+        ws.Column(1).Width            = 12;
+        ws.Column(lastLabelCol).Width = 12;
         for (int d = 0; d < 5; d++)
             for (int sub = 0; sub < layouts[d].SubColCount; sub++)
                 ws.Column(dayStart[d] + sub).Width = 14;

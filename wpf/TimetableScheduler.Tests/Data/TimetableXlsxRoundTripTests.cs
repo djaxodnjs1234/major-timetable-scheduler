@@ -226,6 +226,21 @@ public class TimetableXlsxRoundTripTests
     }
 
     [Fact]
+    public void ExcelExport_PeriodLabelsIncludeTimeRanges()
+    {
+        ExportAndInspectWorksheet(
+            new List<TimetableAssignmentRow> { new("C1", 0, 1, "R1") },
+            new List<Course> { new() { Id = "C1", Name = "Test", Grade = 1 } },
+            ws =>
+            {
+                var firstPeriodLabel = ws.Cell(6, 1).GetString();
+                Assert.Contains("1", firstPeriodLabel);
+                Assert.Contains("09:00~10:00", firstPeriodLabel);
+                Assert.Contains("14:00~15:00", ws.Cell(11, 1).GetString());
+            });
+    }
+
+    [Fact]
     public void ExcelExport_CourseBlockBordersAreSlightlyDarker()
     {
         ExportAndInspectWorksheet(

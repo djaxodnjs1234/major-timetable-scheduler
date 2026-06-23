@@ -3,6 +3,7 @@
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
              xmlns:vm="clr-namespace:TimetableScheduler.ViewModel.Pages;assembly=TimetableScheduler.ViewModel"
              xmlns:ctrl="clr-namespace:TimetableScheduler.Wpf.Controls"
+             xmlns:views="clr-namespace:TimetableScheduler.Wpf.Views"
              xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
              xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
              mc:Ignorable="d"
@@ -124,13 +125,33 @@
             </Border>
             <Grid Margin="8"
                   Visibility="{Binding HasSelection, Converter={StaticResource BoolToVisibility}}">
-            <TabControl SelectedIndex="{Binding SelectedPreviewTabIndex, Mode=TwoWay}">
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
+            <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <TextBlock Text="확대/축소" VerticalAlignment="Center" FontSize="11" Foreground="#555" Margin="0,0,6,0" />
+                    <Button Content="−" Click="OnZoomOutClick" ToolTip="축소" Width="28" Padding="0" />
+                    <TextBlock Text="{Binding Zoom.DisplayPercent, RelativeSource={RelativeSource AncestorType={x:Type views:TimetableSelectionView}}}"
+                               Width="42" TextAlignment="Center" VerticalAlignment="Center" FontSize="11" />
+                    <Button Content="+" Click="OnZoomInClick" ToolTip="확대" Width="28" Padding="0" />
+                    <Button Content="100%" Click="OnZoomResetClick" ToolTip="기본 크기" Margin="4,0,0,0" Padding="6,2" FontSize="10" />
+                </StackPanel>
+                <ctrl:GradeLegendControl DockPanel.Dock="Right" />
+            </DockPanel>
+            <TabControl Grid.Row="1" SelectedIndex="{Binding SelectedPreviewTabIndex, Mode=TwoWay}">
                 <TabItem Header="통합 시간표">
                     <DockPanel>
                         <ctrl:UnifiedTimetableControl DataContext="{Binding Preview}"
                                                       PeriodRowMinHeight="52"
                                                       LunchRowHeight="18"
-                                                      DayColumnWidth="68" />
+                                                      DayColumnWidth="68">
+                            <ctrl:UnifiedTimetableControl.LayoutTransform>
+                                <ScaleTransform ScaleX="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:TimetableSelectionView}}}"
+                                                ScaleY="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:TimetableSelectionView}}}" />
+                            </ctrl:UnifiedTimetableControl.LayoutTransform>
+                        </ctrl:UnifiedTimetableControl>
                     </DockPanel>
                 </TabItem>
                 <TabItem Header="학년별">
@@ -146,7 +167,12 @@
                                     <ctrl:TimetableGridControl DataContext="{Binding Grid}"
                                                                PeriodRowMinHeight="52"
                                                                LunchRowMinHeight="24"
-                                                               DayColumnMinWidth="66" />
+                                                               DayColumnMinWidth="66">
+                                        <ctrl:TimetableGridControl.LayoutTransform>
+                                            <ScaleTransform ScaleX="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:TimetableSelectionView}}}"
+                                                            ScaleY="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:TimetableSelectionView}}}" />
+                                        </ctrl:TimetableGridControl.LayoutTransform>
+                                    </ctrl:TimetableGridControl>
                                 </DockPanel>
                             </DataTemplate>
                         </TabControl.ContentTemplate>
@@ -165,7 +191,12 @@
                                     <ctrl:TimetableGridControl DataContext="{Binding Grid}"
                                                                PeriodRowMinHeight="52"
                                                                LunchRowMinHeight="24"
-                                                               DayColumnMinWidth="66" />
+                                                               DayColumnMinWidth="66">
+                                        <ctrl:TimetableGridControl.LayoutTransform>
+                                            <ScaleTransform ScaleX="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:TimetableSelectionView}}}"
+                                                            ScaleY="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:TimetableSelectionView}}}" />
+                                        </ctrl:TimetableGridControl.LayoutTransform>
+                                    </ctrl:TimetableGridControl>
                                 </DockPanel>
                             </DataTemplate>
                         </TabControl.ContentTemplate>
@@ -184,16 +215,18 @@
                                     <ctrl:TimetableGridControl DataContext="{Binding Grid}"
                                                                PeriodRowMinHeight="52"
                                                                LunchRowMinHeight="24"
-                                                               DayColumnMinWidth="66" />
+                                                               DayColumnMinWidth="66">
+                                        <ctrl:TimetableGridControl.LayoutTransform>
+                                            <ScaleTransform ScaleX="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:TimetableSelectionView}}}"
+                                                            ScaleY="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:TimetableSelectionView}}}" />
+                                        </ctrl:TimetableGridControl.LayoutTransform>
+                                    </ctrl:TimetableGridControl>
                                 </DockPanel>
                             </DataTemplate>
                         </TabControl.ContentTemplate>
                     </TabControl>
                 </TabItem>
             </TabControl>
-                <ctrl:GradeLegendControl HorizontalAlignment="Right"
-                                         VerticalAlignment="Top"
-                                         Margin="0,3,12,0" />
             </Grid>
         </Grid>
         </Grid>
