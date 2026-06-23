@@ -66,6 +66,15 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
             return;
         }
 
+        if (e.Action == NotifyCollectionChangedAction.Replace
+            && e.NewItems is { Count: > 0 }
+            && e.NewItems[0] is SavedTimetableRecord replacement
+            && string.Equals(SelectedTimetable?.Id, replacement.Id, StringComparison.Ordinal))
+        {
+            SelectedTimetable = replacement;
+            return;
+        }
+
         if (SelectedTimetable == null
             || !SavedTimetables.Any(t => t.Id == SelectedTimetable.Id))
         {

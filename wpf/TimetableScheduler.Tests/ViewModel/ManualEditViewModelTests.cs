@@ -57,6 +57,17 @@ public class ManualEditViewModelTests : IDisposable
         return new RankedSolution(assignments.ToList(), score);
     }
 
+    private static string AssignmentId(
+        string courseId,
+        int section,
+        string professorId,
+        string name,
+        int courseIndex,
+        int day,
+        int startPeriod,
+        string roomId) =>
+        string.Join("\u001f", "occ", courseId, section, professorId, name, courseIndex, day, startPeriod, roomId);
+
     private SavedTimetableRecord MakeSavedRecordWithManualCross(
         string id,
         string name,
@@ -5179,6 +5190,193 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
+    public void ProfRoomInconsistent_DuplicateCourseId_UsesSelectedSectionProfessor()
+    {
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "김교수" });
+        _ws.AddProfessor(new Professor { Id = "P3", Name = "이교수" });
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.AddCourse(new Course { Id = "DUP", Name = "공통과목", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 1 });
+        _ws.AddCourse(new Course { Id = "DUP", Name = "공통과목", Grade = 2, HoursPerWeek = 1, ProfessorId = "P3", Section = 2 });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("DUP", 0, 1, "R1", AssignmentId("DUP", 1, "P2", "공통과목", 0, 0, 1, "R1")),
+            new SolutionAssignment("DUP", 1, 1, "R2", AssignmentId("DUP", 2, "P3", "공통과목", 1, 1, 1, "R2")),
+            new SolutionAssignment("DUP", 2, 1, "R3", AssignmentId("DUP", 1, "P2", "공통과목", 0, 2, 1, "R3"))));
+
+        var selected = vm.Grid.Cells.Single(c => c.Day == 1 && c.Period == 1 && c.Assignment.ProfessorId == "P3");
+        vm.SelectCell(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+
+        Assert.Equal(2, vm.SelectedAssignment?.Section);
+        Assert.Equal("P3", vm.SelectedAssignment?.ProfessorId);
+        Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.ProfRoomInconsistent);
+    }
+
+    [Fact]
+    public void ProfRoomInconsistent_MessageUsesProfessorNameNotInternalId()
+    {
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "김교수" });
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.AddCourse(new Course { Id = "DUP", Name = "공통과목", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 1 });
+        _ws.AddCourse(new Course { Id = "DUP", Name = "공통과목", Grade = 2, HoursPerWeek = 1, ProfessorId = "P1", Section = 2 });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("DUP", 0, 1, "R1", AssignmentId("DUP", 1, "P2", "공통과목", 0, 0, 1, "R1")),
+            new SolutionAssignment("DUP", 1, 1, "R3", AssignmentId("DUP", 1, "P2", "공통과목", 0, 1, 1, "R3"))));
+
+        var selected = vm.Grid.Cells.First(c => c.Assignment.ProfessorId == "P2");
+        vm.SelectCell(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+
+        var conflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.ProfRoomInconsistent));
+        Assert.Contains("김교수", conflict.Description);
+        Assert.DoesNotContain("교수 P2", conflict.Description);
+    }
+
+    [Fact]
+    public void ProfRoomInconsistent_SelectionChange_RemovesPreviousSelectedConflict()
+    {
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "김교수" });
+        _ws.AddProfessor(new Professor { Id = "P3", Name = "이교수" });
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.AddRoom(new Room { Id = "R4", Name = "강의실4" });
+        _ws.AddCourse(new Course { Id = "DUP", Name = "공통과목", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 1 });
+        _ws.AddCourse(new Course { Id = "DUP", Name = "공통과목", Grade = 2, HoursPerWeek = 1, ProfessorId = "P3", Section = 2 });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("DUP", 0, 1, "R1", AssignmentId("DUP", 1, "P2", "공통과목", 0, 0, 1, "R1")),
+            new SolutionAssignment("DUP", 1, 1, "R3", AssignmentId("DUP", 1, "P2", "공통과목", 0, 1, 1, "R3")),
+            new SolutionAssignment("DUP", 2, 1, "R2", AssignmentId("DUP", 2, "P3", "공통과목", 1, 2, 1, "R2")),
+            new SolutionAssignment("DUP", 3, 1, "R4", AssignmentId("DUP", 2, "P3", "공통과목", 1, 3, 1, "R4"))));
+
+        var p2Cell = vm.Grid.Cells.Single(c => c.Day == 0 && c.Assignment.ProfessorId == "P2");
+        vm.SelectCell(p2Cell.Day, p2Cell.Period, p2Cell.Grade, p2Cell.SubColumnIdx, p2Cell.Assignment);
+
+        var p2Conflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.ProfRoomInconsistent));
+        Assert.Contains("김교수", p2Conflict.DisplayDescription);
+        Assert.DoesNotContain("이교수", p2Conflict.DisplayDescription);
+
+        var p3Cell = vm.Grid.Cells.Single(c => c.Day == 2 && c.Assignment.ProfessorId == "P3");
+        vm.SelectCell(p3Cell.Day, p3Cell.Period, p3Cell.Grade, p3Cell.SubColumnIdx, p3Cell.Assignment);
+
+        var p3Conflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.ProfRoomInconsistent));
+        Assert.Contains("이교수", p3Conflict.DisplayDescription);
+        Assert.DoesNotContain("김교수", p3Conflict.DisplayDescription);
+    }
+
+    [Fact]
+    public void ProfRoomInconsistent_ClearSelection_RemovesSelectedOnlyConflict()
+    {
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "김교수" });
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.AddCourse(new Course { Id = "DUP", Name = "공통과목", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 1 });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("DUP", 0, 1, "R1", AssignmentId("DUP", 1, "P2", "공통과목", 0, 0, 1, "R1")),
+            new SolutionAssignment("DUP", 1, 1, "R3", AssignmentId("DUP", 1, "P2", "공통과목", 0, 1, 1, "R3"))));
+
+        var selected = vm.Grid.Cells.First(c => c.Assignment.ProfessorId == "P2");
+        vm.SelectCell(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+        Assert.Contains(vm.Conflicts, c => c.Type == ConflictType.ProfRoomInconsistent);
+
+        vm.ClearSelectionCommand.Execute(null);
+
+        Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.ProfRoomInconsistent);
+    }
+
+    [Fact]
+    public void ProfRoomInconsistent_TwoHourCoveredPeriod_StillMatchesSelectedBlock()
+    {
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "김교수" });
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.AddCourse(new Course
+        {
+            Id = "TWO",
+            Name = "두시간",
+            Grade = 2,
+            HoursPerWeek = 2,
+            ProfessorId = "P2",
+            Section = 1,
+            BlockStructure = new List<int> { 2 },
+        });
+        var blockId = AssignmentId("TWO", 1, "P2", "두시간", 1, 0, 1, "R1");
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("TWO", 0, 1, "R1", blockId),
+            new SolutionAssignment("TWO", 0, 2, "R1", blockId),
+            new SolutionAssignment("TWO", 1, 1, "R3", AssignmentId("TWO", 1, "P2", "두시간", 1, 1, 1, "R3"))));
+
+        var selected = vm.Grid.Cells.Single(c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "TWO");
+        vm.SelectCell(0, 2, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+
+        var conflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.ProfRoomInconsistent));
+        Assert.Contains("김교수", conflict.DisplayDescription);
+    }
+
+    [Fact]
+    public void ProfRoomInconsistent_RoomChangePopupAndInspectorUseSameProfessorName()
+    {
+        _ws.AddProfessor(new Professor { Id = "P200", Name = "김교수" });
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.AddCourse(new Course { Id = "ROOM", Name = "강의실변경", Grade = 2, HoursPerWeek = 1, ProfessorId = "P200", Section = 1 });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("ROOM", 0, 1, "R1", AssignmentId("ROOM", 1, "P200", "강의실변경", 1, 0, 1, "R1")),
+            new SolutionAssignment("ROOM", 1, 1, "R1", AssignmentId("ROOM", 1, "P200", "강의실변경", 1, 1, 1, "R1"))));
+
+        var selected = vm.Grid.Cells.Single(c => c.Day == 0 && c.Assignment.CourseId == "ROOM");
+        vm.SelectCell(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+        vm.NewRoomId = "R2";
+        vm.ApplyRoomChangeCommand.Execute(null);
+
+        var popupConflict = Assert.Single(_dialog.Calls.Single().Where(c => c.Type == ConflictType.ProfRoomInconsistent));
+        var inspectorConflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.ProfRoomInconsistent));
+        Assert.Contains("김교수", popupConflict.Description);
+        Assert.Contains("김교수", inspectorConflict.DisplayDescription);
+        Assert.DoesNotContain("P200", popupConflict.Description);
+        Assert.DoesNotContain("P200", inspectorConflict.DisplayDescription);
+    }
+
+    [Fact]
+    public void ProfRoomInconsistent_TeamTeaching_DoesNotShowUnrelatedPrimaryProfessorConflict()
+    {
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "김교수" });
+        _ws.AddProfessor(new Professor { Id = "P3", Name = "이교수" });
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.AddRoom(new Room { Id = "R4", Name = "강의실4" });
+        _ws.AddCourse(new Course
+        {
+            Id = "TEAM",
+            Name = "팀티칭",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P2",
+            Section = 1,
+            CoteachProfs = new List<string> { "P3" },
+        });
+        _ws.AddCourse(new Course { Id = "OTHER", Name = "다른수업", Grade = 2, HoursPerWeek = 1, ProfessorId = "P3", Section = 1 });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("TEAM", 0, 1, "R1", AssignmentId("TEAM", 1, "P2", "팀티칭", 1, 0, 1, "R1")),
+            new SolutionAssignment("TEAM", 1, 1, "R3", AssignmentId("TEAM", 1, "P2", "팀티칭", 1, 1, 1, "R3")),
+            new SolutionAssignment("OTHER", 2, 1, "R2", AssignmentId("OTHER", 1, "P3", "다른수업", 2, 2, 1, "R2")),
+            new SolutionAssignment("OTHER", 3, 1, "R4", AssignmentId("OTHER", 1, "P3", "다른수업", 2, 3, 1, "R4"))));
+
+        var selected = vm.Grid.Cells.Single(c => c.Day == 0 && c.Assignment.CourseId == "TEAM");
+        vm.SelectCell(selected.Day, selected.Period, selected.Grade, selected.SubColumnIdx, selected.Assignment);
+
+        var conflict = Assert.Single(vm.Conflicts.Where(c => c.Type == ConflictType.ProfRoomInconsistent));
+        Assert.Contains("김교수", conflict.DisplayDescription);
+        Assert.DoesNotContain("이교수", conflict.DisplayDescription);
+        Assert.Equal("이교수", vm.SelectedCoteachText);
+    }
+
+    [Fact]
     public void Reset_RestoresBaseAssignment()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
@@ -7491,6 +7689,31 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
+    public void RoomChangeOptions_SessionRoomWinsWhenWorkspaceHasSameNameDifferentId()
+    {
+        var snapshot = new AppData(
+            _ws.Courses.ToList(),
+            _ws.Professors.ToList(),
+            new List<Room> { new() { Id = "S1", Name = "강의실1" } },
+            _ws.CrossGroups.ToList(),
+            _ws.RetakeScenarios.ToList());
+        var record = new SavedTimetableRecord(
+            "saved-session-room",
+            "저장",
+            DateTime.Now,
+            new[] { new TimetableAssignmentRow("X-01", 0, 1, "S1") },
+            Array.Empty<SavedManualCrossLinkRow>(),
+            System.Text.Json.JsonSerializer.Serialize(snapshot));
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSaved(record);
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+
+        var option = Assert.Single(vm.AvailableRoomOptions.Where(o => o.DisplayName == "강의실1"));
+        Assert.Equal("S1", option.RoomId);
+        Assert.DoesNotContain(vm.AvailableRoomOptions, o => o.RoomId == "R1" && o.DisplayName == "강의실1");
+    }
+
+    [Fact]
     public void RoomChangeOptions_UnknownNumericRoomId_DoesNotDisplayBareNumber()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
@@ -7658,6 +7881,334 @@ public class ManualEditViewModelTests : IDisposable
         Assert.All(
             reloaded.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"),
             cell => Assert.Equal(new[] { "R2" }, cell.Assignment.Rooms));
+    }
+
+    [Fact]
+    public void RoomChange_SaveSnapshot_DoesNotAddWorkspaceRoomWithDuplicateSessionName()
+    {
+        _ws.AddRoom(new Room { Id = "D438", Name = "D438" });
+        var snapshot = new AppData(
+            _ws.Courses.ToList(),
+            _ws.Professors.ToList(),
+            new List<Room>
+            {
+                new() { Id = "6", Name = "D438" },
+                new() { Id = "7", Name = "D440" },
+            },
+            _ws.CrossGroups.ToList(),
+            _ws.RetakeScenarios.ToList());
+        var record = new SavedTimetableRecord(
+            "saved-session-room-save",
+            "저장",
+            DateTime.Now,
+            new[]
+            {
+                new TimetableAssignmentRow("X-01", 0, 1, "6"),
+                new TimetableAssignmentRow("X-01", 0, 2, "6"),
+            },
+            Array.Empty<SavedManualCrossLinkRow>(),
+            System.Text.Json.JsonSerializer.Serialize(snapshot));
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSaved(record);
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+
+        Assert.Single(vm.AvailableRoomOptions.Where(o => o.DisplayName == "D438"));
+        Assert.DoesNotContain(vm.AvailableRoomOptions, o => o.RoomId == "D438");
+        Assert.Equal("6", vm.AvailableRoomOptions.Single(o => o.DisplayName == "D438").RoomId);
+
+        vm.SaveName = "session-room-no-dup";
+        vm.SaveTimetableCommand.Execute(null);
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "session-room-no-dup"));
+        var savedSnapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(saved.SnapshotJson!)!;
+
+        Assert.All(saved.Assignments.Where(a => a.CourseId == "X-01"), row => Assert.Equal("6", row.RoomId));
+        Assert.Single(savedSnapshot.Rooms.Where(r => r.Name == "D438"));
+        Assert.DoesNotContain(savedSnapshot.Rooms, r => r.Id == "D438" && r.Name == "D438");
+    }
+
+    [Fact]
+    public void SaveTimetable_SavedRequestedPassesLatestSavedRecord()
+    {
+        var snapshot = new AppData(
+            _ws.Courses.ToList(),
+            _ws.Professors.ToList(),
+            new List<Room> { new() { Id = "S1", Name = "기존강의실" } },
+            _ws.CrossGroups.ToList(),
+            _ws.RetakeScenarios.ToList());
+        var record = new SavedTimetableRecord(
+            "saved-event",
+            "저장",
+            DateTime.Now,
+            new[]
+            {
+                new TimetableAssignmentRow("X-01", 0, 1, "S1"),
+                new TimetableAssignmentRow("X-01", 0, 2, "S1"),
+            },
+            Array.Empty<SavedManualCrossLinkRow>(),
+            System.Text.Json.JsonSerializer.Serialize(snapshot));
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSaved(record);
+        vm.SelectCell(0, 1, 2, 0, AssignmentAt(vm, 0, 1, "X-01"));
+
+        SavedTimetableRecord? eventRecord = null;
+        vm.SavedRequested += (_, saved) => eventRecord = saved;
+        vm.SaveName = "event-latest";
+        vm.SaveTimetableCommand.Execute(null);
+
+        var stored = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "event-latest"));
+        Assert.NotNull(eventRecord);
+        Assert.Same(stored, eventRecord);
+        Assert.Equal(stored.Id, eventRecord!.Id);
+        Assert.Equal(stored.SnapshotJson, eventRecord.SnapshotJson);
+        Assert.All(eventRecord.Assignments.Where(a => a.CourseId == "X-01"), row => Assert.Equal("S1", row.RoomId));
+    }
+
+    [Fact]
+    public void SaveSnapshot_UpdatesCourseFixedRoomsFromEditedAssignments()
+    {
+        var vm = LoadManualEditWithRoomSnapshot(
+            new[] { CourseForSnapshot("X-01", section: 1, fixedRooms: new[] { "R1" }) },
+            new[]
+            {
+                new TimetableAssignmentRow("X-01", 0, 1, "R2"),
+                new TimetableAssignmentRow("X-01", 0, 2, "R2"),
+            });
+
+        vm.SaveName = "course-room-updated";
+        vm.SaveTimetableCommand.Execute(null);
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "course-room-updated"));
+        var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(saved.SnapshotJson!)!;
+
+        Assert.Equal(new[] { "R2" }, snapshot.Courses.Single(c => c.Id == "X-01").FixedRooms);
+    }
+
+    [Fact]
+    public void SaveSnapshot_UpdatesScreenTwoCourseDetailRoomAfterImmediateSync()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var workspace = _sp.GetRequiredService<WorkspaceService>();
+        var snapshot = new AppData(
+            new List<Course> { CourseForSnapshot("X-01", section: 1, fixedRooms: new[] { "R1" }) },
+            _ws.Professors.ToList(),
+            SnapshotRooms(),
+            _ws.CrossGroups.ToList(),
+            _ws.RetakeScenarios.ToList());
+        var record = workspace.SaveTimetable(
+            "screen-two-room-detail",
+            new[]
+            {
+                new SolutionAssignment("X-01", 0, 1, "R1"),
+                new SolutionAssignment("X-01", 0, 2, "R1"),
+            },
+            snapshot: snapshot);
+
+        main.Selection.EditCommand.Execute(record);
+        main.Input.GoToManualCommand.Execute(null);
+        var cell = main.Manual.Grid.Cells.First(c => c.Assignment.CourseId == "X-01");
+        main.Manual.SelectCell(cell.Day, cell.Period, cell.Grade, cell.SubColumnIdx, cell.Assignment);
+        main.Manual.NewRoomId = "R2";
+        main.Manual.ApplyRoomChangeCommand.Execute(null);
+        main.Manual.SaveTimetableCommand.Execute(null);
+
+        Assert.Contains(main.Input.CourseGroups, group => group.HeaderFixedRooms == "강의실2");
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "screen-two-room-detail"));
+        var reloaded = _sp.GetRequiredService<DataInputViewModel>();
+        reloaded.LoadForExistingTimetable(saved);
+        Assert.Contains(reloaded.CourseGroups, group => group.HeaderFixedRooms == "강의실2");
+    }
+
+    [Fact]
+    public void SaveSnapshot_DoesNotUpdateOtherSectionWithSameCourseId()
+    {
+        var section1Id = AssignmentId("X-01", 1, "P1", "테스트", 0, 0, 1, "R2");
+        var section2Id = AssignmentId("X-01", 2, "P1", "테스트", 1, 0, 1, "R1");
+        var vm = LoadManualEditWithRoomSnapshot(
+            new[]
+            {
+                CourseForSnapshot("X-01", section: 1, fixedRooms: new[] { "R1" }),
+                CourseForSnapshot("X-01", section: 2, fixedRooms: new[] { "R1" }),
+            },
+            new[]
+            {
+                new TimetableAssignmentRow("X-01", 0, 1, "R2", section1Id),
+                new TimetableAssignmentRow("X-01", 0, 2, "R2", section1Id),
+                new TimetableAssignmentRow("X-01", 1, 1, "R1", section2Id),
+                new TimetableAssignmentRow("X-01", 1, 2, "R1", section2Id),
+            });
+
+        vm.SaveName = "section-independent-room";
+        vm.SaveTimetableCommand.Execute(null);
+        var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(
+            Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "section-independent-room")).SnapshotJson!)!;
+
+        Assert.Equal(new[] { "R2" }, snapshot.Courses.Single(c => c.Id == "X-01" && c.Section == 1).FixedRooms);
+        Assert.Equal(new[] { "R1" }, snapshot.Courses.Single(c => c.Id == "X-01" && c.Section == 2).FixedRooms);
+    }
+
+    [Fact]
+    public void SaveSnapshot_UsesMostFrequentRoomWhenCourseUsesDifferentRoomsAtDifferentTimes()
+    {
+        var vm = LoadManualEditWithRoomSnapshot(
+            new[] { CourseForSnapshot("X-01", section: 1, fixedRooms: new[] { "R1" }) },
+            new[]
+            {
+                new TimetableAssignmentRow("X-01", 0, 1, "R2"),
+                new TimetableAssignmentRow("X-01", 0, 2, "R2"),
+                new TimetableAssignmentRow("X-01", 1, 1, "R3"),
+            });
+
+        vm.SaveName = "representative-most-used-room";
+        vm.SaveTimetableCommand.Execute(null);
+        var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(
+            Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "representative-most-used-room")).SnapshotJson!)!;
+
+        Assert.Equal(new[] { "R2" }, snapshot.Courses.Single(c => c.Id == "X-01").FixedRooms);
+    }
+
+    [Fact]
+    public void SaveSnapshot_UsesEarliestRoomWhenRepresentativeRoomCountsTie()
+    {
+        var vm = LoadManualEditWithRoomSnapshot(
+            new[] { CourseForSnapshot("X-01", section: 1, fixedRooms: new[] { "R1" }) },
+            new[]
+            {
+                new TimetableAssignmentRow("X-01", 0, 1, "R3"),
+                new TimetableAssignmentRow("X-01", 1, 1, "R2"),
+            });
+
+        vm.SaveName = "representative-earliest-room";
+        vm.SaveTimetableCommand.Execute(null);
+        var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(
+            Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "representative-earliest-room")).SnapshotJson!)!;
+
+        Assert.Equal(new[] { "R3" }, snapshot.Courses.Single(c => c.Id == "X-01").FixedRooms);
+    }
+
+    [Fact]
+    public void SaveSnapshot_StoresSimultaneousMultiRoomCombination()
+    {
+        var vm = LoadManualEditWithRoomSnapshot(
+            new[] { CourseForSnapshot("X-01", section: 1, fixedRooms: new[] { "R1" }) },
+            new[]
+            {
+                new TimetableAssignmentRow("X-01", 0, 1, "R2", "multi-1"),
+                new TimetableAssignmentRow("X-01", 0, 1, "R3", "multi-1"),
+                new TimetableAssignmentRow("X-01", 0, 2, "R2", "multi-2"),
+                new TimetableAssignmentRow("X-01", 0, 2, "R3", "multi-2"),
+            });
+
+        vm.SaveName = "simultaneous-multi-room";
+        vm.SaveTimetableCommand.Execute(null);
+        var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(
+            Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "simultaneous-multi-room")).SnapshotJson!)!;
+
+        Assert.Equal(new[] { "R2", "R3" }, snapshot.Courses.Single(c => c.Id == "X-01").FixedRooms);
+    }
+
+    [Fact]
+    public void SaveSnapshot_DoesNotTreatTwoHourSequentialRowsAsMultiRoom()
+    {
+        var vm = LoadManualEditWithRoomSnapshot(
+            new[] { CourseForSnapshot("X-01", section: 1, fixedRooms: new[] { "R1" }) },
+            new[]
+            {
+                new TimetableAssignmentRow("X-01", 0, 1, "R2"),
+                new TimetableAssignmentRow("X-01", 0, 2, "R3"),
+            });
+
+        vm.SaveName = "sequential-not-multi-room";
+        vm.SaveTimetableCommand.Execute(null);
+        var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(
+            Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "sequential-not-multi-room")).SnapshotJson!)!;
+
+        Assert.Equal(new[] { "R2" }, snapshot.Courses.Single(c => c.Id == "X-01").FixedRooms);
+    }
+
+    [Fact]
+    public void SaveSnapshot_DoesNotMutateGlobalCourseRooms()
+    {
+        _ws.Courses.Single(c => c.Id == "X-01").FixedRooms = new List<string> { "R1" };
+        var vm = LoadManualEditWithRoomSnapshot(
+            new[] { CourseForSnapshot("X-01", section: 1, fixedRooms: new[] { "R1" }) },
+            new[] { new TimetableAssignmentRow("X-01", 0, 1, "R2") });
+
+        vm.SaveName = "global-course-not-mutated";
+        vm.SaveTimetableCommand.Execute(null);
+
+        Assert.Equal(new[] { "R1" }, _ws.Courses.Single(c => c.Id == "X-01").FixedRooms);
+    }
+
+    [Fact]
+    public void RoomChange_SaveSnapshot_NormalizesLegacyRoomNameIdToUniqueSessionRoomId()
+    {
+        _ws.AddRoom(new Room { Id = "D438", Name = "D438" });
+        var snapshot = new AppData(
+            _ws.Courses.ToList(),
+            _ws.Professors.ToList(),
+            new List<Room> { new() { Id = "6", Name = "D438" } },
+            _ws.CrossGroups.ToList(),
+            _ws.RetakeScenarios.ToList());
+        var record = new SavedTimetableRecord(
+            "legacy-room-name",
+            "저장",
+            DateTime.Now,
+            new[]
+            {
+                new TimetableAssignmentRow("X-01", 0, 1, "D438"),
+                new TimetableAssignmentRow("X-01", 0, 2, "D438"),
+            },
+            Array.Empty<SavedManualCrossLinkRow>(),
+            System.Text.Json.JsonSerializer.Serialize(snapshot));
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSaved(record);
+
+        vm.SaveName = "legacy-room-name-normalized";
+        vm.SaveTimetableCommand.Execute(null);
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "legacy-room-name-normalized"));
+        var savedSnapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(saved.SnapshotJson!)!;
+
+        Assert.All(saved.Assignments.Where(a => a.CourseId == "X-01"), row => Assert.Equal("6", row.RoomId));
+        Assert.Equal(new[] { 1, 2 }, saved.Assignments
+            .Where(a => a.CourseId == "X-01" && a.RoomId == "6")
+            .Select(a => a.Period)
+            .OrderBy(period => period)
+            .ToArray());
+        Assert.Single(savedSnapshot.Rooms.Where(r => r.Name == "D438"));
+    }
+
+    [Fact]
+    public void RoomChange_SaveSnapshot_DoesNotNormalizeAmbiguousRoomNameId()
+    {
+        var snapshot = new AppData(
+            _ws.Courses.ToList(),
+            _ws.Professors.ToList(),
+            new List<Room>
+            {
+                new() { Id = "6", Name = "D438" },
+                new() { Id = "D438-copy", Name = "D438" },
+            },
+            _ws.CrossGroups.ToList(),
+            _ws.RetakeScenarios.ToList());
+        var record = new SavedTimetableRecord(
+            "ambiguous-room-name",
+            "저장",
+            DateTime.Now,
+            new[] { new TimetableAssignmentRow("X-01", 0, 1, "D438") },
+            Array.Empty<SavedManualCrossLinkRow>(),
+            System.Text.Json.JsonSerializer.Serialize(snapshot));
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSaved(record);
+        var eventCount = 0;
+        vm.SavedRequested += (_, _) => eventCount++;
+        var savedCountBefore = _ws.SavedTimetables.Count;
+
+        vm.SaveName = "ambiguous-room-name-blocked";
+        vm.SaveTimetableCommand.Execute(null);
+
+        Assert.Equal(savedCountBefore, _ws.SavedTimetables.Count);
+        Assert.Equal(0, eventCount);
+        Assert.DoesNotContain(_ws.SavedTimetables, t => t.Name == "ambiguous-room-name-blocked");
+        Assert.Contains("여러 개와 일치", vm.StatusMessage);
     }
 
     [Fact]
@@ -7875,6 +8426,52 @@ public class ManualEditViewModelTests : IDisposable
         vm.SelectCell(0, 1, 2, 0, assignment);
         return vm;
     }
+
+    private ManualEditViewModel LoadManualEditWithRoomSnapshot(
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<TimetableAssignmentRow> assignments)
+    {
+        var snapshot = new AppData(
+            courses.ToList(),
+            _ws.Professors.ToList(),
+            SnapshotRooms(),
+            _ws.CrossGroups.ToList(),
+            _ws.RetakeScenarios.ToList());
+        var record = new SavedTimetableRecord(
+            $"room-snapshot-{Guid.NewGuid():N}",
+            "저장",
+            DateTime.Now,
+            assignments,
+            Array.Empty<SavedManualCrossLinkRow>(),
+            System.Text.Json.JsonSerializer.Serialize(snapshot));
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSaved(record);
+        return vm;
+    }
+
+    private static Course CourseForSnapshot(
+        string id,
+        int section,
+        IReadOnlyList<string> fixedRooms) =>
+        new()
+        {
+            Id = id,
+            Name = "테스트",
+            Grade = 2,
+            HoursPerWeek = 2,
+            CourseType = "전필",
+            ProfessorId = "P1",
+            Section = section,
+            FixedRooms = fixedRooms.ToList(),
+            BlockStructure = new List<int> { 2 },
+        };
+
+    private static List<Room> SnapshotRooms() => new()
+    {
+        new Room { Id = "R1", Name = "강의실1" },
+        new Room { Id = "R2", Name = "강의실2" },
+        new Room { Id = "R3", Name = "강의실3" },
+    };
 
     private ManualEditViewModel BuildSingleRoomSelectionVm()
     {

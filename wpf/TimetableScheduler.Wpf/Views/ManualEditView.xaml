@@ -24,6 +24,15 @@
             <Setter Property="FontWeight" Value="Bold" />
             <Setter Property="Margin" Value="0,0,0,4" />
         </Style>
+
+        <Style x:Key="ManualEditComboBoxItemStyle" TargetType="{x:Type ComboBoxItem}">
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style TargetType="{x:Type ComboBox}">
+            <Setter Property="ItemContainerStyle" Value="{StaticResource ManualEditComboBoxItemStyle}" />
+        </Style>
     </UserControl.Resources>
 
     <Grid>

@@ -101,6 +101,9 @@ public sealed partial class TimetableGridViewModel : ObservableObject
         if (candidates.Count == 0) return new Course { Id = assignment.CourseId };
         if (candidates.Count == 1) return candidates[0];
 
+        var assignmentIdCourse = ResolveCourseFromAssignmentId(assignment.AssignmentId, candidates);
+        if (assignmentIdCourse != null) return assignmentIdCourse;
+
         var roomId = NormalizeRoomId(assignment.RoomId);
         var fixedRoomMatches = candidates
             .Where(c => c.FixedRooms.Any(room => string.Equals(NormalizeRoomId(room), roomId, StringComparison.Ordinal)))
@@ -109,6 +112,29 @@ public sealed partial class TimetableGridViewModel : ObservableObject
         if (fixedRoomMatches.Count > 0) candidates = fixedRoomMatches;
 
         return candidates[0];
+    }
+
+    private static Course? ResolveCourseFromAssignmentId(
+        string? assignmentId,
+        IReadOnlyList<Course> candidates)
+    {
+        if (string.IsNullOrWhiteSpace(assignmentId)) return null;
+
+        var parts = assignmentId.Split('\u001f');
+        if (parts.Length < 7 || !string.Equals(parts[0], "occ", StringComparison.Ordinal))
+            return null;
+
+        var courseId = parts[1];
+        var sectionText = parts[2];
+        var professorId = parts[3];
+        if (!int.TryParse(sectionText, out var section)) return null;
+
+        var matches = candidates
+            .Where(c => string.Equals(c.Id, courseId, StringComparison.Ordinal)
+                && c.Section == section
+                && string.Equals(c.ProfessorId, professorId, StringComparison.Ordinal))
+            .ToList();
+        return matches.Count == 1 ? matches[0] : null;
     }
 
     private static string NormalizeRoomId(string? roomId) =>

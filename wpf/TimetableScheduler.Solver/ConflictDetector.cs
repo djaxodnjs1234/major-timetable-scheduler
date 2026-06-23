@@ -321,6 +321,9 @@ public static class ConflictDetector
         if (candidates.Count == 0) return null;
         if (candidates.Count == 1) return candidates[0];
 
+        var assignmentIdCourse = ResolveCourseFromAssignmentId(assignment.AssignmentId, candidates);
+        if (assignmentIdCourse != null) return assignmentIdCourse;
+
         var roomId = NormalizeRoomId(assignment.RoomId);
         var fixedRoomMatches = candidates
             .Where(c => c.FixedRooms.Any(room => string.Equals(NormalizeRoomId(room), roomId, StringComparison.Ordinal)))
@@ -337,6 +340,29 @@ public static class ConflictDetector
         return null;
     }
 
+    private static Course? ResolveCourseFromAssignmentId(
+        string? assignmentId,
+        IReadOnlyList<Course> candidates)
+    {
+        if (string.IsNullOrWhiteSpace(assignmentId)) return null;
+
+        var parts = assignmentId.Split('\u001f');
+        if (parts.Length < 7 || !string.Equals(parts[0], "occ", StringComparison.Ordinal))
+            return null;
+
+        var courseId = parts[1];
+        var sectionText = parts[2];
+        var professorId = parts[3];
+        if (!int.TryParse(sectionText, out var section)) return null;
+
+        var matches = candidates
+            .Where(c => string.Equals(c.Id, courseId, StringComparison.Ordinal)
+                && c.Section == section
+                && string.Equals(c.ProfessorId, professorId, StringComparison.Ordinal))
+            .ToList();
+        return matches.Count == 1 ? matches[0] : null;
+    }
+
     private static string AssignmentConflictIdentity(SolutionAssignment assignment) =>
         string.IsNullOrWhiteSpace(assignment.AssignmentId)
             ? string.Join("\u001f", assignment.CourseId, assignment.Day, assignment.Period, assignment.RoomId)
@@ -347,7 +373,11 @@ public static class ConflictDetector
 
     private static string DayName(int d) => d switch
     {
-        0 => "월", 1 => "화", 2 => "수", 3 => "목", 4 => "금",
+        0 => "월",
+        1 => "화",
+        2 => "수",
+        3 => "목",
+        4 => "금",
         _ => "?"
     };
 

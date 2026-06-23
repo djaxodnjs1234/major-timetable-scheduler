@@ -75,7 +75,11 @@ public sealed partial class MainWindowViewModel : ObservableObject
         };
         _results.BackRequested += (_, _) => NavigateTo(_input);
 
-        _manual.SavedRequested += (_, _) => NavigateTo(_selection);
+        _manual.SavedRequested += (_, record) =>
+        {
+            _input.LoadForExistingTimetable(record);
+            NavigateTo(_selection);
+        };
         _manual.BackRequested += (_, _) => NavigateTo(_manualBackTarget ?? _results);
 
         currentPage = _selection;

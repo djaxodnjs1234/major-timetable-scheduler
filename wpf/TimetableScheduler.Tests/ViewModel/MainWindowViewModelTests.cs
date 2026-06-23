@@ -171,6 +171,58 @@ public class MainWindowViewModelTests : IDisposable
     }
 
     [Fact]
+    public void SaveTimetable_RefreshesInputSessionBeforeNavigating()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var workspace = _sp.GetRequiredService<WorkspaceService>();
+        workspace.AddCourse(new Course { Id = "X-01", Name = "테스트", Grade = 2, HoursPerWeek = 2, ProfessorId = "P1" });
+        workspace.AddProfessor(new Professor { Id = "P1", Name = "교수" });
+        workspace.AddRoom(new Room { Id = "GLOBAL", Name = "변경강의실" });
+        var initialSnapshot = new AppData(
+            workspace.Courses.ToList(),
+            workspace.Professors.ToList(),
+            new List<Room> { new() { Id = "S1", Name = "기존강의실" } },
+            workspace.CrossGroups.ToList(),
+            workspace.RetakeScenarios.ToList());
+        var initialRecord = workspace.SaveTimetable(
+            "session-sync",
+            new[]
+            {
+                new SolutionAssignment("X-01", 0, 1, "S1"),
+                new SolutionAssignment("X-01", 0, 2, "S1"),
+            },
+            snapshot: initialSnapshot);
+        var savedCountBefore = workspace.SavedTimetables.Count;
+
+        main.Selection.EditCommand.Execute(initialRecord);
+        Assert.Equal(new[] { "S1" }, main.Input.Workspace.Rooms.Select(r => r.Id).ToArray());
+        main.Input.GoToManualCommand.Execute(null);
+        var cell = main.Manual.Grid.Cells.First(c => c.Assignment.CourseId == "X-01");
+        main.Manual.SelectCell(cell.Day, cell.Period, cell.Grade, cell.SubColumnIdx, cell.Assignment);
+        main.Manual.NewRoomId = "GLOBAL";
+
+        main.Manual.ApplyRoomChangeCommand.Execute(null);
+        main.Manual.SaveTimetableCommand.Execute(null);
+
+        Assert.IsType<TimetableSelectionViewModel>(main.CurrentPage);
+        Assert.Equal(savedCountBefore, workspace.SavedTimetables.Count);
+        var updatedRecord = Assert.Single(workspace.SavedTimetables);
+        Assert.Equal(initialRecord.Id, updatedRecord.Id);
+        Assert.Same(updatedRecord, main.Selection.SelectedTimetable);
+        Assert.Contains(main.Input.Workspace.Rooms, room => room.Id == "GLOBAL" && room.Name == "변경강의실");
+        Assert.Contains(main.Input.RoomItems, item => item.Room.Id == "GLOBAL" && item.Room.Name == "변경강의실");
+        Assert.Contains(main.Input.CourseGroups, group => group.HeaderFixedRooms == "변경강의실");
+        Assert.All(main.Input.BuildEditHandoff()!.Solution.Assignment, row => Assert.Equal("GLOBAL", row.RoomId));
+
+        var stored = new SqliteRepository(_dbPath).LoadSavedTimetables().Single(t => t.Id == initialRecord.Id);
+        Assert.All(stored.Assignments, row => Assert.Equal("GLOBAL", row.RoomId));
+        Assert.NotNull(System.Text.Json.JsonSerializer.Deserialize<AppData>(stored.SnapshotJson!));
+
+        main.Selection.EditCommand.Execute(updatedRecord);
+        Assert.All(main.Input.BuildEditHandoff()!.Solution.Assignment, row => Assert.Equal("GLOBAL", row.RoomId));
+    }
+
+    [Fact]
     public void ResultsEditSelected_LiveWorkspace_PreservesProfessorInfoInManualEdit()
     {
         var main = _sp.GetRequiredService<MainWindowViewModel>();
