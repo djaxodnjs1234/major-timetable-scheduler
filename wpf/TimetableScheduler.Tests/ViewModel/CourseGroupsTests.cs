@@ -1306,6 +1306,33 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public async Task Solve_SixGraduateThreeHourCourses_ShowsGe031BeforeSolver()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "강의실1" });
+        for (var index = 1; index <= 6; index++)
+        {
+            var professorId = $"P{index}";
+            _workspace.AddProfessor(new Professor { Id = professorId, Name = professorId });
+            _workspace.AddCourse(new Course
+            {
+                Id = $"GR{index}",
+                Name = $"대학원 과목 {index}",
+                Grade = AcademicLevels.GraduateGrade,
+                HoursPerWeek = 3,
+                ProfessorId = professorId,
+                Section = 1,
+                BlockStructure = new List<int> { 3 },
+            });
+        }
+        var vm = new DataInputViewModel(_workspace, null!);
+
+        await vm.SolveCommand.ExecuteAsync(null);
+
+        Assert.Contains("GE-031", vm.StatusMessage);
+        Assert.False(vm.IsSolveComplete);
+    }
+
+    [Fact]
     public void SchedulingSnapshot_WithCrossPreservesLoadedSectionProfessorMismatch()
     {
         _workspace.AddRoom(new Room { Id = "R1", Name = "Room 1" });

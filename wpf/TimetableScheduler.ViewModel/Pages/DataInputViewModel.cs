@@ -14,7 +14,12 @@ public enum InputCategory { Professor, Course, Room, Solve }
 public sealed record ManualEditHandoff(
     RankedSolution Solution,
     IReadOnlyList<SavedManualCrossLinkRow> ManualCrossLinks,
-    string? SavedTimetableId);
+    string? SavedTimetableId,
+    string SaveName);
+
+public sealed record ManualConstraintEditContext(
+    AppData Snapshot,
+    ManualEditHandoff Handoff);
 
 public sealed record CrossGroupListItem(string Id, string Display);
 
@@ -816,7 +821,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     {
         if (_editBaseAssignments == null) return null;
         var solution = new RankedSolution(_editBaseAssignments, new SolutionScore(0, 0, 0, 0));
-        return new ManualEditHandoff(solution, _editBaseManualCrossLinks, _editBaseId);
+        return new ManualEditHandoff(solution, _editBaseManualCrossLinks, _editBaseId, _editBaseName);
     }
 
     public AppData CurrentSnapshot() => _workspace.SchedulingSnapshot();
@@ -885,16 +890,31 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public void LoadForExistingTimetable(SavedTimetableRecord record)
     {
         var snapshot = SavedTimetableSnapshotResolver.Resolve(record.SnapshotJson);
-        SwitchWorkspace(WorkspaceService.CreateSession(snapshot));
+        LoadForManualEdit(new ManualConstraintEditContext(
+            snapshot,
+            new ManualEditHandoff(
+                new RankedSolution(
+                    record.Assignments
+                        .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
+                        .ToList(),
+                    new SolutionScore(0, 0, 0, 0)),
+                (record.ManualCrossLinks ?? Array.Empty<SavedManualCrossLinkRow>()).ToList(),
+                record.Id,
+                record.Name)));
+    }
+
+    public void LoadForManualConstraintEdit(ManualConstraintEditContext context) =>
+        LoadForManualEdit(context);
+
+    private void LoadForManualEdit(ManualConstraintEditContext context)
+    {
+        SwitchWorkspace(WorkspaceService.CreateSession(context.Snapshot));
         IsExistingMode = true;
         SelectedCategory = InputCategory.Course;
-        _editBaseAssignments = record.Assignments
-            .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
-            .ToList();
-        _editBaseManualCrossLinks = (record.ManualCrossLinks ?? Array.Empty<SavedManualCrossLinkRow>())
-            .ToList();
-        _editBaseId = record.Id;
-        _editBaseName = record.Name;
+        _editBaseAssignments = context.Handoff.Solution.Assignment.ToList();
+        _editBaseManualCrossLinks = context.Handoff.ManualCrossLinks.ToList();
+        _editBaseId = context.Handoff.SavedTimetableId;
+        _editBaseName = context.Handoff.SaveName;
     }
 
     private IReadOnlyList<SolutionAssignment>? _editBaseAssignments;
@@ -1502,6 +1522,20 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         if (inputErrors.Count > 0)
         {
             StatusMessage = FormatDiagnostics("입력 오류", inputErrors);
+            IsSolveComplete = false;
+            return;
+        }
+
+        var generationErrors = TimetableDiagnostics.GetGenerationErrors(
+            scheduleSnapshot.Courses,
+            scheduleSnapshot.Professors,
+            scheduleSnapshot.Rooms,
+            scheduleSnapshot.CrossGroups,
+            scheduleSnapshot.RetakeScenarios,
+            ConsiderRetakeStudents);
+        if (generationErrors.Count > 0)
+        {
+            StatusMessage = FormatDiagnostics("생성 조건 오류", generationErrors);
             IsSolveComplete = false;
             return;
         }

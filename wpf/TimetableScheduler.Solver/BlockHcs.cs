@@ -242,7 +242,7 @@ public static class BlockHcs
                     int partnerSp;
                     if (Constants.Len2StartPeriods.Contains(sp))
                         partnerSp = sp + 1;
-                    else if (sp is 2 or 4 or 7 or 9)
+                    else if (sp is 2 or 4 or 7 or 9 or 11 or 13)
                         partnerSp = sp - 1;
                     else
                         continue;

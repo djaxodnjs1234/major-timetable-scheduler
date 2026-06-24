@@ -5412,7 +5412,7 @@ public class ManualEditViewModelTests : IDisposable
         var assignment = new TimetableScheduler.ViewModel.Grid.CellAssignment(
             "X-01", "테스트", "P1", 2, 1, new List<string> { "R1" }, 2, 2, false);
         vm.HandleCellClick(0, 1, 2, 0, assignment);
-        vm.HandleCellClick(1, 9, 2, 0, null);
+        vm.HandleCellClick(1, Constants.Periods.Last(), 2, 0, null);
 
         Assert.Contains("범위를 벗어납니다", vm.StatusMessage);
         Assert.Contains(vm.Grid.Cells, c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "X-01");

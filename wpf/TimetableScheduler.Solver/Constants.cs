@@ -1,16 +1,25 @@
+using TimetableScheduler.Domain;
+
 namespace TimetableScheduler.Solver;
 
 public static class Constants
 {
-    public const int LunchPeriod = 5;
+    public const int LunchPeriod = SchedulePeriods.LunchPeriod;
+    public const int FirstNightPeriod = SchedulePeriods.FirstNightPeriod;
     public const int Days = 5;
 
     public static readonly IReadOnlyList<int> Periods =
-        Enumerable.Range(1, 9).ToList();
+        SchedulePeriods.All;
 
     public static readonly IReadOnlyList<int> ValidPeriods =
-        Enumerable.Range(1, 9).Where(p => p != LunchPeriod).ToList();
+        SchedulePeriods.Instructional;
+
+    public static readonly IReadOnlyList<int> DaytimePeriods =
+        SchedulePeriods.Daytime;
+
+    public static readonly IReadOnlyList<int> NightPeriods =
+        SchedulePeriods.Night;
 
     public static readonly IReadOnlyList<int> Len2StartPeriods =
-        new[] { 1, 3, 6, 8 };
+        new[] { 1, 3, 6, 8, 10, 12 };
 }

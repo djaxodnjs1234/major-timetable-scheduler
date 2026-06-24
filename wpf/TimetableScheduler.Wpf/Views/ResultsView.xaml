@@ -182,13 +182,12 @@
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
         <DockPanel Grid.Row="0" Margin="0,0,0,6">
-            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                <TextBlock Text="확대/축소" VerticalAlignment="Center" FontSize="11" Foreground="#555" Margin="0,0,6,0" />
-                <Button Content="−" Click="OnZoomOutClick" ToolTip="축소" Width="28" Padding="0" />
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button Content="−" Click="OnZoomOutClick" ToolTip="축소" Width="24" Padding="0" />
                 <TextBlock Text="{Binding Zoom.DisplayPercent, RelativeSource={RelativeSource AncestorType={x:Type views:ResultsView}}}"
-                           Width="42" TextAlignment="Center" VerticalAlignment="Center" FontSize="11" />
-                <Button Content="+" Click="OnZoomInClick" ToolTip="확대" Width="28" Padding="0" />
-                <Button Content="100%" Click="OnZoomResetClick" ToolTip="기본 크기" Margin="4,0,0,0" Padding="6,2" FontSize="10" />
+                           Width="36" TextAlignment="Center" VerticalAlignment="Center" FontSize="10" />
+                <Button Content="+" Click="OnZoomInClick" ToolTip="확대" Width="24" Padding="0" />
+                <Button Content="100%" Click="OnZoomResetClick" ToolTip="기본 크기" Margin="3,0,0,0" Padding="4,1" FontSize="9" />
             </StackPanel>
             <ctrl:GradeLegendControl DockPanel.Dock="Right" />
         </DockPanel>

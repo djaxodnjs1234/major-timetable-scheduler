@@ -7,10 +7,11 @@ namespace TimetableScheduler.Tests.ViewModel;
 public class TimetableGridViewModelTests
 {
     [Fact]
-    public void Constructor_Builds5x9Cells()
+    public void Constructor_BuildsCellsForEveryConfiguredPeriod()
     {
         var vm = new TimetableGridViewModel();
-        Assert.Equal(5 * 9, vm.Cells.Count);
+        Assert.Equal(5 * Constants.Periods.Count, vm.Cells.Count);
+        Assert.NotNull(vm.CellAt(0, Constants.FirstNightPeriod));
     }
 
     [Fact]

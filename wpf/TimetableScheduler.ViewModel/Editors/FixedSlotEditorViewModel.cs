@@ -1,5 +1,6 @@
 using CommunityToolkit.Mvvm.ComponentModel;
 using TimetableScheduler.Domain;
+using TimetableScheduler.Solver;
 using TimetableScheduler.ViewModel.Pages;
 
 namespace TimetableScheduler.ViewModel.Editors;
@@ -8,9 +9,10 @@ public sealed partial class BlockSlotEntry : ObservableObject
 {
     public string BlockLabel { get; init; } = "";
     public int BlockSize { get; init; }
+    public bool IsGraduate { get; init; }
 
     public string[] DayOptions { get; } = { "월", "화", "수", "목", "금" };
-    public IReadOnlyList<TimePeriodOption> PeriodOptions => BuildPeriodOptions(BlockSize);
+    public IReadOnlyList<TimePeriodOption> PeriodOptions => BuildPeriodOptions(BlockSize, IsGraduate);
 
     [ObservableProperty] private int selectedDayIndex;
     [ObservableProperty] private int selectedPeriod = 1;
@@ -18,13 +20,13 @@ public sealed partial class BlockSlotEntry : ObservableObject
     public IEnumerable<TimeSlot> ToSlots() =>
         Enumerable.Range(0, BlockSize).Select(k => new TimeSlot(SelectedDayIndex, SelectedPeriod + k));
 
-    private static IReadOnlyList<TimePeriodOption> BuildPeriodOptions(int blockSize)
+    private static IReadOnlyList<TimePeriodOption> BuildPeriodOptions(int blockSize, bool isGraduate)
     {
-        var starts = blockSize == 2
-            ? new[] { 1, 3, 6, 8 }
-            : new[] { 1, 2, 3, 4, 6, 7, 8, 9 }
-                .Where(start => Enumerable.Range(start, blockSize).All(p => p is >= 1 and <= 9 and not 5))
-                .ToArray();
+        var allowedPeriods = isGraduate ? Constants.NightPeriods : Constants.DaytimePeriods;
+        var starts = allowedPeriods
+            .Where(start => Enumerable.Range(start, blockSize).All(allowedPeriods.Contains))
+            .Where(start => blockSize != 2 || Constants.Len2StartPeriods.Contains(start))
+            .ToArray();
         return starts.Select(start => new TimePeriodOption(start, FormatRange(start, blockSize))).ToList();
     }
 
@@ -74,12 +76,13 @@ public sealed partial class FixedSlotEditorViewModel : ObservableObject
                 {
                     BlockLabel = $"블록{bi + 1} ({blocks[bi]}교시)",
                     BlockSize = blocks[bi],
+                    IsGraduate = sec.Grade == AcademicLevels.GraduateGrade,
                     SelectedDayIndex = existingStarts.Count > bi && existingStarts[bi].HasValue
                         ? existingStarts[bi]!.Value.Day
                         : (si + bi) % 5,
                     SelectedPeriod = existingStarts.Count > bi && existingStarts[bi].HasValue
                         ? existingStarts[bi]!.Value.Period
-                        : 1,
+                        : sec.Grade == AcademicLevels.GraduateGrade ? Constants.FirstNightPeriod : 1,
                 };
                 entries.Add(entry);
             }

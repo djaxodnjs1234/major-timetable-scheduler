@@ -66,7 +66,19 @@
                 </Grid.RowDefinitions>
 
                 <Border Grid.Row="0" Background="#F5F5F5" Padding="12" CornerRadius="4">
-                    <StackPanel Orientation="Horizontal">
+                    <DockPanel LastChildFill="False">
+                        <Button DockPanel.Dock="Right"
+                                Content="제약조건 수정"
+                                Command="{Binding EditConstraintsCommand}"
+                                Padding="10,4" Margin="8,0,0,0">
+                            <Button.Style>
+                                <Style TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
+                                    <Setter Property="Background" Value="#107C10" />
+                                    <Setter Property="Foreground" Value="White" />
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <StackPanel Orientation="Horizontal">
                         <Button Content="초기화"
                             Command="{Binding ResetCommand}"
                             Padding="8,4" Margin="20,0,0,0" />
@@ -113,7 +125,8 @@
                             Height="34"
                             Padding="12,0" Margin="6,0,0,0"
                             VerticalAlignment="Center" />
-                    </StackPanel>
+                        </StackPanel>
+                    </DockPanel>
                 </Border>
 
                 <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="1" Margin="0,8,0,0">
@@ -123,13 +136,12 @@
                             <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
                         <DockPanel Grid.Row="0" Margin="6,3,12,6">
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
-                                <TextBlock Text="확대/축소" VerticalAlignment="Center" FontSize="11" Foreground="#555" Margin="0,0,6,0" />
-                                <Button Content="−" Click="OnZoomOutClick" ToolTip="축소" Width="28" Padding="0" />
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Content="−" Click="OnZoomOutClick" ToolTip="축소" Width="24" Padding="0" />
                                 <TextBlock Text="{Binding Zoom.DisplayPercent, RelativeSource={RelativeSource AncestorType={x:Type views:ManualEditView}}}"
-                                           Width="42" TextAlignment="Center" VerticalAlignment="Center" FontSize="11" />
-                                <Button Content="+" Click="OnZoomInClick" ToolTip="확대" Width="28" Padding="0" />
-                                <Button Content="100%" Click="OnZoomResetClick" ToolTip="기본 크기" Margin="4,0,0,0" Padding="6,2" FontSize="10" />
+                                           Width="36" TextAlignment="Center" VerticalAlignment="Center" FontSize="10" />
+                                <Button Content="+" Click="OnZoomInClick" ToolTip="확대" Width="24" Padding="0" />
+                                <Button Content="100%" Click="OnZoomResetClick" ToolTip="기본 크기" Margin="3,0,0,0" Padding="4,1" FontSize="9" />
                             </StackPanel>
                             <ctrl:GradeLegendControl DockPanel.Dock="Right" />
                         </DockPanel>

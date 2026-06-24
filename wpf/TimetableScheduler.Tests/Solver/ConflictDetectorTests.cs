@@ -15,6 +15,25 @@ public class ConflictDetectorTests
     }
 
     [Fact]
+    public void AcademicLevelTimeBand_DetectsManualPlacementViolation()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "UG", Name = "UG", Grade = 1 },
+            new() { Id = "GR", Name = "GR", Grade = AcademicLevels.GraduateGrade },
+        };
+        var assignments = new List<SolutionAssignment>
+        {
+            new("UG", 0, 10, "R1"),
+            new("GR", 0, 1, "R2"),
+        };
+
+        var conflicts = ConflictDetector.Detect(assignments, courses);
+
+        Assert.Equal(2, conflicts.Count(conflict => conflict.Type == ConflictType.AcademicLevelTimeBandViolation));
+    }
+
+    [Fact]
     public void RoomDoubleBooked_DetectsConflict()
     {
         var courses = new List<Course>

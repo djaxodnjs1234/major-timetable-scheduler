@@ -60,6 +60,39 @@ public class HcCoverageTests
     }
 
     [Fact]
+    public void HC23_RestrictsGraduateAndUndergraduateToTheirOwnTimeBands()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "UG-01", Name = "Undergraduate", Grade = 1, HoursPerWeek = 1, ProfessorId = "P1" },
+            new() { Id = "GR-01", Name = "Graduate", Grade = AcademicLevels.GraduateGrade, HoursPerWeek = 1, ProfessorId = "P2" },
+        };
+        var professors = new List<Professor>
+        {
+            new() { Id = "P1", Name = "P1" },
+            new() { Id = "P2", Name = "P2" },
+        };
+        var rooms = new List<Room> { new() { Id = "R1", Name = "R1" } };
+
+        var build = ModelBuilder.Build(courses, professors, rooms);
+        var solver = new CpSolver();
+        Assert.True(solver.Solve(build.Model) is CpSolverStatus.Feasible or CpSolverStatus.Optimal);
+
+        for (var day = 0; day < Constants.Days; day++)
+        {
+            foreach (var period in Constants.NightPeriods)
+                Assert.Equal(0, solver.Value(build.X[("UG-01", day, period, "R1")]));
+            foreach (var period in Constants.DaytimePeriods)
+                Assert.Equal(0, solver.Value(build.X[("GR-01", day, period, "R1")]));
+        }
+
+        Assert.Contains(Constants.DaytimePeriods, period =>
+            Enumerable.Range(0, Constants.Days).Any(day => solver.Value(build.Y[("UG-01", day, period)]) == 1));
+        Assert.Contains(Constants.NightPeriods, period =>
+            Enumerable.Range(0, Constants.Days).Any(day => solver.Value(build.Y[("GR-01", day, period)]) == 1));
+    }
+
+    [Fact]
     public void HC14_UnavailableRooms_BlocksThoseRooms()
     {
         var (courses, profs, rooms) = MakeBaseSetup();

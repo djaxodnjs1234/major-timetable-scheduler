@@ -2,6 +2,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using System.Windows.Threading;
+using TimetableScheduler.Domain;
 using TimetableScheduler.ViewModel.Grid;
 using TimetableScheduler.Wpf.Converters;
 
@@ -12,6 +13,7 @@ public partial class UnifiedTimetableControl : UserControl
     private const string DragDataFormat = "TimetableScheduler.UnifiedCellDrag";
     private static readonly Brush EmptyBg = Brushes.White;
     private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xF7, 0xF7, 0xF7));
+    private static readonly Brush NightBg = new SolidColorBrush(Color.FromRgb(0xEA, 0xF2, 0xFF));
     private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
     private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xEC, 0xEF, 0xF3));
     private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0xCB, 0xD5, 0xE1));
@@ -35,6 +37,7 @@ public partial class UnifiedTimetableControl : UserControl
     static UnifiedTimetableControl()
     {
         LunchBg.Freeze();
+        NightBg.Freeze();
         HeaderBg.Freeze();
         CellBorder.Freeze();
         DayBoundaryBorder.Freeze();
@@ -97,6 +100,13 @@ public partial class UnifiedTimetableControl : UserControl
             typeof(UnifiedTimetableControl),
             new PropertyMetadata(22.0, OnLayoutMetricsChanged));
 
+    public static readonly DependencyProperty NightRowHeightProperty =
+        DependencyProperty.Register(
+            nameof(NightRowHeight),
+            typeof(double),
+            typeof(UnifiedTimetableControl),
+            new PropertyMetadata(22.0, OnLayoutMetricsChanged));
+
     public static readonly DependencyProperty DayColumnWidthProperty =
         DependencyProperty.Register(
             nameof(DayColumnWidth),
@@ -114,6 +124,12 @@ public partial class UnifiedTimetableControl : UserControl
     {
         get => (double)GetValue(LunchRowHeightProperty);
         set => SetValue(LunchRowHeightProperty, value);
+    }
+
+    public double NightRowHeight
+    {
+        get => (double)GetValue(NightRowHeightProperty);
+        set => SetValue(NightRowHeightProperty, value);
     }
 
     public double DayColumnWidth
@@ -200,13 +216,15 @@ public partial class UnifiedTimetableControl : UserControl
         RootGrid.RowDefinitions.Clear();
         RootGrid.ColumnDefinitions.Clear();
 
-        // 2 header rows + 9 period rows
+        // 2 header rows + period rows, with a separator before night classes.
         for (int i = 0; i < 2; i++)
             RootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        for (int i = 0; i < 9; i++)
+        foreach (var period in vm.Periods)
         {
-            // period 5 (index 4) = lunch → compact fixed height
-            if (i == 4)
+            if (period == SchedulePeriods.FirstNightPeriod)
+                RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(NightRowHeight) });
+
+            if (period == 5)
                 RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(LunchRowHeight) });
             else
                 RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = PeriodRowMinHeight });
@@ -214,7 +232,7 @@ public partial class UnifiedTimetableControl : UserControl
 
         // 2 label cols (period, time) + sum of all grade widths
         RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
-        RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(52) });
+        RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(82) });
 
         // Track column index per day_group → column offset
         // Also column index for each (day, gradeColIdx) for cell placement
@@ -254,9 +272,9 @@ public partial class UnifiedTimetableControl : UserControl
 
         int totalDayCols = vm.DayGroups.Sum(dg => dg.TotalWidth);
 
-        for (int p = 1; p <= 9; p++)
+        foreach (var p in vm.Periods)
         {
-            int row = 1 + p;  // headers occupy rows 0..1
+            int row = GridRowForPeriod(p);
 
             if (p == 5)
             {
@@ -266,7 +284,7 @@ public partial class UnifiedTimetableControl : UserControl
             }
 
             AddBorder(p.ToString(), row, 0, 1, 1, HeaderBg, 11, FontWeights.Normal);
-            AddBorder($"{8 + p:D2}:00", row, 1, 1, 1, HeaderBg, 10, FontWeights.Normal);
+            AddBorder($"{8 + p:00}:00~{9 + p:00}:00", row, 1, 1, 1, HeaderBg, 9, FontWeights.Normal);
 
             foreach (var dg in vm.DayGroups)
             {
@@ -340,6 +358,8 @@ public partial class UnifiedTimetableControl : UserControl
                 }
             }
         }
+
+        AddNightBorder(NightSeparatorRow, 2 + totalDayCols);
     }
 
     private void AddSelectedOverlay(int row, int column, int rowSpan)
@@ -408,6 +428,34 @@ public partial class UnifiedTimetableControl : UserControl
         Panel.SetZIndex(border, 30);
         RootGrid.Children.Add(border);
     }
+
+    private void AddNightBorder(int row, int colSpan)
+    {
+        var border = new Border
+        {
+            BorderBrush = DayBoundaryBorder,
+            BorderThickness = new Thickness(0, 1, 0, 1),
+            Background = NightBg,
+            Child = new TextBlock
+            {
+                Text = "야 간 수 업",
+                HorizontalAlignment = HorizontalAlignment.Center,
+                VerticalAlignment = VerticalAlignment.Center,
+                FontSize = 8,
+                FontWeight = FontWeights.Normal,
+            },
+        };
+        Grid.SetRow(border, row);
+        Grid.SetColumn(border, 0);
+        Grid.SetColumnSpan(border, colSpan);
+        Panel.SetZIndex(border, 30);
+        RootGrid.Children.Add(border);
+    }
+
+    private static int GridRowForPeriod(int period) =>
+        1 + period + (period >= SchedulePeriods.FirstNightPeriod ? 1 : 0);
+
+    private static int NightSeparatorRow => SchedulePeriods.FirstNightPeriod + 1;
 
     internal static Border MakeChipBorder(CellAssignment a, Brush bg, string? crossLabel)
     {

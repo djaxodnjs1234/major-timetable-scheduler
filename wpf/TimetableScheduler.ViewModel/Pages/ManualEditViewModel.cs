@@ -1,5 +1,6 @@
 using System.Collections.ObjectModel;
 using System.Text.RegularExpressions;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TimetableScheduler.Data;
@@ -20,6 +21,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         "Cross 표시용 열에는 일반 이동할 수 없습니다.";
     private const string BlockRangeOverlapBlockedReason =
         "수업 블록의 전체 점유 범위가 다른 수업과 겹칩니다.";
+    private const string AcademicLevelTimeBandBlockedReason =
+        "대학원 과목은 야간 10~13교시에만, 학부 과목은 야간 이외 교시에만 배치할 수 있습니다.";
     private const string CrossDurationMismatchReason =
         "서로 다른 길이의 수업은 Cross할 수 없습니다.";
     private const string CrossTimeRangeMismatchReason =
@@ -213,9 +216,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     public override string Title => "수동 편집";
 
     public event EventHandler? BackRequested;
+    public event EventHandler? ConstraintEditRequested;
 
     [RelayCommand]
     private void Back() => BackRequested?.Invoke(this, EventArgs.Empty);
+
+    [RelayCommand]
+    private void EditConstraints() => ConstraintEditRequested?.Invoke(this, EventArgs.Empty);
 
     public UnifiedTimetableViewModel Grid { get; } = new();
     public ObservableCollection<NamedGridViewModel> GradeViews { get; } = new();
@@ -518,6 +525,21 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         LoadCore(new RankedSolution(assignments, new SolutionScore(0, 0, 0, 0)));
         EditingSavedTimetableId = record.Id;
         SaveName = record.Name;
+    }
+
+    public ManualConstraintEditContext BuildConstraintEditContext()
+    {
+        var snapshot = BuildSaveSnapshot() ?? _workspace.SchedulingSnapshot();
+        var snapshotCopy = JsonSerializer.Deserialize<AppData>(JsonSerializer.Serialize(snapshot))!;
+        var solution = new RankedSolution(
+            _working.ToList(),
+            BaseSolution?.Score ?? new SolutionScore(0, 0, 0, 0));
+        var handoff = new ManualEditHandoff(
+            solution,
+            ToSavedManualCrossLinks(),
+            EditingSavedTimetableId,
+            SaveName);
+        return new ManualConstraintEditContext(snapshotCopy, handoff);
     }
 
     public void LoadFromSolution(RankedSolution solution)
@@ -1888,6 +1910,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return new[] { "수업 블록이 시간표 범위를 벗어납니다." };
         if (targetPeriods.Contains(Constants.LunchPeriod))
             return new[] { "점심시간에는 수업을 배정할 수 없습니다." };
+        var allowedPeriods = course.Grade == AcademicLevels.GraduateGrade
+            ? Constants.NightPeriods
+            : Constants.DaytimePeriods;
+        if (targetPeriods.Any(period => !allowedPeriods.Contains(period)))
+            return new[] { AcademicLevelTimeBandBlockedReason };
         if (!allowCrossDisplayColumn && IsCrossDisplayOnlyColumn(targetDay, targetPeriod, targetGrade, targetSubColumnIdx))
             return new[] { CrossDisplayColumnBlockedReason };
         if (WouldCreateOneHourAboveMultiHourPattern(
@@ -2270,7 +2297,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private static bool IsPlacementGuardReason(string reason) =>
         reason == OneHourAboveTwoHourBlockedReason
         || reason == CrossDisplayColumnBlockedReason
-        || reason == BlockRangeOverlapBlockedReason;
+        || reason == BlockRangeOverlapBlockedReason
+        || reason == AcademicLevelTimeBandBlockedReason;
 
     private bool IsCrossDisplayOnlyColumn(int targetDay, int targetPeriod, int targetGrade, int targetSubColumnIdx)
     {
@@ -2549,6 +2577,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         ConflictType.SameCourseSameDayConflict => "같은 요일 중복 배치",
         ConflictType.ProfAllowedRoomViolation => "교수 강의실 제한",
         ConflictType.ProfRoomInconsistent => "교수 강의실 일관성",
+        ConflictType.AcademicLevelTimeBandViolation => "학위과정 시간대 위반",
         _ => "제약조건 위반",
     };
 
@@ -4389,6 +4418,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         ConflictType.FixedTimeViolation => "고정된 시간표를 벗어날 수 없습니다.",
         ConflictType.ProfUnavailable => "해당 교수님의 불가능 시간과 겹칩니다.",
         ConflictType.BlockStartViolation => "이 수업 블록은 해당 교시에 시작할 수 없습니다.",
+        ConflictType.AcademicLevelTimeBandViolation => "대학원 과목은 야간에만, 학부 과목은 야간 이외 시간에만 배치할 수 있습니다.",
         _ => "",
     };
 
