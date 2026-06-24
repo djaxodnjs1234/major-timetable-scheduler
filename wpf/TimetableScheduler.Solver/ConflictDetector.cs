@@ -18,6 +18,7 @@ public enum ConflictType
     ProfAllowedRoomViolation,
     ProfRoomInconsistent,
     SameCourseSameDayConflict,
+    AcademicLevelTimeBandViolation,
 }
 
 public sealed record ConflictItem(
@@ -51,6 +52,26 @@ public static class ConflictDetector
                 ConflictType.LunchConflict, ConflictSeverity.Error,
                 $"{name}({a.CourseId})가 점심 시간({DayName(a.Day)} {a.Period}교시)에 배치됨",
                 a.Day, a.Period,
+                new[] { a }));
+        }
+
+        // HC-23: graduate courses use night periods only; undergraduate courses use daytime only.
+        foreach (var (a, course) in resolved)
+        {
+            if (course == null || a.Period == Constants.LunchPeriod) continue;
+            var allowedPeriods = course.Grade == AcademicLevels.GraduateGrade
+                ? Constants.NightPeriods
+                : Constants.DaytimePeriods;
+            if (allowedPeriods.Contains(a.Period)) continue;
+
+            list.Add(new ConflictItem(
+                ConflictType.AcademicLevelTimeBandViolation,
+                ConflictSeverity.Error,
+                course.Grade == AcademicLevels.GraduateGrade
+                    ? $"{course.Name}({course.Id}) 대학원 과목은 야간 10~13교시에만 배치할 수 있습니다."
+                    : $"{course.Name}({course.Id}) 학부 과목은 야간 10~13교시에 배치할 수 없습니다.",
+                a.Day,
+                a.Period,
                 new[] { a }));
         }
 

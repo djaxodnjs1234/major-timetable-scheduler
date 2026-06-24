@@ -42,6 +42,17 @@ public class TimeSlotPickerTests
     }
 
     [Fact]
+    public void Toggle_AllowsNightPeriod()
+    {
+        var target = new List<TimeSlot>();
+        var vm = new TimeSlotPickerViewModel(target);
+
+        vm.Toggle(0, 10);
+
+        Assert.Contains(new TimeSlot(0, 10), target);
+    }
+
+    [Fact]
     public void FixedSlotEditor_LenTwoBlocksUseTimeRangesAndAllowedStarts()
     {
         var item = new CourseGroupItem
@@ -58,5 +69,32 @@ public class TimeSlotPickerTests
 
         Assert.Equal(new[] { 1, 3, 6, 8 }, firstBlock.PeriodOptions.Select(o => o.Period));
         Assert.Contains("09:00~11:00", firstBlock.PeriodOptions[0].Label);
+    }
+
+    [Fact]
+    public void FixedSlotEditor_GraduateBlocksOfferNightPeriodsOnly()
+    {
+        var item = new CourseGroupItem
+        {
+            BaseId = "G",
+            Sections = new List<Course>
+            {
+                new()
+                {
+                    Id = "G-01",
+                    Grade = AcademicLevels.GraduateGrade,
+                    HoursPerWeek = 2,
+                    BlockStructure = new List<int> { 2 },
+                    IsFixed = true,
+                },
+            },
+        };
+
+        var vm = FixedSlotEditorViewModel.Build(item, isFixed: true);
+        var block = vm.SectionEditors.Single().BlockEntries.Single();
+
+        Assert.Equal(new[] { 10, 12 }, block.PeriodOptions.Select(option => option.Period));
+        Assert.Equal(10, block.SelectedPeriod);
+        Assert.Contains("18:00~20:00", block.PeriodOptions[0].Label);
     }
 }

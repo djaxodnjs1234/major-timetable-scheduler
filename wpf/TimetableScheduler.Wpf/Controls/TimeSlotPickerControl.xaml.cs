@@ -67,8 +67,14 @@ public partial class TimeSlotPickerControl : UserControl
         RootGrid.RowDefinitions.Clear();
         RootGrid.ColumnDefinitions.Clear();
 
-        // 1 header row + 9 period rows = 10 rows
-        for (int i = 0; i < 10; i++)
+        var periods = vm.Cells
+            .Select(cell => cell.Period)
+            .Distinct()
+            .OrderBy(period => period)
+            .ToList();
+
+        // 1 header row plus one row per period
+        for (int i = 0; i <= periods.Count; i++)
             RootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
         // 1 period-label col + 5 day cols = 6 cols
@@ -109,7 +115,9 @@ public partial class TimeSlotPickerControl : UserControl
                     BorderThickness = new Thickness(0.5),
                     Child = new TextBlock
                     {
-                        Text = $"{cell.Period}교시\n({8 + cell.Period:00}:00~)",
+                        Text = cell.IsLunch
+                            ? "점심"
+                            : $"{cell.Period}교시\n{8 + cell.Period:00}:00~{9 + cell.Period:00}:00",
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Center,
                         FontSize = 11,

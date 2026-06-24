@@ -217,7 +217,7 @@ public static class BlockHcs
                     int partnerSp;
                     if (Constants.Len2StartPeriods.Contains(sp))
                         partnerSp = sp + 1;
-                    else if (sp is 2 or 4 or 7 or 9)
+                    else if (sp is 2 or 4 or 7 or 9 or 11 or 13)
                         partnerSp = sp - 1;
                     else
                         continue;
@@ -264,6 +264,7 @@ public static class BlockHcs
             for (int i = 0; i < blocks1.Count; i++)
             {
                 int b = blocks1[i];
+                if (b == 3) continue;
                 if (!startVarsByBlock.TryGetValue((c1.Id, i), out var sv1)) continue;
                 if (!startVarsByBlock.TryGetValue((c2.Id, i), out var sv2)) continue;
                 var hasAnyAdjacentPair = sv1.Keys.Any(start =>

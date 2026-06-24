@@ -114,7 +114,7 @@ public class MainWindowViewModelTests : IDisposable
     }
 
     [Fact]
-    public void Edit_NavigatesToInputPageInExistingMode()
+    public void Edit_NavigatesDirectlyToManualPage()
     {
         var main = _sp.GetRequiredService<MainWindowViewModel>();
         var workspace = _sp.GetRequiredService<WorkspaceService>();
@@ -123,13 +123,14 @@ public class MainWindowViewModelTests : IDisposable
 
         main.Selection.EditCommand.Execute(record);
 
-        Assert.IsType<DataInputViewModel>(main.CurrentPage);
-        Assert.Equal("정보 입력", main.CurrentPage.Title);
-        Assert.True(main.Input.IsExistingMode);
+        Assert.IsType<ManualEditViewModel>(main.CurrentPage);
+        Assert.Equal("수동 편집", main.CurrentPage.Title);
+        Assert.Equal(record.Id, main.Manual.EditingSavedTimetableId);
+        Assert.Equal("nav-test", main.Manual.SaveName);
     }
 
     [Fact]
-    public void EditThenGoToManual_NavigatesToManualPage()
+    public void ManualConstraintEdit_GoesToInputAndReturnsToManualPage()
     {
         var main = _sp.GetRequiredService<MainWindowViewModel>();
         var workspace = _sp.GetRequiredService<WorkspaceService>();
@@ -137,11 +138,67 @@ public class MainWindowViewModelTests : IDisposable
         var record = workspace.SavedTimetables.First(t => t.Name == "nav-test");
 
         main.Selection.EditCommand.Execute(record);
+        main.Manual.EditConstraintsCommand.Execute(null);
+
+        Assert.IsType<DataInputViewModel>(main.CurrentPage);
+        Assert.True(main.Input.IsExistingMode);
+
         main.Input.GoToManualCommand.Execute(null);
 
         Assert.IsType<ManualEditViewModel>(main.CurrentPage);
         Assert.Equal("수동 편집", main.CurrentPage.Title);
         Assert.Equal("nav-test", main.Manual.SaveName);
+    }
+
+    [Fact]
+    public void ManualConstraintEdit_BackReturnsToCurrentManualPage()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var workspace = _sp.GetRequiredService<WorkspaceService>();
+        workspace.SaveTimetable("nav-test", Array.Empty<TimetableScheduler.Solver.SolutionAssignment>());
+        var record = workspace.SavedTimetables.First(t => t.Name == "nav-test");
+
+        main.Selection.EditCommand.Execute(record);
+        var manual = main.Manual;
+        manual.EditConstraintsCommand.Execute(null);
+        main.Input.BackCommand.Execute(null);
+
+        Assert.Same(manual, main.CurrentPage);
+        Assert.Equal("nav-test", main.Manual.SaveName);
+    }
+
+    [Fact]
+    public void ManualConstraintEdit_AppliesChangedSnapshotAndPreservesAssignments()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var workspace = _sp.GetRequiredService<WorkspaceService>();
+        workspace.AddRoom(new Room { Id = "R1", Name = "강의실" });
+        workspace.AddProfessor(new Professor { Id = "P1", Name = "교수" });
+        workspace.AddCourse(new Course
+        {
+            Id = "C-01",
+            Name = "변경 전 과목",
+            Grade = 1,
+            HoursPerWeek = 1,
+            CourseType = "전필",
+            ProfessorId = "P1",
+            BlockStructure = new List<int> { 1 },
+        });
+        workspace.SaveTimetable(
+            "nav-test",
+            new[] { new SolutionAssignment("C-01", 0, 1, "R1") });
+        var record = workspace.SavedTimetables.First(t => t.Name == "nav-test");
+
+        main.Selection.EditCommand.Execute(record);
+        main.Manual.EditConstraintsCommand.Execute(null);
+        var course = main.Input.Workspace.Courses.Single();
+        course.Name = "변경 후 과목";
+        main.Input.Workspace.UpdateCourse(course);
+        main.Input.GoToManualCommand.Execute(null);
+
+        var assignment = Assert.Single(main.Manual.Grid.Cells).Assignment;
+        Assert.Equal("C-01", assignment.CourseId);
+        Assert.Equal("변경 후 과목", assignment.CourseName);
     }
 
     [Fact]
@@ -162,7 +219,6 @@ public class MainWindowViewModelTests : IDisposable
         workspace.SaveTimetable("nav-test", Array.Empty<TimetableScheduler.Solver.SolutionAssignment>());
         var record = workspace.SavedTimetables.First(t => t.Name == "nav-test");
         main.Selection.EditCommand.Execute(record);
-        main.Input.GoToManualCommand.Execute(null);
 
         main.Manual.SaveTimetableCommand.Execute(null);
 

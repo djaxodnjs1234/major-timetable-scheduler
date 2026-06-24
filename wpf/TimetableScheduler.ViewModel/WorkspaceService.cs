@@ -5,6 +5,11 @@ using TimetableScheduler.Solver;
 
 namespace TimetableScheduler.ViewModel;
 
+public sealed record CourseConstraintCleanup(int CrossGroupCount, int RetakeScenarioCount)
+{
+    public int TotalCount => CrossGroupCount + RetakeScenarioCount;
+}
+
 public sealed class WorkspaceService
 {
     // Null for a session workspace: CRUD stays in memory, never touches a DB.
@@ -157,6 +162,53 @@ public sealed class WorkspaceService
             throw new InvalidOperationException("이 교과목은 관련 조건에서 사용 중이므로 삭제할 수 없습니다.");
         Courses.Remove(c);
         Persist();
+    }
+
+    /// <summary>
+    /// Calculates the dependent conditions that must be removed when course rows are
+    /// deleted from an existing timetable's in-memory edit session.
+    /// </summary>
+    public CourseConstraintCleanup PreviewSessionCourseDeletion(IEnumerable<Course> courses)
+    {
+        var targets = ResolveCourses(courses);
+        return CalculateCourseConstraintCleanup(targets);
+    }
+
+    /// <summary>
+    /// Removes course rows and only the Cross/retake conditions made invalid by the
+    /// removal. This is intentionally limited to an in-memory timetable edit session.
+    /// </summary>
+    public CourseConstraintCleanup DeleteCoursesForSessionEdit(IEnumerable<Course> courses)
+    {
+        if (!IsSession)
+            throw new InvalidOperationException("저장된 시간표 편집 세션에서만 관련 조건을 함께 삭제할 수 있습니다.");
+
+        var targets = ResolveCourses(courses);
+        if (targets.Count == 0) return new CourseConstraintCleanup(0, 0);
+
+        var cleanup = CalculateCourseConstraintCleanup(targets);
+        foreach (var course in targets)
+            Courses.Remove(course);
+
+        var affectedBaseIds = targets
+            .Select(course => DomainHelpers.BaseId(course.Id))
+            .ToHashSet(StringComparer.Ordinal);
+        foreach (var group in CrossGroups
+                     .Where(group => ShouldRemoveCrossGroup(group, affectedBaseIds))
+                     .ToList())
+        {
+            CrossGroups.Remove(group);
+        }
+
+        foreach (var scenario in RetakeScenarios
+                     .Where(scenario => ShouldRemoveRetakeScenario(scenario, affectedBaseIds))
+                     .ToList())
+        {
+            RetakeScenarios.Remove(scenario);
+        }
+
+        Persist();
+        return cleanup;
     }
     public void UpdateCourse(Course c)
     {
@@ -319,6 +371,48 @@ public sealed class WorkspaceService
         return CrossGroups.Any(g => g.BaseIds.Contains(baseId, StringComparer.Ordinal))
             || RetakeScenarios.Any(r => string.Equals(r.RetakeBaseId, baseId, StringComparison.Ordinal));
     }
+
+    private List<Course> ResolveCourses(IEnumerable<Course> courses)
+    {
+        var keys = courses
+            .Select(course => (course.Id, course.Section))
+            .ToHashSet();
+        return Courses
+            .Where(course => keys.Contains((course.Id, course.Section)))
+            .ToList();
+    }
+
+    private CourseConstraintCleanup CalculateCourseConstraintCleanup(IReadOnlyList<Course> targets)
+    {
+        if (targets.Count == 0) return new CourseConstraintCleanup(0, 0);
+
+        var targetKeys = targets
+            .Select(course => (course.Id, course.Section))
+            .ToHashSet();
+        var affectedBaseIds = targets
+            .Select(course => DomainHelpers.BaseId(course.Id))
+            .ToHashSet(StringComparer.Ordinal);
+        var remainingByBaseId = Courses
+            .Where(course => !targetKeys.Contains((course.Id, course.Section)))
+            .GroupBy(course => DomainHelpers.BaseId(course.Id), StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.Count(), StringComparer.Ordinal);
+
+        var crossGroupCount = CrossGroups.Count(group =>
+            group.BaseIds.Any(baseId => affectedBaseIds.Contains(baseId)
+                && (!remainingByBaseId.TryGetValue(baseId, out var count) || count < 2)));
+        var retakeScenarioCount = RetakeScenarios.Count(scenario =>
+            affectedBaseIds.Contains(scenario.RetakeBaseId)
+            && !remainingByBaseId.ContainsKey(scenario.RetakeBaseId));
+        return new CourseConstraintCleanup(crossGroupCount, retakeScenarioCount);
+    }
+
+    private bool ShouldRemoveCrossGroup(CrossGroup group, IReadOnlySet<string> affectedBaseIds) =>
+        group.BaseIds.Any(baseId => affectedBaseIds.Contains(baseId)
+            && Courses.Count(course => DomainHelpers.BaseId(course.Id) == baseId) < 2);
+
+    private bool ShouldRemoveRetakeScenario(RetakeScenario scenario, IReadOnlySet<string> affectedBaseIds) =>
+        affectedBaseIds.Contains(scenario.RetakeBaseId)
+        && !Courses.Any(course => DomainHelpers.BaseId(course.Id) == scenario.RetakeBaseId);
 
     private int IndexOfCourse(string id, int section)
     {

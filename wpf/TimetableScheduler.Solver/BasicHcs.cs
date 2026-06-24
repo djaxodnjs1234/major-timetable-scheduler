@@ -146,4 +146,19 @@ public static class BasicHcs
                 model.Add(y[(c.Id, slot.Day, slot.Period)] == 1);
         }
     }
+
+    public static void AddHc23_GraduateNightOnly(
+        CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms)
+    {
+        foreach (var course in courses)
+        {
+            var disallowedPeriods = course.Grade == AcademicLevels.GraduateGrade
+                ? Constants.DaytimePeriods
+                : Constants.NightPeriods;
+            foreach (var day in Enumerable.Range(0, Constants.Days))
+                foreach (var period in disallowedPeriods)
+                    foreach (var room in rooms)
+                        model.Add(x[(course.Id, day, period, room.Id)] == 0);
+        }
+    }
 }

@@ -6,7 +6,7 @@ namespace TimetableScheduler.Data;
 public static class FormattedTimetableExporter
 {
     private static readonly string[] DayNames = { "월", "화", "수", "목", "금" };
-    private static readonly int[] ValidPeriods = { 1, 2, 3, 4, 6, 7, 8, 9 };
+    private static readonly IReadOnlyList<int> ValidPeriods = SchedulePeriods.Instructional;
 
     private static readonly XLColor[] GradeFills =
     {
@@ -37,6 +37,9 @@ public static class FormattedTimetableExporter
 
     // Row 4 = day headers, row 5 = grade sub-headers, period 1 starts at row 6
     private static int PeriodRow(int p) => p + 5;
+    private static int LastPeriodRow => PeriodRow(SchedulePeriods.LastPeriod);
+    private static int RemarksRow => LastPeriodRow + 1;
+    private static int LegendRow => RemarksRow + 2;
 
     public static void Export(
         string timetableName,
@@ -208,8 +211,8 @@ public static class FormattedTimetableExporter
         ws.Cell(2, lastLabelCol).Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Right;
         ws.Range(2, 1, 2, lastLabelCol).Merge();
 
-        // outer border: day headers (row 4) + grade row (row 5) + all period rows (rows 6-14)
-        ApplyOuterBorder(ws.Range(4, 1, 14, totalCols));
+        // outer border: day headers (row 4), grade row (row 5), and all period rows
+        ApplyOuterBorder(ws.Range(4, 1, LastPeriodRow, totalCols));
 
         // day headers (row 4)
         for (int d = 0; d < 5; d++)
@@ -233,8 +236,9 @@ public static class FormattedTimetableExporter
         // period label columns
         WritePeriodLabels(ws, lastLabelCol);
 
-        // lunch row (period 5 = row 10)
-        var lunchRange = ws.Range(10, 1, 10, totalCols).Merge();
+        // lunch row
+        var lunchRow = PeriodRow(SchedulePeriods.LunchPeriod);
+        var lunchRange = ws.Range(lunchRow, 1, lunchRow, totalCols).Merge();
         lunchRange.Value = "점 심 시 간";
         lunchRange.Style.Font.Bold = true;
         lunchRange.Style.Font.FontSize = 11;
@@ -488,8 +492,7 @@ public static class FormattedTimetableExporter
         DayLayout[] layouts,
         int totalCols)
     {
-        // Row 15: 비고
-        var remarksCol = ws.Cell(15, 1);
+        var remarksCol = ws.Cell(RemarksRow, 1);
         remarksCol.Value = "비고";
         remarksCol.Style.Font.Bold = true;
         remarksCol.Style.Font.FontColor = TextMuted;
@@ -504,19 +507,19 @@ public static class FormattedTimetableExporter
             if (c.IsFixed && !string.IsNullOrEmpty(c.Name))
                 notes.Add($"{c.Name} ({DayNames[a.Day]}{a.Period}교시, {FormatRoomForExport(a.RoomId, roomNameMap)})");
         }
-        var notesRange = ws.Range(15, 2, 15, totalCols).Merge();
+        var notesRange = ws.Range(RemarksRow, 2, RemarksRow, totalCols).Merge();
         if (notes.Count > 0)
             notesRange.Value = string.Join("\n", notes.Distinct().Select(note => $"- {note}"));
         notesRange.Style.Alignment.WrapText = true;
         notesRange.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
         notesRange.Style.Font.FontSize      = 9;
         notesRange.Style.Font.FontColor = TextMuted;
-        ApplyHeaderBorder(ws.Range(15, 1, 15, totalCols));
+        ApplyHeaderBorder(ws.Range(RemarksRow, 1, RemarksRow, totalCols));
     }
 
     private static void WriteLegend(IXLWorksheet ws)
     {
-        const int row = 17;
+        int row = LegendRow;
         ws.Cell(row, 1).Value = "범례";
         ws.Cell(row, 1).Style.Font.Bold = true;
         ws.Cell(row, 1).Style.Font.FontColor = TextMuted;
@@ -552,11 +555,10 @@ public static class FormattedTimetableExporter
 
     private static void WritePeriodLabels(IXLWorksheet ws, int lastLabelCol)
     {
-        int[] periods = { 1, 2, 3, 4, 5, 6, 7, 8, 9 };
-        foreach (int p in periods)
+        foreach (int p in SchedulePeriods.All)
         {
             int r = PeriodRow(p);
-            string label = p == 5 ? "점심" : p.ToString();
+            string label = FormatPeriodLabel(p);
 
             var left = ws.Cell(r, 1);
             left.Value = label;
@@ -565,6 +567,7 @@ public static class FormattedTimetableExporter
             left.Style.Fill.BackgroundColor = GradeHeaderBg;
             left.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
             left.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
+            left.Style.Alignment.WrapText   = true;
             ApplyHeaderBorder(left.AsRange());
 
             var right = ws.Cell(r, lastLabelCol);
@@ -574,9 +577,14 @@ public static class FormattedTimetableExporter
             right.Style.Fill.BackgroundColor = GradeHeaderBg;
             right.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
             right.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
+            right.Style.Alignment.WrapText   = true;
             ApplyHeaderBorder(right.AsRange());
         }
     }
+
+    private static string FormatPeriodLabel(int period) => period == 5
+        ? "점심\n13:00~14:00"
+        : $"{period}교시\n{SchedulePeriods.TimeRange(period)}";
 
     private static void SetColumnWidths(
         IXLWorksheet ws,
@@ -584,8 +592,8 @@ public static class FormattedTimetableExporter
         DayLayout[] layouts,
         int lastLabelCol)
     {
-        ws.Column(1).Width            = 4;
-        ws.Column(lastLabelCol).Width = 4;
+        ws.Column(1).Width            = 12;
+        ws.Column(lastLabelCol).Width = 12;
         for (int d = 0; d < 5; d++)
             for (int sub = 0; sub < layouts[d].SubColCount; sub++)
                 ws.Column(dayStart[d] + sub).Width = 14;
@@ -598,10 +606,10 @@ public static class FormattedTimetableExporter
         ws.Row(3).Height  = 6;   // spacer
         ws.Row(4).Height  = 22;  // day headers
         ws.Row(5).Height  = 14;  // grade sub-headers
-        ws.Row(10).Height = 22;  // lunch (period 5)
-        ws.Row(15).Height = 54;  // 비고
-        ws.Row(17).Height = 18;  // 범례
-        foreach (int p in new[] { 1, 2, 3, 4, 6, 7, 8, 9 })
+        ws.Row(PeriodRow(SchedulePeriods.LunchPeriod)).Height = 22;
+        ws.Row(RemarksRow).Height = 54;
+        ws.Row(LegendRow).Height = 18;
+        foreach (int p in ValidPeriods)
             ws.Row(PeriodRow(p)).Height = 72;
     }
     private static string BuildCellText(string name, string section, string profStr, string rooms)

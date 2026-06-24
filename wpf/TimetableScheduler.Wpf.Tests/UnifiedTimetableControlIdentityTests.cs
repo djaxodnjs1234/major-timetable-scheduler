@@ -150,6 +150,46 @@ public class UnifiedTimetableControlIdentityTests
         });
     }
 
+    [Fact]
+    public void UnifiedTimetable_ShowsNightSeparatorBeforePeriod10()
+    {
+        RunSta(() =>
+        {
+            EnsureApplicationResources();
+            var vm = new UnifiedTimetableViewModel();
+            vm.Render(
+                new[] { new SolutionAssignment("NIGHT", 0, 10, "R1", "NIGHT") },
+                new[]
+                {
+                    new Course
+                    {
+                        Id = "NIGHT",
+                        Name = "야간수업",
+                        Grade = AcademicLevels.GraduateGrade,
+                        HoursPerWeek = 1,
+                        ProfessorId = "P1",
+                    },
+                },
+                Professors(),
+                Rooms());
+
+            var view = ShowUnifiedGrid(vm);
+            try
+            {
+                var rootGrid = FindDescendants<Grid>(view)
+                    .Single(grid => grid.Name == "RootGrid");
+
+                Assert.Equal(Constants.Periods.Count + 3, rootGrid.RowDefinitions.Count);
+                Assert.Contains(FindDescendants<TextBlock>(rootGrid), text => text.Text == "야 간 수 업");
+                Assert.Equal(12, Grid.GetRow(AssignmentBorder(view, "NIGHT")));
+            }
+            finally
+            {
+                Window.GetWindow(view)?.Close();
+            }
+        });
+    }
+
     private static UnifiedTimetableViewModel BuildDuplicateCourseViewModel()
     {
         var vm = new UnifiedTimetableViewModel();

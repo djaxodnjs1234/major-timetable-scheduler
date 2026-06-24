@@ -32,6 +32,43 @@ public class TimetableDiagnosticsTests
     }
 
     [Fact]
+    public void InputErrors_FixedTimeOutsideAcademicLevelBand_ReportsIe040()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "UG-01",
+                Name = "Undergraduate",
+                Grade = 1,
+                HoursPerWeek = 1,
+                ProfessorId = "P1",
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 10) },
+                BlockStructure = new List<int> { 1 },
+            },
+            new()
+            {
+                Id = "GR-01",
+                Name = "Graduate",
+                Grade = AcademicLevels.GraduateGrade,
+                HoursPerWeek = 1,
+                ProfessorId = "P1",
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1) },
+                BlockStructure = new List<int> { 1 },
+            },
+        };
+
+        var diagnostics = TimetableDiagnostics.GetInputErrors(
+            courses,
+            new List<Professor> { new() { Id = "P1", Name = "Professor" } },
+            new List<Room> { new() { Id = "R1", Name = "Room" } });
+
+        Assert.Equal(2, diagnostics.Count(diagnostic => diagnostic.Id == "IE-040"));
+    }
+
+    [Fact]
     public void InputErrors_IncludeAffectedManagementLocations()
     {
         var courses = new List<Course>
@@ -314,6 +351,66 @@ public class TimetableDiagnosticsTests
 
         Assert.DoesNotContain(inputDiagnostics, diagnostic => diagnostic.Id == "IE-038");
         Assert.DoesNotContain(generationDiagnostics, diagnostic => diagnostic.Id == "GE-027");
+    }
+
+    [Fact]
+    public void GenerationErrors_SameProfessorSectionsWithThreeHourBlocks_DoNotReportGe030()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "JAVA-01",
+                Name = "Java",
+                Grade = 1,
+                HoursPerWeek = 5,
+                ProfessorId = "P1",
+                Section = 1,
+                BlockStructure = new List<int> { 2, 3 },
+            },
+            new()
+            {
+                Id = "JAVA-02",
+                Name = "Java",
+                Grade = 1,
+                HoursPerWeek = 5,
+                ProfessorId = "P1",
+                Section = 2,
+                BlockStructure = new List<int> { 2, 3 },
+            },
+        };
+
+        var diagnostics = TimetableDiagnostics.GetGenerationErrors(
+            courses,
+            new List<Professor> { new() { Id = "P1", Name = "Professor" } },
+            Rooms(1));
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "GE-030");
+    }
+
+    [Fact]
+    public void GenerationErrors_SixGraduateThreeHourCourses_ReportGe031()
+    {
+        var courses = Enumerable.Range(1, 6)
+            .Select(index => new Course
+            {
+                Id = $"GR{index:00}",
+                Name = $"Graduate {index}",
+                Grade = AcademicLevels.GraduateGrade,
+                HoursPerWeek = 3,
+                ProfessorId = $"P{index:00}",
+                BlockStructure = new List<int> { 3 },
+            })
+            .ToList();
+
+        var diagnostics = TimetableDiagnostics.GetGenerationErrors(
+            courses,
+            ProfessorsFor(courses),
+            Rooms(1));
+
+        var diagnostic = Assert.Single(diagnostics.Where(diagnostic => diagnostic.Id == "GE-031"));
+        Assert.Contains("3시간 연속 수업 블록이 6개", diagnostic.Message);
+        Assert.Contains("최대 5개", diagnostic.Message);
     }
 
     private static Course OneHourCourse(string id, string professorId) => new()

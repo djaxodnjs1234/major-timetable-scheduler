@@ -14,11 +14,13 @@ public class TimetableXlsxRoundTripTests
             new("GA1004-01", 0, 1, "D327"),
             new("GA1004-01", 0, 2, "D327"),
             new("GA1005-01", 1, 3, "D438"),
+            new("GA1006-01", 2, 10, "D500"),
         };
         var courses = new List<Course>
         {
             new() { Id = "GA1004-01", Name = "자료구조", Grade = 2, Section = 1, HoursPerWeek = 4 },
             new() { Id = "GA1005-01", Name = "컴퓨터구조", Grade = 2, Section = 1, HoursPerWeek = 3 },
+            new() { Id = "GA1006-01", Name = "Graduate", Grade = AcademicLevels.GraduateGrade, Section = 1, HoursPerWeek = 1 },
         };
         var profs = new List<Professor>();
 
@@ -223,6 +225,35 @@ public class TimetableXlsxRoundTripTests
         {
             if (File.Exists(path)) File.Delete(path);
         }
+    }
+
+    [Fact]
+    public void ExcelExport_PeriodLabelsIncludeTimeRanges()
+    {
+        ExportAndInspectWorksheet(
+            new List<TimetableAssignmentRow> { new("C1", 0, 1, "R1") },
+            new List<Course> { new() { Id = "C1", Name = "Test", Grade = 1 } },
+            ws =>
+            {
+                var firstPeriodLabel = ws.Cell(6, 1).GetString();
+                Assert.Contains("1", firstPeriodLabel);
+                Assert.Contains("09:00~10:00", firstPeriodLabel);
+                Assert.Contains("14:00~15:00", ws.Cell(11, 1).GetString());
+            });
+    }
+
+    [Fact]
+    public void ExcelExport_NightPeriodUsesEveningTimeRangeWithoutOverwritingRemarks()
+    {
+        ExportAndInspectWorksheet(
+            new List<TimetableAssignmentRow> { new("C1", 0, 10, "R1") },
+            new List<Course> { new() { Id = "C1", Name = "Night", Grade = AcademicLevels.GraduateGrade } },
+            ws =>
+            {
+                Assert.Contains("10", ws.Cell(15, 1).GetString());
+                Assert.Contains("18:00~19:00", ws.Cell(15, 1).GetString());
+                Assert.False(string.IsNullOrWhiteSpace(ws.Cell(19, 1).GetString()));
+            });
     }
 
     [Fact]

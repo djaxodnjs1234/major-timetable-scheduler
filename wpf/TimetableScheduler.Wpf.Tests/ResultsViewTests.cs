@@ -159,6 +159,51 @@ public class ResultsViewTests
         });
     }
 
+    [Fact]
+    public void TimetableGrid_ShowsNightSeparatorBeforePeriod10()
+    {
+        RunSta(() =>
+        {
+            EnsureApplicationResources();
+
+            var vm = new TimetableGridViewModel();
+            vm.Render(
+                new[] { new SolutionAssignment("NIGHT", 0, 10, "R1") },
+                new[]
+                {
+                    new Course
+                    {
+                        Id = "NIGHT",
+                        Name = "야간수업",
+                        Grade = AcademicLevels.GraduateGrade,
+                        HoursPerWeek = 1,
+                        ProfessorId = "P1",
+                    },
+                },
+                rooms: new[] { new Room { Id = "R1", Name = "101호" } });
+
+            var view = ShowGrid(vm);
+            try
+            {
+                var bodyGrid = FindDescendants<Grid>(view)
+                    .Single(grid => grid.Name == "BodyGrid");
+                var periodTenLabel = FindDescendants<Border>(bodyGrid)
+                    .Single(border => border.Child is TextBlock { Text: "10" });
+                var nightAssignment = FindDescendants<Border>(bodyGrid)
+                    .Single(border => border.Child is Border && Grid.GetRow(border) == 10);
+
+                Assert.Equal(Constants.Periods.Count + 1, bodyGrid.RowDefinitions.Count);
+                Assert.Contains(FindDescendants<TextBlock>(bodyGrid), text => text.Text == "야 간 수 업");
+                Assert.Equal(10, Grid.GetRow(periodTenLabel));
+                Assert.Equal(10, Grid.GetRow(nightAssignment));
+            }
+            finally
+            {
+                Window.GetWindow(view)?.Close();
+            }
+        });
+    }
+
     private static void RunSta(Action action)
     {
         Exception? error = null;

@@ -7,10 +7,11 @@ namespace TimetableScheduler.Tests.ViewModel;
 public class TimetableGridViewModelTests
 {
     [Fact]
-    public void Constructor_Builds5x9Cells()
+    public void Constructor_BuildsCellsForEveryConfiguredPeriod()
     {
         var vm = new TimetableGridViewModel();
-        Assert.Equal(5 * 9, vm.Cells.Count);
+        Assert.Equal(5 * Constants.Periods.Count, vm.Cells.Count);
+        Assert.NotNull(vm.CellAt(0, Constants.FirstNightPeriod));
     }
 
     [Fact]
@@ -199,7 +200,7 @@ public class TimetableGridViewModelTests
         vm.Render(assignment, courses, professors: professors, rooms: rooms);
 
         var item = Assert.Single(vm.CellAt(0, 1).Items);
-        Assert.Equal("★ 캡스톤·B", item.TitleLabel);
+        Assert.Equal("★ 캡스톤", item.TitleLabel);
         Assert.Equal("김교수, 박교수", item.ProfessorLine);
         Assert.Equal(new[] { "박교수" }, item.CoteachProfLabels);
         Assert.Equal("공학관 101\n공학관 102", item.RoomsLabel);
@@ -223,5 +224,26 @@ public class TimetableGridViewModelTests
 
         var cell = vm.CellAt(0, 1);
         Assert.Equal(2, cell.Items.Count);
+        Assert.Equal(new[] { "A", "B" }, cell.Items.Select(item => item.SectionLabel).OrderBy(label => label));
+    }
+
+    [Fact]
+    public void Render_SingleSection_HidesSectionLabel()
+    {
+        var vm = new TimetableGridViewModel();
+        var courses = new List<Course>
+        {
+            new() { Id = "X-01", Name = "Single", Grade = 2, Section = 1 },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("X-01", 0, 1, "R1"),
+        };
+
+        vm.Render(assignment, courses);
+
+        var item = Assert.Single(vm.CellAt(0, 1).Items);
+        Assert.Equal("", item.SectionLabel);
+        Assert.Equal("Single", item.TitleLabel);
     }
 }

@@ -3,6 +3,7 @@
           xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
           xmlns:vm="clr-namespace:TimetableScheduler.ViewModel.Pages;assembly=TimetableScheduler.ViewModel"
           xmlns:ctrl="clr-namespace:TimetableScheduler.Wpf.Controls"
+          xmlns:views="clr-namespace:TimetableScheduler.Wpf.Views"
           xmlns:d="http://schemas.microsoft.com/expression/blend/2008"
           xmlns:mc="http://schemas.openxmlformats.org/markup-compatibility/2006"
           mc:Ignorable="d"
@@ -74,7 +75,19 @@
                 </Grid.RowDefinitions>
 
                 <Border Grid.Row="0" Background="#F5F5F5" Padding="12" CornerRadius="4">
-                    <StackPanel Orientation="Horizontal">
+                    <DockPanel LastChildFill="False">
+                        <Button DockPanel.Dock="Right"
+                                Content="제약조건 수정"
+                                Command="{Binding EditConstraintsCommand}"
+                                Padding="10,4" Margin="8,0,0,0">
+                            <Button.Style>
+                                <Style TargetType="{x:Type Button}" BasedOn="{StaticResource {x:Type Button}}">
+                                    <Setter Property="Background" Value="#107C10" />
+                                    <Setter Property="Foreground" Value="White" />
+                                </Style>
+                            </Button.Style>
+                        </Button>
+                        <StackPanel Orientation="Horizontal">
                         <Button Content="초기화"
                             Command="{Binding ResetCommand}"
                             Padding="8,4" Margin="20,0,0,0" />
@@ -121,16 +134,36 @@
                             Height="34"
                             Padding="12,0" Margin="6,0,0,0"
                             VerticalAlignment="Center" />
-                    </StackPanel>
+                        </StackPanel>
+                    </DockPanel>
                 </Border>
 
                 <Border Grid.Row="1" BorderBrush="#CCC" BorderThickness="1" Margin="0,8,0,0">
                     <Grid>
-                        <TabControl>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <DockPanel Grid.Row="0" Margin="6,3,12,6">
+                            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                <Button Content="−" Click="OnZoomOutClick" ToolTip="축소" Width="24" Padding="0" />
+                                <TextBlock Text="{Binding Zoom.DisplayPercent, RelativeSource={RelativeSource AncestorType={x:Type views:ManualEditView}}}"
+                                           Width="36" TextAlignment="Center" VerticalAlignment="Center" FontSize="10" />
+                                <Button Content="+" Click="OnZoomInClick" ToolTip="확대" Width="24" Padding="0" />
+                                <Button Content="100%" Click="OnZoomResetClick" ToolTip="기본 크기" Margin="3,0,0,0" Padding="4,1" FontSize="9" />
+                            </StackPanel>
+                            <ctrl:GradeLegendControl DockPanel.Dock="Right" />
+                        </DockPanel>
+                        <TabControl Grid.Row="1">
                             <TabItem Header="통합 시간표">
                                 <DockPanel>
                                     <ctrl:UnifiedTimetableControl x:Name="GridControl"
-                                                              DataContext="{Binding Grid}" />
+                                                              DataContext="{Binding Grid}">
+                                        <ctrl:UnifiedTimetableControl.LayoutTransform>
+                                            <ScaleTransform ScaleX="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:ManualEditView}}}"
+                                                            ScaleY="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:ManualEditView}}}" />
+                                        </ctrl:UnifiedTimetableControl.LayoutTransform>
+                                    </ctrl:UnifiedTimetableControl>
                                 </DockPanel>
                             </TabItem>
 
@@ -144,7 +177,12 @@
                                     <TabControl.ContentTemplate>
                                         <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
                                             <DockPanel>
-                                                <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                                <ctrl:TimetableGridControl DataContext="{Binding Grid}">
+                                                    <ctrl:TimetableGridControl.LayoutTransform>
+                                                        <ScaleTransform ScaleX="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:ManualEditView}}}"
+                                                                        ScaleY="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:ManualEditView}}}" />
+                                                    </ctrl:TimetableGridControl.LayoutTransform>
+                                                </ctrl:TimetableGridControl>
                                             </DockPanel>
                                         </DataTemplate>
                                     </TabControl.ContentTemplate>
@@ -161,7 +199,12 @@
                                     <TabControl.ContentTemplate>
                                         <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
                                             <DockPanel>
-                                                <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                                <ctrl:TimetableGridControl DataContext="{Binding Grid}">
+                                                    <ctrl:TimetableGridControl.LayoutTransform>
+                                                        <ScaleTransform ScaleX="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:ManualEditView}}}"
+                                                                        ScaleY="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:ManualEditView}}}" />
+                                                    </ctrl:TimetableGridControl.LayoutTransform>
+                                                </ctrl:TimetableGridControl>
                                             </DockPanel>
                                         </DataTemplate>
                                     </TabControl.ContentTemplate>
@@ -178,17 +221,18 @@
                                     <TabControl.ContentTemplate>
                                         <DataTemplate DataType="{x:Type vm:NamedGridViewModel}">
                                             <DockPanel>
-                                                <ctrl:TimetableGridControl DataContext="{Binding Grid}" />
+                                                <ctrl:TimetableGridControl DataContext="{Binding Grid}">
+                                                    <ctrl:TimetableGridControl.LayoutTransform>
+                                                        <ScaleTransform ScaleX="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:ManualEditView}}}"
+                                                                        ScaleY="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:ManualEditView}}}" />
+                                                    </ctrl:TimetableGridControl.LayoutTransform>
+                                                </ctrl:TimetableGridControl>
                                             </DockPanel>
                                         </DataTemplate>
                                     </TabControl.ContentTemplate>
                                 </TabControl>
                             </TabItem>
                         </TabControl>
-
-                        <ctrl:GradeLegendControl HorizontalAlignment="Right"
-                                             VerticalAlignment="Top"
-                                             Margin="0,3,12,0" />
                     </Grid>
                 </Border>
 

@@ -101,6 +101,27 @@ public class UnifiedTimetableViewModelTests
         Assert.Single(d0.Grades);
         Assert.Equal(2, d0.Grades[0].Grade);
         Assert.Equal(2, d0.Grades[0].Width);  // 2 sections → width 2
+        Assert.Equal(new[] { "A", "B" }, vm.Cells.Select(cell => cell.Assignment.SectionLabel).OrderBy(label => label));
+    }
+
+    [Fact]
+    public void Render_SingleSection_HidesSectionLabel()
+    {
+        var vm = new UnifiedTimetableViewModel();
+        var courses = new List<Course>
+        {
+            new() { Id = "X-01", Name = "Single", Grade = 2, Section = 1 },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("X-01", 0, 1, "R1"),
+        };
+
+        vm.Render(assignment, courses);
+
+        var item = Assert.Single(vm.Cells).Assignment;
+        Assert.Equal("", item.SectionLabel);
+        Assert.Equal("Single", item.TitleLabel);
     }
 
     [Fact]
@@ -295,7 +316,7 @@ public class UnifiedTimetableViewModelTests
 
         var cell = Assert.Single(vm.Cells);
         Assert.Equal(3, cell.Assignment.RowSpan);
-        Assert.Equal("B", cell.Assignment.SectionLabel);
+        Assert.Equal("", cell.Assignment.SectionLabel);
     }
 
     [Fact]

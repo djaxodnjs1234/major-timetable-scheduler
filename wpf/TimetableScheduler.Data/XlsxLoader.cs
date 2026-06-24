@@ -333,7 +333,7 @@ public static class XlsxLoader
 
             var day = DayMap[match.Groups[1].Value];
             var periods = match.Groups[2].Value.Select(ch => ch - '0').ToList();
-            if (periods.Count == 0 || periods.Any(p => p <= 0 || p > 9))
+            if (periods.Count == 0 || periods.Any(p => !SchedulePeriods.All.Contains(p)))
                 Fail($"Invalid period in schedule at row {rowNumber}: {part}");
             result.Add(new ScheduleEntry(day, periods, room));
         }

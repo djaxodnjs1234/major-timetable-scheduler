@@ -5,6 +5,7 @@ using System.Windows.Controls;
 using Microsoft.Win32;
 using TimetableScheduler.Data;
 using TimetableScheduler.ViewModel.Pages;
+using TimetableScheduler.Wpf.Controls;
 
 [assembly: InternalsVisibleTo("TimetableScheduler.Wpf.Tests")]
 
@@ -15,6 +16,8 @@ public partial class TimetableSelectionView : UserControl
     internal static Action<string> OpenExportedFile { get; set; } = OpenExportedFileCore;
     internal static Action<Exception> ShowExportFailureMessage { get; set; } = ShowExportFailureMessageCore;
     internal static Action ShowAutoOpenFailureMessage { get; set; } = ShowAutoOpenFailureMessageCore;
+
+    public TimetableZoom Zoom { get; } = new();
 
     public TimetableSelectionView() => InitializeComponent();
 
@@ -35,6 +38,12 @@ public partial class TimetableSelectionView : UserControl
 
         TryExportAndOpen(() => Vm.ExportXlsxCommand.Execute(dlg.FileName), dlg.FileName);
     }
+
+    private void OnZoomOutClick(object sender, RoutedEventArgs e) => Zoom.ZoomOut();
+
+    private void OnZoomResetClick(object sender, RoutedEventArgs e) => Zoom.Reset();
+
+    private void OnZoomInClick(object sender, RoutedEventArgs e) => Zoom.ZoomIn();
 
     internal static bool TryExportAndOpen(Action export, string filePath)
     {

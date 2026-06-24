@@ -125,6 +125,9 @@ public static class TimetableDiagnostics
             if (course.IsFixed && course.FixedSlots.Any(slot => slot.Period == Constants.LunchPeriod))
                 Add(issues, "GE-002", $"{courseName} 고정 시간이 점심시간 5교시를 포함합니다. 다른 교시로 변경하세요.");
 
+            if (course.IsFixed && course.FixedSlots.Any(slot => !IsAllowedPeriod(course, slot.Period)))
+                Add(issues, "GE-029", $"{courseName} 고정 시간이 수업 가능 시간대와 맞지 않습니다. 대학원 과목은 야간 10~13교시, 학부 과목은 주간 1~9교시(점심 제외)만 선택하세요.");
+
             if (course.BlockStructure.Count > 0 && course.BlockStructure.Sum() != course.HoursPerWeek)
                 Add(issues, "GE-003", $"{courseName} 블록구조 합계가 주당 수업시간과 다릅니다. 블록구조 또는 시수를 수정하세요.");
 
@@ -133,7 +136,7 @@ public static class TimetableDiagnostics
 
             foreach (var block in EffectiveBlocks(course))
             {
-                if (block > MaxContiguousValidPeriods())
+                if (block > MaxContiguousValidPeriods(course))
                     Add(issues, "GE-013", $"{courseName} 블록 길이 {block}시간은 하루 안에 배치할 수 없습니다. 블록구조를 수정하세요.");
             }
 
@@ -160,6 +163,7 @@ public static class TimetableDiagnostics
         AddFixedOverlapGenerationErrors(issues, courses, crosses);
         AddTeamTeachingGenerationErrors(issues, courses, professors, rooms);
         AddCrossGenerationErrors(issues, courses, crosses);
+        AddGraduateThreeHourBlockCapacityErrors(issues, courses, crosses);
         AddGradeSlotCapacityErrors(issues, courses, crosses, "GE-027");
         AddRetakeGenerationErrors(issues, courses, crosses, retakes, considerRetakeStudents);
     }
@@ -182,6 +186,9 @@ public static class TimetableDiagnostics
 
             if (course.FixedSlots.Any(slot => slot.Period == Constants.LunchPeriod))
                 Add(issues, $"{prefix}-011", $"{courseName} 고정 시간이 점심시간 5교시를 포함합니다. 다른 교시를 선택하세요.");
+
+            if (course.FixedSlots.Any(slot => !IsAllowedPeriod(course, slot.Period)))
+                Add(issues, $"{prefix}-040", $"{courseName} 고정 시간이 수업 가능 시간대와 맞지 않습니다. 대학원 과목은 야간 10~13교시, 학부 과목은 주간 1~9교시(점심 제외)만 선택하세요.");
 
             if (course.FixedSlots.Count > 0 && course.FixedSlots.Count != course.HoursPerWeek)
                 Add(issues, $"{prefix}-012", $"{courseName} 고정 시간 개수가 주당 수업시간과 다릅니다. 고정 시간을 다시 선택하세요.");
@@ -257,7 +264,7 @@ public static class TimetableDiagnostics
                     Add(issues, "IE-023", $"{InputCourseLocation(course)} / {InputProfessorLocation(professor)}: 조건으로 사용 가능한 강의실이 없습니다. 교수 강의실 조건 또는 과목 불가강의실을 수정하세요.");
 
                 var requiredSlots = RequiredSlotCount(course);
-                var availableSlots = Constants.ValidPeriods
+                var availableSlots = AllowedPeriods(course)
                     .SelectMany(period => Enumerable.Range(0, Constants.Days).Select(day => new TimeSlot(day, period)))
                     .Count(slot => !IsUnavailable(professor, slot));
                 if (!course.IsFixed && availableSlots < requiredSlots)
@@ -274,7 +281,7 @@ public static class TimetableDiagnostics
                 if (teachingProfessors.Count >= 2)
                 {
                     var requiredSlots = RequiredSlotCount(course);
-                    var commonSlots = Constants.ValidPeriods
+                    var commonSlots = AllowedPeriods(course)
                         .SelectMany(period => Enumerable.Range(0, Constants.Days).Select(day => new TimeSlot(day, period)))
                         .Count(slot => teachingProfessors.All(professor => !IsUnavailable(professor, slot)));
                     if (!course.IsFixed && commonSlots < requiredSlots)
@@ -304,7 +311,7 @@ public static class TimetableDiagnostics
             if (teachingProfessors.Count < 2) continue;
 
             var requiredSlots = RequiredSlotCount(course);
-            var commonSlots = Constants.ValidPeriods
+            var commonSlots = AllowedPeriods(course)
                 .SelectMany(period => Enumerable.Range(0, Constants.Days).Select(day => new TimeSlot(day, period)))
                 .Count(slot => teachingProfessors.All(professor => !IsUnavailable(professor, slot)));
             if (!course.IsFixed && commonSlots < requiredSlots)
@@ -387,7 +394,6 @@ public static class TimetableDiagnostics
         IReadOnlyList<CrossGroup>? crosses,
         string id)
     {
-        var capacity = Constants.Days * Constants.ValidPeriods.Count;
         var baseRequirements = BaseGradeSlotRequirements(courses);
         var requiredByGrade = baseRequirements
             .GroupBy(pair => pair.Key.Grade)
@@ -398,6 +404,7 @@ public static class TimetableDiagnostics
 
         foreach (var grade in requiredByGrade.Keys.OrderBy(grade => grade))
         {
+            var capacity = Constants.Days * AllowedPeriods(grade).Count;
             var crossOverlap = crossOverlapByGrade.TryGetValue(grade, out var overlap) ? overlap : 0;
             var requiredSlots = Math.Max(0, requiredByGrade[grade] - crossOverlap);
             if (requiredSlots <= capacity) continue;
@@ -407,6 +414,31 @@ public static class TimetableDiagnostics
                 id,
                 $"교과목 관리 > {AcademicLevels.DisplayName(grade)}: 과목들이 사용할 수 있는 시간칸 {capacity}칸을 초과합니다. 필요한 최소 시간칸은 Cross 반영 후 {requiredSlots}칸입니다. 과목 시수/분반 수를 줄이거나 Cross를 추가해 같은 시간 배치를 허용하세요.");
         }
+    }
+
+    private static void AddGraduateThreeHourBlockCapacityErrors(
+        List<TimetableDiagnostic> issues,
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<CrossGroup>? crosses)
+    {
+        var graduateBaseIds = courses
+            .Where(course => course.Grade == AcademicLevels.GraduateGrade)
+            .Select(course => DomainHelpers.BaseId(course.Id))
+            .ToHashSet(StringComparer.Ordinal);
+        var hasGraduateCross = crosses?.Any(cross =>
+            cross.BaseIds.Count == 2 &&
+            cross.BaseIds.All(graduateBaseIds.Contains)) == true;
+        if (hasGraduateCross) return;
+
+        var threeHourBlocks = courses
+            .Where(course => course.Grade == AcademicLevels.GraduateGrade)
+            .Sum(course => EffectiveBlocks(course).Count(block => block == 3));
+        if (threeHourBlocks <= Constants.Days) return;
+
+        Add(
+            issues,
+            "GE-031",
+            $"교과목 관리 > 대학원: 3시간 연속 수업 블록이 {threeHourBlocks}개입니다. 야간은 하루 4교시뿐이고 대학원 수업끼리는 겹칠 수 없어 최대 {Constants.Days}개만 배치할 수 있습니다. 과목 수/블록구조를 줄이거나 Cross를 설정하세요.");
     }
 
     private static void AddRetakeGenerationErrors(
@@ -683,22 +715,28 @@ public static class TimetableDiagnostics
         _ => weeklyHours.ToString(),
     };
 
-    private static int MaxContiguousValidPeriods()
+    private static int MaxContiguousValidPeriods(Course course)
     {
         var max = 0;
         var current = 0;
-        foreach (var period in Constants.Periods)
+        var previous = 0;
+        foreach (var period in AllowedPeriods(course))
         {
-            if (period == Constants.LunchPeriod)
-            {
-                current = 0;
-                continue;
-            }
-            current++;
+            current = period == previous + 1 ? current + 1 : 1;
             max = Math.Max(max, current);
+            previous = period;
         }
         return max;
     }
+
+    private static IReadOnlyList<int> AllowedPeriods(Course course) =>
+        AllowedPeriods(course.Grade);
+
+    private static IReadOnlyList<int> AllowedPeriods(int grade) =>
+        grade == AcademicLevels.GraduateGrade ? Constants.NightPeriods : Constants.DaytimePeriods;
+
+    private static bool IsAllowedPeriod(Course course, int period) =>
+        AllowedPeriods(course).Contains(period);
 
     private static bool IsRequiredMajor(Course course) =>
         course.CourseType == RequiredCourseType;

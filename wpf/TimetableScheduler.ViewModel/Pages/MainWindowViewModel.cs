@@ -9,6 +9,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
     private readonly ResultsViewModel _results;
     private readonly ManualEditViewModel _manual;
     private PageViewModelBase? _manualBackTarget;
+    private PageViewModelBase? _inputBackTarget;
 
     [ObservableProperty]
     private PageViewModelBase currentPage;
@@ -35,7 +36,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 ranked, _input.CurrentSnapshot());
         };
         _input.GoToSelectionRequested += (_, _) => NavigateTo(_results);
-        _input.BackRequested += (_, _) => NavigateTo(_selection);
+        _input.BackRequested += (_, _) =>
+        {
+            var target = _inputBackTarget ?? _selection;
+            _inputBackTarget = null;
+            NavigateTo(target);
+        };
         _input.GoToManualRequested += (_, _) =>
         {
             var handoff = _input.BuildEditHandoff();
@@ -44,23 +50,29 @@ public sealed partial class MainWindowViewModel : ObservableObject
                 _manual.LoadFromSnapshot(
                     _input.CurrentSnapshot(),
                     handoff.Solution,
-                    _input.EditBaseName,
+                    handoff.SaveName,
                     handoff.ManualCrossLinks,
                     handoff.SavedTimetableId);
             }
-            _manualBackTarget = _input;
+            var returnedFromManualConstraintEdit = ReferenceEquals(_inputBackTarget, _manual);
+            _inputBackTarget = null;
+            if (!returnedFromManualConstraintEdit)
+                _manualBackTarget = _input;
             NavigateTo(_manual);
         };
 
         _selection.CreateNewRequested += (_, _) =>
         {
             _input.LoadForNewTimetable();
+            _inputBackTarget = null;
             NavigateTo(_input);
         };
         _selection.EditRequested += (_, record) =>
         {
-            _input.LoadForExistingTimetable(record);
-            NavigateTo(_input);
+            _manual.LoadFromSavedTimetable(record);
+            _inputBackTarget = null;
+            _manualBackTarget = _selection;
+            NavigateTo(_manual);
         };
 
         _results.EditSelectedRequested += (_, _) =>
@@ -81,6 +93,12 @@ public sealed partial class MainWindowViewModel : ObservableObject
             NavigateTo(_selection);
         };
         _manual.BackRequested += (_, _) => NavigateTo(_manualBackTarget ?? _results);
+        _manual.ConstraintEditRequested += (_, _) =>
+        {
+            _input.LoadForManualConstraintEdit(_manual.BuildConstraintEditContext());
+            _inputBackTarget = _manual;
+            NavigateTo(_input);
+        };
 
         currentPage = _selection;
     }

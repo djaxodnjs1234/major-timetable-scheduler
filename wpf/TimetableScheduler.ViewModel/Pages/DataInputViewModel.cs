@@ -14,7 +14,21 @@ public enum InputCategory { Professor, Course, Room, Solve }
 public sealed record ManualEditHandoff(
     RankedSolution Solution,
     IReadOnlyList<SavedManualCrossLinkRow> ManualCrossLinks,
-    string? SavedTimetableId);
+    string? SavedTimetableId,
+    string SaveName);
+
+public sealed record ManualConstraintEditContext(
+    AppData Snapshot,
+    ManualEditHandoff Handoff);
+
+public sealed record CourseDeletionImpact(
+    int TimetableAssignmentCount,
+    int ManualCrossLinkCount,
+    int CrossGroupCount,
+    int RetakeScenarioCount)
+{
+    public int RelatedConstraintCount => CrossGroupCount + RetakeScenarioCount;
+}
 
 public sealed record CrossGroupListItem(string Id, string Display);
 
@@ -392,10 +406,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                     _workspace.DeleteProfessor(p.Id);
                     return true;
                 case Course c:
-                    if (IsCourseUsedByCurrentResults(c.Id))
-                        return BlockDelete("이 교과목은 현재 생성된 시간표에서 사용 중이므로 삭제할 수 없습니다.");
-                    _workspace.DeleteCourse(c);
-                    return true;
+                    return TryDeleteCourses(new[] { c });
                 case Room r:
                     if (IsRoomUsedByCurrentResults(r.Id))
                         return BlockDelete("이 강의실은 현재 생성된 시간표에서 사용 중이므로 삭제할 수 없습니다.");
@@ -440,6 +451,81 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         RankedResults
             .SelectMany(r => r.Assignment)
             .Any(a => string.Equals(a.CourseId, courseId, StringComparison.Ordinal));
+
+    /// <summary>
+    /// Returns the saved-timetable edit impact shown before removing this course item.
+    /// A null result means the normal input-screen deletion flow is in use.
+    /// </summary>
+    public CourseDeletionImpact? PreviewCourseDeletion(CourseGroupItem? item)
+    {
+        if (!IsExistingTimetableEdit || item == null || item.Sections.Count == 0)
+            return null;
+
+        var courseIds = item.Sections
+            .Select(course => course.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var cleanup = _workspace.PreviewSessionCourseDeletion(item.Sections);
+        var assignmentCount = _editBaseAssignments!
+            .Count(assignment => courseIds.Contains(assignment.CourseId));
+        var manualCrossLinkCount = _editBaseManualCrossLinks
+            .Count(link => courseIds.Contains(link.SourceCourseId)
+                || courseIds.Contains(link.TargetCourseId));
+        return new CourseDeletionImpact(
+            assignmentCount,
+            manualCrossLinkCount,
+            cleanup.CrossGroupCount,
+            cleanup.RetakeScenarioCount);
+    }
+
+    private bool IsExistingTimetableEdit => IsExistingMode && _editBaseAssignments != null;
+
+    private bool TryDeleteCourses(IReadOnlyCollection<Course> courses)
+    {
+        if (courses.Count == 0) return false;
+        var existingCourses = courses
+            .Where(course => _workspace.Courses.Any(current =>
+                current.Id == course.Id && current.Section == course.Section))
+            .ToList();
+        if (existingCourses.Count == 0) return false;
+
+        try
+        {
+            if (IsExistingTimetableEdit)
+            {
+                _workspace.DeleteCoursesForSessionEdit(existingCourses);
+                PruneExistingTimetableEdit(existingCourses);
+                return true;
+            }
+
+            if (existingCourses.Any(course => IsCourseUsedByCurrentResults(course.Id)))
+                return BlockDelete("이 교과목은 현재 생성된 시간표에서 사용 중이므로 삭제할 수 없습니다.");
+
+            foreach (var course in existingCourses)
+                _workspace.DeleteCourse(course);
+            return true;
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BlockDelete(ex.Message);
+        }
+    }
+
+    private void PruneExistingTimetableEdit(IReadOnlyCollection<Course> courses)
+    {
+        var courseIds = courses
+            .Select(course => course.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        _editBaseAssignments = _editBaseAssignments!
+            .Where(assignment => !courseIds.Contains(assignment.CourseId))
+            .ToList();
+        _editBaseManualCrossLinks = _editBaseManualCrossLinks
+            .Where(link => !courseIds.Contains(link.SourceCourseId)
+                && !courseIds.Contains(link.TargetCourseId))
+            .ToList();
+
+        RankedResults.Clear();
+        IsSolveComplete = false;
+    }
 
     [RelayCommand]
     private void SaveSelected()
@@ -607,11 +693,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void DeleteGroup(CourseGroupItem item)
     {
         if (item is null) return;
-        foreach (var sec in item.Sections.ToList())
-        {
-            if (!TryDeleteItem(sec))
-                return;
-        }
+        TryDeleteCourses(item.Sections);
     }
 
     /// <summary>Save a single fixed section (IsFixedIndividual=true).</summary>
@@ -704,7 +786,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void DeleteSection(CourseGroupItem item)
     {
         if (item is null || item.Sections.Count != 1) return;
-        TryDeleteItem(item.Sections[0]);
+        TryDeleteCourses(item.Sections);
     }
 
     /// <summary>Add the next-numbered section to the group, copying shared fields from Sections[0].</summary>
@@ -741,7 +823,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         if (item is null || item.Sections.Count <= 1) return;
         ClearFixedTimeForSectionAdjustment(item);
         var last = item.Sections.OrderByDescending(s => s.Section).First();
-        _workspace.DeleteCourse(last);
+        TryDeleteCourses(new[] { last });
     }
 
     private void ClearFixedTimeForSectionAdjustment(CourseGroupItem item)
@@ -844,7 +926,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     {
         if (_editBaseAssignments == null) return null;
         var solution = new RankedSolution(_editBaseAssignments, new SolutionScore(0, 0, 0, 0));
-        return new ManualEditHandoff(solution, _editBaseManualCrossLinks, _editBaseId);
+        return new ManualEditHandoff(solution, _editBaseManualCrossLinks, _editBaseId, _editBaseName);
     }
 
     public AppData CurrentSnapshot() => _workspace.SchedulingSnapshot();
@@ -913,16 +995,31 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public void LoadForExistingTimetable(SavedTimetableRecord record)
     {
         var snapshot = SavedTimetableSnapshotResolver.Resolve(record.SnapshotJson);
-        SwitchWorkspace(WorkspaceService.CreateSession(snapshot));
+        LoadForManualEdit(new ManualConstraintEditContext(
+            snapshot,
+            new ManualEditHandoff(
+                new RankedSolution(
+                    record.Assignments
+                        .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
+                        .ToList(),
+                    new SolutionScore(0, 0, 0, 0)),
+                (record.ManualCrossLinks ?? Array.Empty<SavedManualCrossLinkRow>()).ToList(),
+                record.Id,
+                record.Name)));
+    }
+
+    public void LoadForManualConstraintEdit(ManualConstraintEditContext context) =>
+        LoadForManualEdit(context);
+
+    private void LoadForManualEdit(ManualConstraintEditContext context)
+    {
+        SwitchWorkspace(WorkspaceService.CreateSession(context.Snapshot));
         IsExistingMode = true;
         SelectedCategory = InputCategory.Course;
-        _editBaseAssignments = record.Assignments
-            .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
-            .ToList();
-        _editBaseManualCrossLinks = (record.ManualCrossLinks ?? Array.Empty<SavedManualCrossLinkRow>())
-            .ToList();
-        _editBaseId = record.Id;
-        _editBaseName = record.Name;
+        _editBaseAssignments = context.Handoff.Solution.Assignment.ToList();
+        _editBaseManualCrossLinks = context.Handoff.ManualCrossLinks.ToList();
+        _editBaseId = context.Handoff.SavedTimetableId;
+        _editBaseName = context.Handoff.SaveName;
     }
 
     private IReadOnlyList<SolutionAssignment>? _editBaseAssignments;
@@ -1530,6 +1627,20 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         if (inputErrors.Count > 0)
         {
             StatusMessage = FormatDiagnostics("입력 오류", inputErrors);
+            IsSolveComplete = false;
+            return;
+        }
+
+        var generationErrors = TimetableDiagnostics.GetGenerationErrors(
+            scheduleSnapshot.Courses,
+            scheduleSnapshot.Professors,
+            scheduleSnapshot.Rooms,
+            scheduleSnapshot.CrossGroups,
+            scheduleSnapshot.RetakeScenarios,
+            ConsiderRetakeStudents);
+        if (generationErrors.Count > 0)
+        {
+            StatusMessage = FormatDiagnostics("생성 조건 오류", generationErrors);
             IsSolveComplete = false;
             return;
         }
