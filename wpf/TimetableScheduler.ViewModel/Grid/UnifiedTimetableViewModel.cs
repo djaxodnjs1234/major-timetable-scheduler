@@ -127,6 +127,11 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         _lastRooms = rooms;
 
         var courseMap = BuildAssignmentCourseMap(assignment, courses);
+        var multiSectionBaseIds = courses
+            .GroupBy(course => DomainHelpers.BaseId(course.Id), StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.Ordinal);
         var professorNames = BuildProfessorNameMap(professors);
         var roomNames = BuildRoomNameMap(rooms);
 
@@ -207,7 +212,10 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
                         var c = courseMap[block.CourseKey];
                         cells.Add(new UnifiedCell(
                             d, p, g, block.SubColumnIdx,
-                            CellAssignment.FromCourse(c, block.Rooms, block.RowSpan, professorNames, roomNames, block.AssignmentId, block.CourseKey)));
+                            CellAssignment.FromCourse(
+                                c, block.Rooms, block.RowSpan, professorNames, roomNames,
+                                block.AssignmentId, block.CourseKey,
+                                multiSectionBaseIds.Contains(DomainHelpers.BaseId(c.Id)))));
                     }
                 }
             }

@@ -395,10 +395,10 @@ public partial class TimetableGridControl : UserControl
         BodyGrid.Children.Add(border);
     }
 
-    private static int BodyRowForPeriod(int period) =>
+    internal static int BodyRowForPeriod(int period) =>
         period - 1 + (period >= SchedulePeriods.FirstNightPeriod ? 1 : 0);
 
-    private static int NightSeparatorRow => SchedulePeriods.FirstNightPeriod - 1;
+    internal static int NightSeparatorRow => SchedulePeriods.FirstNightPeriod - 1;
 
     private void AddDayBoundary(int col)
     {

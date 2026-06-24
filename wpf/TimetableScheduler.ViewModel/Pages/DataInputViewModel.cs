@@ -21,6 +21,15 @@ public sealed record ManualConstraintEditContext(
     AppData Snapshot,
     ManualEditHandoff Handoff);
 
+public sealed record CourseDeletionImpact(
+    int TimetableAssignmentCount,
+    int ManualCrossLinkCount,
+    int CrossGroupCount,
+    int RetakeScenarioCount)
+{
+    public int RelatedConstraintCount => CrossGroupCount + RetakeScenarioCount;
+}
+
 public sealed record CrossGroupListItem(string Id, string Display);
 
 public sealed partial class CrossCandidateItemViewModel : ObservableObject
@@ -397,10 +406,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                     _workspace.DeleteProfessor(p.Id);
                     return true;
                 case Course c:
-                    if (IsCourseUsedByCurrentResults(c.Id))
-                        return BlockDelete("이 교과목은 현재 생성된 시간표에서 사용 중이므로 삭제할 수 없습니다.");
-                    _workspace.DeleteCourse(c);
-                    return true;
+                    return TryDeleteCourses(new[] { c });
                 case Room r:
                     if (IsRoomUsedByCurrentResults(r.Id))
                         return BlockDelete("이 강의실은 현재 생성된 시간표에서 사용 중이므로 삭제할 수 없습니다.");
@@ -445,6 +451,81 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         RankedResults
             .SelectMany(r => r.Assignment)
             .Any(a => string.Equals(a.CourseId, courseId, StringComparison.Ordinal));
+
+    /// <summary>
+    /// Returns the saved-timetable edit impact shown before removing this course item.
+    /// A null result means the normal input-screen deletion flow is in use.
+    /// </summary>
+    public CourseDeletionImpact? PreviewCourseDeletion(CourseGroupItem? item)
+    {
+        if (!IsExistingTimetableEdit || item == null || item.Sections.Count == 0)
+            return null;
+
+        var courseIds = item.Sections
+            .Select(course => course.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        var cleanup = _workspace.PreviewSessionCourseDeletion(item.Sections);
+        var assignmentCount = _editBaseAssignments!
+            .Count(assignment => courseIds.Contains(assignment.CourseId));
+        var manualCrossLinkCount = _editBaseManualCrossLinks
+            .Count(link => courseIds.Contains(link.SourceCourseId)
+                || courseIds.Contains(link.TargetCourseId));
+        return new CourseDeletionImpact(
+            assignmentCount,
+            manualCrossLinkCount,
+            cleanup.CrossGroupCount,
+            cleanup.RetakeScenarioCount);
+    }
+
+    private bool IsExistingTimetableEdit => IsExistingMode && _editBaseAssignments != null;
+
+    private bool TryDeleteCourses(IReadOnlyCollection<Course> courses)
+    {
+        if (courses.Count == 0) return false;
+        var existingCourses = courses
+            .Where(course => _workspace.Courses.Any(current =>
+                current.Id == course.Id && current.Section == course.Section))
+            .ToList();
+        if (existingCourses.Count == 0) return false;
+
+        try
+        {
+            if (IsExistingTimetableEdit)
+            {
+                _workspace.DeleteCoursesForSessionEdit(existingCourses);
+                PruneExistingTimetableEdit(existingCourses);
+                return true;
+            }
+
+            if (existingCourses.Any(course => IsCourseUsedByCurrentResults(course.Id)))
+                return BlockDelete("이 교과목은 현재 생성된 시간표에서 사용 중이므로 삭제할 수 없습니다.");
+
+            foreach (var course in existingCourses)
+                _workspace.DeleteCourse(course);
+            return true;
+        }
+        catch (InvalidOperationException ex)
+        {
+            return BlockDelete(ex.Message);
+        }
+    }
+
+    private void PruneExistingTimetableEdit(IReadOnlyCollection<Course> courses)
+    {
+        var courseIds = courses
+            .Select(course => course.Id)
+            .ToHashSet(StringComparer.Ordinal);
+        _editBaseAssignments = _editBaseAssignments!
+            .Where(assignment => !courseIds.Contains(assignment.CourseId))
+            .ToList();
+        _editBaseManualCrossLinks = _editBaseManualCrossLinks
+            .Where(link => !courseIds.Contains(link.SourceCourseId)
+                && !courseIds.Contains(link.TargetCourseId))
+            .ToList();
+
+        RankedResults.Clear();
+        IsSolveComplete = false;
+    }
 
     [RelayCommand]
     private void SaveSelected()
@@ -612,11 +693,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void DeleteGroup(CourseGroupItem item)
     {
         if (item is null) return;
-        foreach (var sec in item.Sections.ToList())
-        {
-            if (!TryDeleteItem(sec))
-                return;
-        }
+        TryDeleteCourses(item.Sections);
     }
 
     /// <summary>Save a single fixed section (IsFixedIndividual=true).</summary>
@@ -709,7 +786,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void DeleteSection(CourseGroupItem item)
     {
         if (item is null || item.Sections.Count != 1) return;
-        TryDeleteItem(item.Sections[0]);
+        TryDeleteCourses(item.Sections);
     }
 
     /// <summary>Add the next-numbered section to the group, copying shared fields from Sections[0].</summary>
@@ -746,7 +823,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         if (item is null || item.Sections.Count <= 1) return;
         ClearFixedTimeForSectionAdjustment(item);
         var last = item.Sections.OrderByDescending(s => s.Section).First();
-        _workspace.DeleteCourse(last);
+        TryDeleteCourses(new[] { last });
     }
 
     private void ClearFixedTimeForSectionAdjustment(CourseGroupItem item)

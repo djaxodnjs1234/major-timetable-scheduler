@@ -1,6 +1,7 @@
 using ClosedXML.Excel;
 using TimetableScheduler.Data;
 using TimetableScheduler.Domain;
+using TimetableScheduler.Scoring;
 using TimetableScheduler.Solver;
 using TimetableScheduler.ViewModel;
 using TimetableScheduler.ViewModel.Pages;
@@ -1579,6 +1580,92 @@ public class CourseGroupsTests : IDisposable
         Assert.Equal(0, completedCount);
         Assert.Contains("IE-023", vm.StatusMessage);
         Assert.DoesNotContain("top", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void ExistingTimetableDeleteGroup_PrunesHandoffAssignmentsLinksAndConditions()
+    {
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor" });
+        AddTwoSectionCourse("A", course => course.ProfessorId = "P1");
+        AddTwoSectionCourse("B", course => course.ProfessorId = "P1");
+        _workspace.AddCrossGroup(new CrossGroup { Id = "X001", BaseIds = new List<string> { "A", "B" } });
+        _workspace.AddRetake(new RetakeScenario { CurrentGrade = 3, RetakeBaseId = "A" });
+        var saved = _workspace.SaveTimetable(
+            "saved",
+            new[]
+            {
+                new SolutionAssignment("A-01", 0, 1, "R1"),
+                new SolutionAssignment("A-02", 0, 2, "R1"),
+                new SolutionAssignment("B-01", 0, 1, "R2"),
+            },
+            new[]
+            {
+                new SavedManualCrossLinkRow(
+                    "A-01", 2, "1", 0, 1, "R1",
+                    "B-01", 2, "1", 0, 1, "R2",
+                    "HC11_ONLY_EXCEPTION"),
+            },
+            _workspace.Snapshot());
+        var vm = MakeVm();
+        vm.LoadForExistingTimetable(saved);
+        vm.RankedResults.Add(new RankedSolution(
+            new List<SolutionAssignment> { new("A-01", 0, 1, "R1") },
+            new SolutionScore(0, 0, 0, 0)));
+        vm.IsSolveComplete = true;
+
+        var item = vm.CourseGroups.Single(group => group.BaseId == "A");
+        var impact = Assert.IsType<CourseDeletionImpact>(vm.PreviewCourseDeletion(item));
+        Assert.Equal(2, impact.TimetableAssignmentCount);
+        Assert.Equal(1, impact.ManualCrossLinkCount);
+        Assert.Equal(1, impact.CrossGroupCount);
+        Assert.Equal(1, impact.RetakeScenarioCount);
+
+        vm.DeleteGroupCommand.Execute(item);
+
+        var handoff = Assert.IsType<ManualEditHandoff>(vm.BuildEditHandoff());
+        Assert.Equal("B-01", Assert.Single(handoff.Solution.Assignment).CourseId);
+        Assert.Empty(handoff.ManualCrossLinks);
+        Assert.All(vm.CurrentSnapshot().Courses, course => Assert.Equal("B", DomainHelpers.BaseId(course.Id)));
+        Assert.Empty(vm.CurrentSnapshot().CrossGroups);
+        Assert.Empty(vm.CurrentSnapshot().RetakeScenarios);
+        Assert.Empty(vm.RankedResults);
+        Assert.False(vm.IsSolveComplete);
+
+        Assert.Equal(3, saved.Assignments.Count);
+        var originalSnapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(saved.SnapshotJson!)!;
+        Assert.Contains(originalSnapshot.Courses, course => DomainHelpers.BaseId(course.Id) == "A");
+    }
+
+    [Fact]
+    public void ExistingTimetableDeleteFixedSection_PrunesOnlyThatSectionFromHandoff()
+    {
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor" });
+        var fixedCourse = MakeCourse("A-01", 1, isFixed: true);
+        fixedCourse.ProfessorId = "P1";
+        var remainingCourse = MakeCourse("B-01", 1);
+        remainingCourse.ProfessorId = "P1";
+        _workspace.AddCourse(fixedCourse);
+        _workspace.AddCourse(remainingCourse);
+        var saved = _workspace.SaveTimetable(
+            "saved",
+            new[]
+            {
+                new SolutionAssignment("A-01", 0, 1, "R1"),
+                new SolutionAssignment("B-01", 0, 1, "R2"),
+            },
+            snapshot: _workspace.Snapshot());
+        var vm = MakeVm();
+        vm.LoadForExistingTimetable(saved);
+
+        var fixedItem = vm.CourseGroups.Single(group => group.BaseId == "A");
+        Assert.True(fixedItem.IsFixedIndividual);
+        vm.DeleteSectionCommand.Execute(fixedItem);
+
+        var handoff = Assert.IsType<ManualEditHandoff>(vm.BuildEditHandoff());
+        Assert.Single(handoff.Solution.Assignment);
+        Assert.Equal("B-01", handoff.Solution.Assignment[0].CourseId);
+        Assert.Single(vm.CurrentSnapshot().Courses);
+        Assert.Equal("B-01", vm.CurrentSnapshot().Courses[0].Id);
     }
 
     private sealed class CancelAwareSolverService : SolverService

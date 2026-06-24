@@ -452,10 +452,10 @@ public partial class UnifiedTimetableControl : UserControl
         RootGrid.Children.Add(border);
     }
 
-    private static int GridRowForPeriod(int period) =>
+    internal static int GridRowForPeriod(int period) =>
         1 + period + (period >= SchedulePeriods.FirstNightPeriod ? 1 : 0);
 
-    private static int NightSeparatorRow => SchedulePeriods.FirstNightPeriod + 1;
+    internal static int NightSeparatorRow => SchedulePeriods.FirstNightPeriod + 1;
 
     internal static Border MakeChipBorder(CellAssignment a, Brush bg, string? crossLabel)
     {

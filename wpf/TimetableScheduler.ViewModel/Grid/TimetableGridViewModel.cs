@@ -44,6 +44,11 @@ public sealed partial class TimetableGridViewModel : ObservableObject
                 g => g.Key,
                 g => ResolveCourseForAssignment(g.First().Assignment, courses),
                 StringComparer.Ordinal);
+        var multiSectionBaseIds = courses
+            .GroupBy(course => DomainHelpers.BaseId(course.Id), StringComparer.Ordinal)
+            .Where(group => group.Count() > 1)
+            .Select(group => group.Key)
+            .ToHashSet(StringComparer.Ordinal);
         var professorNames = BuildNameMap(professors);
         var roomNames = BuildNameMap(rooms);
         var runs = TimetableRuns.ComputeRuns(assignmentCourseKeys
@@ -70,7 +75,9 @@ public sealed partial class TimetableGridViewModel : ObservableObject
             var c = courseMap[courseKey];
             int rs = runs.RunLen.TryGetValue((courseKey, d, p), out int n) ? n : 1;
             var cell = CellAt(d, p);
-            cell.Add(CellAssignment.FromCourse(c, slotRooms, rs, professorNames, roomNames));
+            cell.Add(CellAssignment.FromCourse(
+                c, slotRooms, rs, professorNames, roomNames,
+                showSectionLabel: multiSectionBaseIds.Contains(DomainHelpers.BaseId(c.Id))));
         }
     }
 

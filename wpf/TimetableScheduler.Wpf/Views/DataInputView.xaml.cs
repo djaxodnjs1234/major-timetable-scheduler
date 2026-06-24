@@ -382,7 +382,8 @@ public partial class DataInputView : UserControl
         var label = item.Sections.Count > 1
             ? $"교과목 '{DisplayName(item.HeaderName, item.BaseId)}' {item.Sections.Count}개 분반"
             : $"교과목 '{DisplayName(item.HeaderName, item.BaseId)}'";
-        if (!ConfirmDelete(label)) return;
+        var impact = Vm.PreviewCourseDeletion(item);
+        if (!ConfirmDelete(label, impact)) return;
 
         if (item.IsFixedIndividual)
             Vm.DeleteSectionCommand.Execute(item);
@@ -460,10 +461,22 @@ public partial class DataInputView : UserControl
         Vm.DeleteCrossCommand.Execute(Vm.SelectedCrossGroup);
     }
 
-    private static bool ConfirmDelete(string targetLabel)
+    private static bool ConfirmDelete(string targetLabel, CourseDeletionImpact? impact = null)
     {
+        var sessionWarning = impact == null
+            ? ""
+            : "\n\n경고: 이 과목을 삭제하면 현재 편집 중인 시간표의 해당 수업 배정과 수동 Cross 관계도 함께 제거됩니다.";
+        var impactMessage = impact is { } value &&
+            (value.TimetableAssignmentCount > 0 || value.ManualCrossLinkCount > 0 || value.RelatedConstraintCount > 0)
+            ? $"\n\n시간표의 {value.TimetableAssignmentCount}개 배정, 수동 Cross {value.ManualCrossLinkCount}개, " +
+              $"관련 조건 {value.RelatedConstraintCount}개도 함께 제거됩니다.\n" +
+              "수동편집 화면에는 남은 수업만 유지됩니다."
+            : "";
+        var finalNotice = impact == null
+            ? "\n\n경고: 삭제 후에는 되돌릴 수 없습니다."
+            : "\n저장 전까지 기존 저장 시간표에는 반영되지 않습니다.";
         var result = MessageBox.Show(
-            $"{targetLabel}을(를) 정말 삭제하시겠습니까?\n삭제 후에는 되돌릴 수 없습니다.",
+            $"{targetLabel}을(를) 정말 삭제하시겠습니까?{sessionWarning}{impactMessage}{finalNotice}",
             "삭제 확인",
             MessageBoxButton.YesNo,
             MessageBoxImage.Warning);

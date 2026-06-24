@@ -354,7 +354,7 @@ public class TimetableDiagnosticsTests
     }
 
     [Fact]
-    public void GenerationErrors_SameProfessorSectionsWithThreeHourBlocks_ReportGe030()
+    public void GenerationErrors_SameProfessorSectionsWithThreeHourBlocks_DoNotReportGe030()
     {
         var courses = new List<Course>
         {
@@ -385,8 +385,7 @@ public class TimetableDiagnosticsTests
             new List<Professor> { new() { Id = "P1", Name = "Professor" } },
             Rooms(1));
 
-        Assert.Contains(diagnostics, diagnostic =>
-            diagnostic.Id == "GE-030" && diagnostic.Message.Contains("3시간 블록"));
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "GE-030");
     }
 
     [Fact]

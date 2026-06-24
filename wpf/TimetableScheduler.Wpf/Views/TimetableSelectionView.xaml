@@ -145,6 +145,7 @@
                         <ctrl:UnifiedTimetableControl DataContext="{Binding Preview}"
                                                       PeriodRowMinHeight="52"
                                                       LunchRowHeight="18"
+                                                      NightRowHeight="18"
                                                       DayColumnWidth="68">
                             <ctrl:UnifiedTimetableControl.LayoutTransform>
                                 <ScaleTransform ScaleX="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:TimetableSelectionView}}}"
@@ -166,6 +167,7 @@
                                     <ctrl:TimetableGridControl DataContext="{Binding Grid}"
                                                                PeriodRowMinHeight="52"
                                                                LunchRowMinHeight="24"
+                                                               NightRowMinHeight="24"
                                                                DayColumnMinWidth="66">
                                         <ctrl:TimetableGridControl.LayoutTransform>
                                             <ScaleTransform ScaleX="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:TimetableSelectionView}}}"
@@ -190,6 +192,7 @@
                                     <ctrl:TimetableGridControl DataContext="{Binding Grid}"
                                                                PeriodRowMinHeight="52"
                                                                LunchRowMinHeight="24"
+                                                               NightRowMinHeight="24"
                                                                DayColumnMinWidth="66">
                                         <ctrl:TimetableGridControl.LayoutTransform>
                                             <ScaleTransform ScaleX="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:TimetableSelectionView}}}"
@@ -214,6 +217,7 @@
                                     <ctrl:TimetableGridControl DataContext="{Binding Grid}"
                                                                PeriodRowMinHeight="52"
                                                                LunchRowMinHeight="24"
+                                                               NightRowMinHeight="24"
                                                                DayColumnMinWidth="66">
                                         <ctrl:TimetableGridControl.LayoutTransform>
                                             <ScaleTransform ScaleX="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:TimetableSelectionView}}}"

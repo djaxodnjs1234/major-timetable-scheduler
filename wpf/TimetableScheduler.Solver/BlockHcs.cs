@@ -264,6 +264,7 @@ public static class BlockHcs
             for (int i = 0; i < blocks1.Count; i++)
             {
                 int b = blocks1[i];
+                if (b == 3) continue;
                 if (!startVarsByBlock.TryGetValue((c1.Id, i), out var sv1)) continue;
                 if (!startVarsByBlock.TryGetValue((c2.Id, i), out var sv2)) continue;
                 var hasAnyAdjacentPair = sv1.Keys.Any(start =>

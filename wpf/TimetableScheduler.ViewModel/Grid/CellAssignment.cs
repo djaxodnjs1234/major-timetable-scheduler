@@ -15,6 +15,7 @@ public sealed record CellAssignment(
 {
     public string AssignmentId { get; init; } = "";
     public string CourseKey { get; init; } = "";
+    public bool ShowSectionLabel { get; init; } = true;
     public IReadOnlyList<string> CoteachProfIds { get; init; } = Array.Empty<string>();
     public string CourseType { get; init; } = "";
     public string ProfessorDisplayName { get; init; } = "";
@@ -29,7 +30,7 @@ public sealed record CellAssignment(
         ? CoteachProfIds
         : CoteachProfDisplayNames;
 
-    public string SectionLabel => Section >= 1 ? ((char)('A' + Section - 1)).ToString() : "";
+    public string SectionLabel => ShowSectionLabel && Section >= 1 ? ((char)('A' + Section - 1)).ToString() : "";
 
     public string TitleLabel
     {
@@ -79,7 +80,8 @@ public sealed record CellAssignment(
         IReadOnlyDictionary<string, string>? professorNames = null,
         IReadOnlyDictionary<string, string>? roomNames = null,
         string assignmentId = "",
-        string courseKey = "")
+        string courseKey = "",
+        bool showSectionLabel = true)
     {
         var roomList = rooms.ToList();
         return new(
@@ -90,6 +92,7 @@ public sealed record CellAssignment(
         {
             AssignmentId = assignmentId,
             CourseKey = courseKey,
+            ShowSectionLabel = showSectionLabel,
             CourseType = course.CourseType,
             CoteachProfIds = course.CoteachProfs.ToList(),
             ProfessorDisplayName = DisplayName(professorNames, course.ProfessorId),

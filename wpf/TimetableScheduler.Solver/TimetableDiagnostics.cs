@@ -163,7 +163,6 @@ public static class TimetableDiagnostics
         AddFixedOverlapGenerationErrors(issues, courses, crosses);
         AddTeamTeachingGenerationErrors(issues, courses, professors, rooms);
         AddCrossGenerationErrors(issues, courses, crosses);
-        AddSectionBackToBackGenerationErrors(issues, courses);
         AddGraduateThreeHourBlockCapacityErrors(issues, courses, crosses);
         AddGradeSlotCapacityErrors(issues, courses, crosses, "GE-027");
         AddRetakeGenerationErrors(issues, courses, crosses, retakes, considerRetakeStudents);
@@ -414,32 +413,6 @@ public static class TimetableDiagnostics
                 issues,
                 id,
                 $"교과목 관리 > {AcademicLevels.DisplayName(grade)}: 과목들이 사용할 수 있는 시간칸 {capacity}칸을 초과합니다. 필요한 최소 시간칸은 Cross 반영 후 {requiredSlots}칸입니다. 과목 시수/분반 수를 줄이거나 Cross를 추가해 같은 시간 배치를 허용하세요.");
-        }
-    }
-
-    private static void AddSectionBackToBackGenerationErrors(
-        List<TimetableDiagnostic> issues,
-        IReadOnlyList<Course> courses)
-    {
-        foreach (var group in GroupByBaseId(courses).Values)
-        {
-            if (group.Count != 2) continue;
-            var first = group[0];
-            var second = group[1];
-            if (first.IsFixed || second.IsFixed) continue;
-            if (!DomainHelpers.CourseProfIds(first).SetEquals(DomainHelpers.CourseProfIds(second))) continue;
-
-            var firstBlocks = EffectiveBlocks(first);
-            if (!firstBlocks.SequenceEqual(EffectiveBlocks(second))) continue;
-
-            foreach (var blockLength in firstBlocks.Distinct())
-            {
-                if (HasBackToBackBlockStart(first.Grade, blockLength)) continue;
-                Add(
-                    issues,
-                    "GE-030",
-                    $"{CourseLabel(first)} / {CourseLabel(second)}: 같은 교수 분반의 {blockLength}시간 블록을 연달아 배치할 수 없습니다. 블록구조 또는 분반 담당 교수를 수정하세요.");
-            }
         }
     }
 
@@ -754,15 +727,6 @@ public static class TimetableDiagnostics
             previous = period;
         }
         return max;
-    }
-
-    private static bool HasBackToBackBlockStart(int grade, int blockLength)
-    {
-        var allowedPeriods = AllowedPeriods(grade);
-        var starts = allowedPeriods
-            .Where(start => Enumerable.Range(start, blockLength).All(allowedPeriods.Contains))
-            .ToHashSet();
-        return starts.Any(start => starts.Contains(start + blockLength) || starts.Contains(start - blockLength));
     }
 
     private static IReadOnlyList<int> AllowedPeriods(Course course) =>

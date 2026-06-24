@@ -348,6 +348,43 @@ public class HcCoverageTests
     }
 
     [Fact]
+    public void HC15_ThreeHourBlocks_DoNotRequireSameDayAdjacency()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "GR-01",
+                Name = "Graduate",
+                Grade = AcademicLevels.GraduateGrade,
+                Section = 1,
+                HoursPerWeek = 3,
+                ProfessorId = "P1",
+                BlockStructure = new List<int> { 3 },
+            },
+            new()
+            {
+                Id = "GR-02",
+                Name = "Graduate",
+                Grade = AcademicLevels.GraduateGrade,
+                Section = 2,
+                HoursPerWeek = 3,
+                ProfessorId = "P1",
+                BlockStructure = new List<int> { 3 },
+            },
+        };
+        var professors = new List<Professor> { new() { Id = "P1", Name = "Professor" } };
+        var rooms = new List<Room> { new() { Id = "R1", Name = "Room" } };
+        var build = ModelBuilder.Build(courses, professors, rooms);
+
+        build.Model.Add(build.StartVarsByBlock[("GR-01", 0)][(0, 10)] == 1);
+        build.Model.Add(build.StartVarsByBlock[("GR-02", 0)][(1, 10)] == 1);
+
+        var solver = new CpSolver();
+        Assert.True(solver.Solve(build.Model) is CpSolverStatus.Feasible or CpSolverStatus.Optimal);
+    }
+
+    [Fact]
     public void HC22_ExplicitFixedRooms_KeepCourseRoomPriority()
     {
         var courses = new List<Course>

@@ -310,6 +310,45 @@ public class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void DeleteCoursesForSessionEdit_CleansOnlyConditionsMadeInvalidByRemoval()
+    {
+        var snapshot = new AppData(
+            new List<Course>
+            {
+                new() { Id = "A-01", Name = "A", Grade = 2, HoursPerWeek = 1, Section = 1 },
+                new() { Id = "A-02", Name = "A", Grade = 2, HoursPerWeek = 1, Section = 2 },
+                new() { Id = "B-01", Name = "B", Grade = 2, HoursPerWeek = 1, Section = 1 },
+                new() { Id = "B-02", Name = "B", Grade = 2, HoursPerWeek = 1, Section = 2 },
+            },
+            new List<Professor>(), new List<Room>(),
+            new List<CrossGroup> { new() { Id = "X001", BaseIds = new List<string> { "A", "B" } } },
+            new List<RetakeScenario>
+            {
+                new() { CurrentGrade = 3, RetakeBaseId = "A" },
+                new() { CurrentGrade = 3, RetakeBaseId = "B" },
+            });
+        var session = WorkspaceService.CreateSession(snapshot);
+
+        var firstCleanup = session.DeleteCoursesForSessionEdit(
+            new[] { session.Courses.Single(course => course.Id == "A-02") });
+
+        Assert.Equal(1, firstCleanup.CrossGroupCount);
+        Assert.Equal(0, firstCleanup.RetakeScenarioCount);
+        Assert.Single(session.Courses.Where(course => DomainHelpers.BaseId(course.Id) == "A"));
+        Assert.Empty(session.CrossGroups);
+        Assert.Contains(session.RetakeScenarios, scenario => scenario.RetakeBaseId == "A");
+        Assert.Contains(session.RetakeScenarios, scenario => scenario.RetakeBaseId == "B");
+
+        var secondCleanup = session.DeleteCoursesForSessionEdit(
+            new[] { session.Courses.Single(course => course.Id == "A-01") });
+
+        Assert.Equal(0, secondCleanup.CrossGroupCount);
+        Assert.Equal(1, secondCleanup.RetakeScenarioCount);
+        Assert.DoesNotContain(session.RetakeScenarios, scenario => scenario.RetakeBaseId == "A");
+        Assert.Contains(session.RetakeScenarios, scenario => scenario.RetakeBaseId == "B");
+    }
+
+    [Fact]
     public void Changed_FiresOnEachMutation()
     {
         var ws = new WorkspaceService(_repo);
