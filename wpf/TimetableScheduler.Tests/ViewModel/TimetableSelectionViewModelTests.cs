@@ -102,6 +102,47 @@ public class TimetableSelectionViewModelTests : IDisposable
     }
 
     [Fact]
+    public void SaveTimetable_OverwriteReplacesSelectedRecordAndRefreshesPreview()
+    {
+        var workspace = new WorkspaceService(_repo);
+        workspace.AddProfessor(new Professor { Id = "P1", Name = "저장교수" });
+        workspace.AddRoom(new Room { Id = "R1", Name = "기존강의실" });
+        workspace.AddRoom(new Room { Id = "R2", Name = "변경강의실" });
+        workspace.AddCourse(new Course
+        {
+            Id = "C-01",
+            Name = "저장과목",
+            Grade = 2,
+            HoursPerWeek = 1,
+            CourseType = "전필",
+            ProfessorId = "P1",
+            BlockStructure = new List<int> { 1 },
+            FixedRooms = new List<string> { "R1" },
+        });
+        var initial = workspace.SaveTimetable(
+            "saved",
+            new[] { new SolutionAssignment("C-01", 0, 1, "R1") },
+            snapshot: workspace.Snapshot());
+        var vm = new TimetableSelectionViewModel(workspace);
+        Assert.Same(initial, vm.SelectedTimetable);
+
+        workspace.Courses.Single().FixedRooms = new List<string> { "R2" };
+        var updated = workspace.SaveTimetable(
+            "saved",
+            new[] { new SolutionAssignment("C-01", 0, 1, "R2") },
+            snapshot: workspace.Snapshot(),
+            id: initial.Id);
+
+        Assert.Single(workspace.SavedTimetables);
+        Assert.Equal(initial.Id, updated.Id);
+        Assert.Same(updated, vm.SelectedTimetable);
+        Assert.Equal("변경강의실", Assert.Single(vm.Preview.Cells).Assignment.RoomsLabel);
+        var changedRoomView = vm.RoomViews.Single(view => view.Id == "R2");
+        Assert.Equal("변경강의실", changedRoomView.Name);
+        Assert.Contains(changedRoomView.Grid.Cells, cell => cell.IsOccupied);
+    }
+
+    [Fact]
     public void SavedPreview_InvalidSnapshotWithBlankProfessorAndCourseType_ShowsNoCells()
     {
         var workspace = new WorkspaceService(_repo);

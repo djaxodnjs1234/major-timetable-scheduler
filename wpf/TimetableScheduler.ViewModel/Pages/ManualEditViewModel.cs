@@ -1128,6 +1128,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             StatusMessage = $"선택: {CourseSectionDisplayName(assignment)} — "
                 + $"{DayName(day)} {period}교시";
             Grid.SetEditState(_selectedGridCell, BuildMoveStates(assignment, day, period));
+            RefreshConflicts();
         }
         else
         {
@@ -1136,6 +1137,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             SelectedReplacementRoomId = "";
             StatusMessage = $"{DayName(day)} {period}교시 — 비어있음";
             Grid.ClearEditState();
+            RefreshConflicts();
         }
     }
 
@@ -1160,14 +1162,14 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         int day = SelectedDay.Value;
         int period = SelectedPeriod.Value;
 
-        var oldRoomId = SelectedAssignment.Rooms.FirstOrDefault();
-        var replacementRoomId = NewRoomId;
+        var oldRoomId = NormalizeRoomId(SelectedAssignment.Rooms.FirstOrDefault());
+        var replacementRoomId = NormalizeRoomId(NewRoomId);
         if (string.IsNullOrWhiteSpace(replacementRoomId))
         {
             SetRoomChangeFailure("새 강의실을 선택하세요.");
             return;
         }
-        if (oldRoomId == null)
+        if (string.IsNullOrWhiteSpace(oldRoomId))
         {
             SetRoomChangeFailure("변경할 배정 항목을 찾지 못했습니다.");
             return;
@@ -1178,7 +1180,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return;
         }
 
-        if (!RoomExists(replacementRoomId))
+        if (!KnownRoomExists(replacementRoomId))
         {
             SetRoomChangeFailure("존재하지 않는 강의실입니다.");
             return;
@@ -1205,8 +1207,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         int day = SelectedDay.Value;
         int period = SelectedPeriod.Value;
 
-        var oldRoomId = SelectedOldRoomId;
-        var replacementRoomId = SelectedReplacementRoomId;
+        var oldRoomId = NormalizeRoomId(SelectedOldRoomId);
+        var replacementRoomId = NormalizeRoomId(SelectedReplacementRoomId);
         if (string.IsNullOrWhiteSpace(oldRoomId))
         {
             SetRoomChangeFailure("교체할 기존 강의실을 선택하세요.");
@@ -1235,7 +1237,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return;
         }
 
-        if (!RoomExists(replacementRoomId))
+        if (!KnownRoomExists(replacementRoomId))
         {
             SetRoomChangeFailure("존재하지 않는 강의실입니다.");
             return;
@@ -1430,7 +1432,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         StatusMessage = "베이스 시간표로 초기화했습니다.";
     }
 
-    public event EventHandler? SavedRequested;
+    public event EventHandler<SavedTimetableRecord>? SavedRequested;
 
     [RelayCommand(CanExecute = nameof(CanSaveTimetable))]
     private void SaveTimetable()
@@ -1449,11 +1451,22 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (!ValidateBeforeSave()) return false;
 
         var name = SaveName.Trim();
+        AppData? saveSnapshot;
+        try
+        {
+            saveSnapshot = BuildSaveSnapshot();
+        }
+        catch (InvalidOperationException ex)
+        {
+            StatusMessage = ex.Message;
+            return false;
+        }
+
         var record = _workspace.SaveTimetable(
             name,
             _working,
             ToSavedManualCrossLinks(),
-            BuildSaveSnapshot(),
+            saveSnapshot,
             saveAsCopy ? null : EditingSavedTimetableId);
         EditingSavedTimetableId = record.Id;
         _resetBaselineSnapshot = CaptureSnapshot();
@@ -1461,7 +1474,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         StatusMessage = saveAsCopy
             ? $"'{name}' 복사본 저장 완료"
             : $"'{name}' 저장 완료";
-        SavedRequested?.Invoke(this, EventArgs.Empty);
+        SavedRequested?.Invoke(this, record);
         return true;
     }
 
@@ -1472,6 +1485,21 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
         var rooms = _sessionData.Rooms.ToList();
         var knownRoomIds = rooms.Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
+        var normalizedAssignments = new List<SolutionAssignment>(_working.Count);
+        foreach (var assignment in _working)
+        {
+            var normalizedRoomId = NormalizeRoomIdForSaveSnapshot(assignment.RoomId, rooms);
+            normalizedAssignments.Add(string.Equals(assignment.RoomId, normalizedRoomId, StringComparison.Ordinal)
+                ? assignment
+                : new SolutionAssignment(
+                    assignment.CourseId,
+                    assignment.Day,
+                    assignment.Period,
+                    normalizedRoomId,
+                    assignment.AssignmentId));
+        }
+
+        _working = normalizedAssignments;
         foreach (var roomId in _working
             .Select(a => a.RoomId)
             .Where(roomId => !string.IsNullOrWhiteSpace(roomId))
@@ -1480,12 +1508,168 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             if (knownRoomIds.Contains(roomId)) continue;
             var workspaceRoom = _workspace.Rooms.FirstOrDefault(r => r.Id == roomId);
             if (workspaceRoom == null) continue;
+            var workspaceRoomName = NormalizeRoomName(workspaceRoom.Name);
+            if (!string.IsNullOrWhiteSpace(workspaceRoomName)
+                && rooms.Any(r => string.Equals(NormalizeRoomName(r.Name), workspaceRoomName, StringComparison.Ordinal)))
+                continue;
             rooms.Add(workspaceRoom);
             knownRoomIds.Add(roomId);
         }
 
-        return _sessionData with { Rooms = rooms };
+        var courses = BuildSaveSnapshotCourses(rooms);
+        return _sessionData with { Courses = courses, Rooms = rooms };
     }
+
+    private static string NormalizeRoomIdForSaveSnapshot(string roomId, IReadOnlyList<Room> snapshotRooms)
+    {
+        var normalizedRoomId = NormalizeRoomId(roomId);
+        if (string.IsNullOrWhiteSpace(normalizedRoomId)) return normalizedRoomId;
+        if (snapshotRooms.Any(r => string.Equals(NormalizeRoomId(r.Id), normalizedRoomId, StringComparison.Ordinal)))
+            return normalizedRoomId;
+
+        var matches = snapshotRooms
+            .Where(r => string.Equals(NormalizeRoomName(r.Name), normalizedRoomId, StringComparison.Ordinal))
+            .ToList();
+        if (matches.Count == 1)
+            return matches[0].Id;
+        if (matches.Count > 1)
+            throw new InvalidOperationException($"강의실 '{roomId}' 이름이 저장 스냅샷에서 여러 개와 일치하여 저장할 수 없습니다.");
+
+        return normalizedRoomId;
+    }
+
+    private List<Course> BuildSaveSnapshotCourses(IReadOnlyList<Room> snapshotRooms)
+    {
+        var courses = _sessionData?.Courses.Select(CloneCourse).ToList() ?? new List<Course>();
+        if (courses.Count == 0) return courses;
+
+        var roomOrder = snapshotRooms
+            .Select((room, index) => (Id: NormalizeRoomId(room.Id), Index: index))
+            .Where(x => !string.IsNullOrWhiteSpace(x.Id))
+            .GroupBy(x => x.Id, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First().Index, StringComparer.Ordinal);
+        if (roomOrder.Count == 0) return courses;
+
+        var courseByKey = courses
+            .GroupBy(c => CourseSectionKey(c.Id, c.Section), StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var rowsByCourse = new Dictionary<string, List<SolutionAssignment>>(StringComparer.Ordinal);
+        foreach (var assignment in _working)
+        {
+            var course = ResolveCourseForAssignment(assignment);
+            if (course == null) continue;
+
+            var key = CourseSectionKey(course.Id, course.Section);
+            if (!courseByKey.ContainsKey(key)) continue;
+            if (!rowsByCourse.TryGetValue(key, out var rows))
+                rowsByCourse[key] = rows = new List<SolutionAssignment>();
+            rows.Add(assignment);
+        }
+
+        foreach (var (key, rows) in rowsByCourse)
+        {
+            var roomIds = DetermineSnapshotCourseRoomIds(rows, roomOrder);
+            if (roomIds.Count == 0) continue;
+            courseByKey[key].FixedRooms = roomIds.ToList();
+        }
+
+        return courses;
+    }
+
+    private static IReadOnlyList<string> DetermineSnapshotCourseRoomIds(
+        IReadOnlyList<SolutionAssignment> rows,
+        IReadOnlyDictionary<string, int> roomOrder)
+    {
+        var validRows = rows
+            .Select((row, index) => (
+                Row: row,
+                Index: index,
+                RoomId: NormalizeRoomId(row.RoomId)))
+            .Where(x => !string.IsNullOrWhiteSpace(x.RoomId) && roomOrder.ContainsKey(x.RoomId))
+            .ToList();
+        if (validRows.Count == 0) return Array.Empty<string>();
+
+        var slotCombos = validRows
+            .GroupBy(x => (x.Row.Day, x.Row.Period))
+            .Select(g =>
+            {
+                var roomIds = g
+                    .Select(x => x.RoomId)
+                    .Distinct(StringComparer.Ordinal)
+                    .OrderBy(id => roomOrder[id])
+                    .ToList();
+                return new
+                {
+                    RoomIds = roomIds,
+                    Key = string.Join("\u001f", roomIds),
+                    FirstDay = g.Key.Day,
+                    FirstPeriod = g.Key.Period,
+                };
+            })
+            .ToList();
+
+        var multiRoomCombos = slotCombos
+            .Where(slot => slot.RoomIds.Count > 1)
+            .GroupBy(slot => slot.Key, StringComparer.Ordinal)
+            .Select(g => new
+            {
+                RoomIds = g.First().RoomIds,
+                Count = g.Count(),
+                FirstDay = g.Min(x => x.FirstDay),
+                FirstPeriod = g.Where(x => x.FirstDay == g.Min(y => y.FirstDay)).Min(x => x.FirstPeriod),
+            })
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.FirstDay)
+            .ThenBy(x => x.FirstPeriod)
+            .ToList();
+        if (multiRoomCombos.Count > 0)
+            return multiRoomCombos[0].RoomIds;
+
+        var firstUse = validRows
+            .GroupBy(x => x.RoomId, StringComparer.Ordinal)
+            .ToDictionary(
+                g => g.Key,
+                g => g.OrderBy(x => x.Row.Day).ThenBy(x => x.Row.Period).ThenBy(x => x.Index).First(),
+                StringComparer.Ordinal);
+
+        var representative = validRows
+            .GroupBy(x => x.RoomId, StringComparer.Ordinal)
+            .Select(g => new
+            {
+                RoomId = g.Key,
+                Count = g.Count(),
+                First = firstUse[g.Key],
+                RoomOrder = roomOrder[g.Key],
+            })
+            .OrderByDescending(x => x.Count)
+            .ThenBy(x => x.First.Row.Day)
+            .ThenBy(x => x.First.Row.Period)
+            .ThenBy(x => x.RoomOrder)
+            .First();
+
+        return new[] { representative.RoomId };
+    }
+
+    private static string CourseSectionKey(string courseId, int section) =>
+        string.Join("\u001f", courseId, section.ToString(System.Globalization.CultureInfo.InvariantCulture));
+
+    private static Course CloneCourse(Course src) => new()
+    {
+        Id = src.Id,
+        Name = src.Name,
+        Grade = src.Grade,
+        HoursPerWeek = src.HoursPerWeek,
+        CourseType = src.CourseType,
+        ProfessorId = src.ProfessorId,
+        Section = src.Section,
+        Department = src.Department,
+        FixedRooms = new List<string>(src.FixedRooms),
+        UnavailableRooms = new List<string>(src.UnavailableRooms),
+        BlockStructure = new List<int>(src.BlockStructure),
+        IsFixed = src.IsFixed,
+        FixedSlots = src.FixedSlots.ToList(),
+        CoteachProfs = new List<string>(src.CoteachProfs),
+    };
 
     private bool CanSaveTimetable() => !string.IsNullOrWhiteSpace(SaveName) && BaseSolution != null;
 
@@ -1576,7 +1760,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var newConflicts = DetectNewConflicts(_working, candidate)
             .Concat(BuildSwapSoftWarnings(SelectedAssignment, selectedDay, selectedPeriod, target, targetDay, targetPeriod))
             .ToList();
-        if (newConflicts.Count > 0 && !_dialog.ConfirmDespiteConflicts(newConflicts.Select(BuildUserConflictItem).ToList()))
+        var relevantNewConflicts = newConflicts
+            .Where(IsConflictRelevantForCurrentSelection)
+            .ToList();
+        if (relevantNewConflicts.Count > 0 && !_dialog.ConfirmDespiteConflicts(relevantNewConflicts.Select(BuildUserConflictItem).ToList()))
         {
             reason = "교환이 취소되었습니다.";
             return false;
@@ -1770,7 +1957,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 targetDay,
                 targetPeriod)).ToList();
 
-        if (!_dialog.ConfirmDespiteConflicts(dialogItems.Select(BuildUserConflictItem).ToList()))
+        var relevantDialogItems = dialogItems
+            .Where(IsConflictRelevantForCurrentSelection)
+            .ToList();
+        if (relevantDialogItems.Count > 0 && !_dialog.ConfirmDespiteConflicts(relevantDialogItems.Select(BuildUserConflictItem).ToList()))
         {
             StatusMessage = "강제 이동이 취소되었습니다.";
             return false;
@@ -1961,6 +2151,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var newConflicts = detectedConflicts
             .Where(c =>
             {
+                if (c.Type == ConflictType.ProfRoomInconsistent)
+                    return false;
                 var allowed = IsAllowedManualCrossOverlapConflict(
                     c,
                     candidate,
@@ -2499,7 +2691,20 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
         if (newOnes.Count > 0)
         {
-            bool proceed = _dialog.ConfirmDespiteConflicts(newOnes.Select(c => BuildUserConflictItem(c.Conflict)).ToList());
+            var relevantNewOnes = newOnes
+                .Select(c => c.Conflict)
+                .Where(IsConflictRelevantForCurrentSelection)
+                .ToList();
+            if (relevantNewOnes.Count == 0)
+            {
+                MarkUserEditedAfterLoad();
+                RefreshConflicts();
+                PushUndoSnapshot(snapshot);
+                StatusMessage = successMessage;
+                return true;
+            }
+
+            bool proceed = _dialog.ConfirmDespiteConflicts(relevantNewOnes.Select(BuildUserConflictItem).ToList());
             if (!proceed)
             {
                 RestoreSnapshot(snapshot);
@@ -2530,7 +2735,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         Conflicts.Clear();
         foreach (var c in DetectConflicts(_working, strictManualCrossValidation)
-            .Where(c => !IsAllowedExistingManualCrossSectionConflict(c, _working)))
+            .Where(c => !IsAllowedExistingManualCrossSectionConflict(c, _working))
+            .Where(IsConflictRelevantForCurrentSelection))
             Conflicts.Add(BuildConflictDisplayItem(c));
     }
 
@@ -2699,6 +2905,34 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private string BuildProfessorRoomInconsistentDescription(ConflictItem conflict)
     {
+        if (conflict.Assignments is { Count: > 0 })
+        {
+            var rows = conflict.Assignments
+                .Select(a => (Assignment: a, Course: ResolveCourseForAssignment(a)))
+                .Where(x => x.Course != null)
+                .Select(x => (x.Assignment, Course: x.Course!))
+                .ToList();
+            var selectedGroup = rows
+                .GroupBy(x => x.Course.ProfessorId, StringComparer.Ordinal)
+                .FirstOrDefault(g => g.Any(x => IsSelectedConflictAssignment(x.Assignment)))
+                ?? rows.GroupBy(x => x.Course.ProfessorId, StringComparer.Ordinal).FirstOrDefault();
+            if (selectedGroup != null)
+            {
+                var rooms = selectedGroup
+                    .Select(x => RoomDisplayName(x.Assignment.RoomId))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+                var courses = selectedGroup
+                    .Select(x => BuildConflictCourseLabel(x.Course, x.Assignment.CourseId))
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+                return FormatSelectedAndRelatedConflict(
+                    conflict,
+                    $"{ProfessorDisplayName(selectedGroup.Key)} 교수님의 자동 배정 과목들이 서로 다른 강의실을 사용합니다. 수업: {string.Join(", ", courses)}. 강의실: {string.Join(", ", rooms)}",
+                    selectedGroup.Select(x => x.Assignment).ToList());
+            }
+        }
+
         var description = SanitizeConflictDescription(conflict.Description);
         foreach (var professor in SessionProfessors.Concat(_workspace.Professors))
             description = ReplaceToken(description, professor.Id, ProfessorDisplayName(professor.Id));
@@ -2900,6 +3134,18 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         return related.Count == 0
             ? $"선택 수업: {selectedLabel}. {baseDescription}"
             : $"선택 수업: {selectedLabel}. 충돌 상대: {string.Join(", ", related)}. {baseDescription}";
+    }
+
+    private bool IsConflictRelevantForCurrentSelection(ConflictItem conflict)
+    {
+        if (conflict.Type != ConflictType.ProfRoomInconsistent)
+            return true;
+        if (conflict.Assignments is not { Count: > 0 })
+            return true;
+        if (SelectedAssignment == null)
+            return false;
+
+        return conflict.Assignments.Any(IsSelectedConflictAssignment);
     }
 
     private bool IsSelectedConflictAssignment(SolutionAssignment assignment) =>
@@ -3111,6 +3357,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         OnPropertyChanged(nameof(SelectedSlotDisplayText));
         NotifySelectionDetailChanged();
         Grid.ClearEditState();
+        RefreshConflicts();
     }
 
     private string ProfessorDisplayName(string id) =>
@@ -3160,6 +3407,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .ToList();
         if (candidates.Count <= 1) return candidates.FirstOrDefault();
 
+        var assignmentIdCourse = ResolveCourseFromAssignmentId(assignment.AssignmentId, candidates);
+        if (assignmentIdCourse != null) return assignmentIdCourse;
+
         var roomId = NormalizeRoomId(assignment.RoomId);
         var byFixedRoom = candidates
             .Where(c => c.FixedRooms.Any(room => string.Equals(NormalizeRoomId(room), roomId, StringComparison.Ordinal)))
@@ -3167,6 +3417,29 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (byFixedRoom.Count == 1) return byFixedRoom[0];
 
         return null;
+    }
+
+    private static Course? ResolveCourseFromAssignmentId(
+        string? assignmentId,
+        IReadOnlyList<Course> candidates)
+    {
+        if (string.IsNullOrWhiteSpace(assignmentId)) return null;
+
+        var parts = assignmentId.Split('\u001f');
+        if (parts.Length < 7 || !string.Equals(parts[0], "occ", StringComparison.Ordinal))
+            return null;
+
+        var courseId = parts[1];
+        var sectionText = parts[2];
+        var professorId = parts[3];
+        if (!int.TryParse(sectionText, out var section)) return null;
+
+        var matches = candidates
+            .Where(c => string.Equals(c.Id, courseId, StringComparison.Ordinal)
+                && c.Section == section
+                && string.Equals(c.ProfessorId, professorId, StringComparison.Ordinal))
+            .ToList();
+        return matches.Count == 1 ? matches[0] : null;
     }
 
     private string RoomDisplayName(string id) =>
@@ -3178,16 +3451,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         IEnumerable<string> roomIds,
         bool includeUnknownAssignedRooms)
     {
-        var roomById = SessionRooms
-            .Concat(_workspace.Rooms)
+        var roomById = BuildRoomCatalog()
             .Where(r => !string.IsNullOrWhiteSpace(r.Id))
             .GroupBy(r => NormalizeRoomId(r.Id), StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
-
-        var roomByName = SessionRooms
-            .Concat(_workspace.Rooms)
-            .Where(r => !string.IsNullOrWhiteSpace(r.Name))
-            .GroupBy(r => NormalizeRoomId(r.Name), StringComparer.Ordinal)
             .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
 
         var options = new Dictionary<string, RoomOption>(StringComparer.Ordinal);
@@ -3198,9 +3464,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
             var room = roomById.TryGetValue(roomId, out var byId)
                 ? byId
-                : roomByName.TryGetValue(roomId, out var byName)
-                    ? byName
-                    : null;
+                : null;
 
             if (room == null && IsBareNumericRoomId(roomId) && !includeUnknownAssignedRooms)
                 continue;
@@ -3239,6 +3503,42 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private static string NormalizeRoomId(string? roomId) =>
         string.IsNullOrWhiteSpace(roomId) ? "" : roomId.Trim();
 
+    private static string NormalizeRoomName(string? roomName) =>
+        string.IsNullOrWhiteSpace(roomName) ? "" : roomName.Trim();
+
+    private IReadOnlyList<Room> BuildRoomCatalog()
+    {
+        var rooms = new List<Room>();
+        var ids = new HashSet<string>(StringComparer.Ordinal);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+
+        void Add(Room room)
+        {
+            var id = NormalizeRoomId(room.Id);
+            if (string.IsNullOrWhiteSpace(id) || !ids.Add(id)) return;
+
+            var name = NormalizeRoomName(room.Name);
+            if (!string.IsNullOrWhiteSpace(name) && !names.Add(name))
+            {
+                ids.Remove(id);
+                return;
+            }
+
+            rooms.Add(room);
+        }
+
+        if (_sessionData != null)
+        {
+            foreach (var room in _sessionData.Rooms)
+                Add(room);
+        }
+
+        foreach (var room in _workspace.Rooms)
+            Add(room);
+
+        return rooms;
+    }
+
     private IReadOnlyList<string> BuildRoomViewIds()
     {
         var ids = new List<string>();
@@ -3271,17 +3571,21 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private IReadOnlyList<string> BuildEditableRoomIds(bool includeAssignedRooms)
     {
         var ids = new List<string>();
-        ids.AddRange(_workspace.Rooms.Select(r => r.Id));
-        if (_sessionData != null)
-            ids.AddRange(_sessionData.Rooms.Select(r => r.Id));
+        ids.AddRange(BuildRoomCatalog().Select(r => r.Id));
         if (includeAssignedRooms)
             ids.AddRange(SelectedAssignment?.Rooms ?? Array.Empty<string>());
 
         return ids.Where(id => !string.IsNullOrWhiteSpace(id)).Distinct().ToList();
     }
 
-    private bool RoomExists(string id) =>
-        BuildEditableRoomIds(includeAssignedRooms: true).Contains(id);
+    private bool KnownRoomExists(string id)
+    {
+        var normalized = NormalizeRoomId(id);
+        if (string.IsNullOrWhiteSpace(normalized)) return false;
+
+        return _workspace.Rooms.Any(r => string.Equals(NormalizeRoomId(r.Id), normalized, StringComparison.Ordinal))
+            || (_sessionData?.Rooms.Any(r => string.Equals(NormalizeRoomId(r.Id), normalized, StringComparison.Ordinal)) ?? false);
+    }
 
     private static string Fallback(string value) =>
         string.IsNullOrWhiteSpace(value) ? "-" : value;

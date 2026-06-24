@@ -860,6 +860,100 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void SaveGroup_BatchesRebuildAndPreservesSectionProfessors()
+    {
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor One" });
+        _workspace.AddProfessor(new Professor { Id = "P2", Name = "Professor Two" });
+        _workspace.AddCourse(new Course
+        {
+            Id = "C-01",
+            Name = "Course",
+            Grade = 1,
+            HoursPerWeek = 3,
+            CourseType = "전필",
+            ProfessorId = "P1",
+            Section = 1,
+            BlockStructure = new List<int> { 1, 2 },
+        });
+        _workspace.AddCourse(new Course
+        {
+            Id = "C-02",
+            Name = "Course",
+            Grade = 1,
+            HoursPerWeek = 3,
+            CourseType = "전필",
+            ProfessorId = "P2",
+            Section = 2,
+            BlockStructure = new List<int> { 1, 2 },
+        });
+        var vm = MakeVm();
+        var item = Assert.Single(vm.CourseGroups);
+        item.IsEditing = true;
+        item.Sections[0].Grade = 2;
+        item.Sections[0].HoursPerWeek = 4;
+        item.Sections[0].CourseType = "전선";
+        item.Sections[0].BlockStructure = new List<int> { 2, 2 };
+        var changedCount = 0;
+        _workspace.Changed += (_, _) => changedCount++;
+
+        vm.SaveGroupCommand.Execute(item);
+
+        Assert.Equal(1, changedCount);
+        var saved = _workspace.Courses.OrderBy(course => course.Section).ToList();
+        Assert.Equal(new[] { "P1", "P2" }, saved.Select(course => course.ProfessorId));
+        Assert.All(saved, course =>
+        {
+            Assert.Equal(2, course.Grade);
+            Assert.Equal(4, course.HoursPerWeek);
+            Assert.Equal("전선", course.CourseType);
+            Assert.Equal(new[] { 2, 2 }, course.BlockStructure);
+        });
+        Assert.Equal(new[] { "P1", "P2" }, vm.CourseGroups.Single()
+            .Sections.OrderBy(section => section.Section)
+            .Select(section => section.ProfessorId));
+    }
+
+    [Fact]
+    public void SaveGroup_DetachesSavedCoursesFromEditorSections()
+    {
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor One" });
+        _workspace.AddProfessor(new Professor { Id = "P2", Name = "Professor Two" });
+        _workspace.AddCourse(new Course
+        {
+            Id = "C-01",
+            Name = "Course",
+            Grade = 1,
+            HoursPerWeek = 3,
+            CourseType = "전공",
+            ProfessorId = "P1",
+            Section = 1,
+            BlockStructure = new List<int> { 1, 2 },
+        });
+        _workspace.AddCourse(new Course
+        {
+            Id = "C-02",
+            Name = "Course",
+            Grade = 1,
+            HoursPerWeek = 3,
+            CourseType = "전공",
+            ProfessorId = "P2",
+            Section = 2,
+            BlockStructure = new List<int> { 1, 2 },
+        });
+        var vm = MakeVm();
+        var editorItem = Assert.Single(vm.CourseGroups);
+
+        vm.SaveGroupCommand.Execute(editorItem);
+
+        editorItem.Sections[0].ProfessorId = "";
+        editorItem.Sections[1].ProfessorId = "";
+
+        var saved = _workspace.Courses.OrderBy(course => course.Section).ToList();
+        Assert.Equal(new[] { "P1", "P2" }, saved.Select(course => course.ProfessorId));
+        Assert.All(editorItem.Sections.Zip(saved), pair => Assert.NotSame(pair.First, pair.Second));
+    }
+
+    [Fact]
     public void SaveGroup_ClearsSharedOptionalLists_ToAllSections()
     {
         _workspace.AddRoom(new Room { Id = "R1", Name = "Room 1" });
@@ -1098,6 +1192,33 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void CrossManager_RejectsSharedFixedRoom_WithIe039()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "Room" });
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor One" });
+        _workspace.AddProfessor(new Professor { Id = "P2", Name = "Professor Two" });
+        AddTwoSectionCourse("A", course =>
+        {
+            course.ProfessorId = "P1";
+            course.FixedRooms = new List<string> { "R1" };
+        });
+        AddTwoSectionCourse("B", course =>
+        {
+            course.ProfessorId = "P2";
+            course.FixedRooms = new List<string> { "R1" };
+        });
+        var vm = MakeVm();
+
+        vm.CrossCandidateItems.Single(item => item.Id == "A").IsChecked = true;
+        vm.CrossCandidateItems.Single(item => item.Id == "B").IsChecked = true;
+        vm.AddCrossCommand.Execute(null);
+
+        Assert.Empty(_workspace.CrossGroups);
+        Assert.Contains("IE-039", vm.CrossStatusMessage);
+        Assert.Contains("공통 고정 강의실", vm.CrossStatusMessage);
+    }
+
+    [Fact]
     public void CrossManager_RejectsDuplicateMembership()
     {
         AddTwoSectionCourse("A");
@@ -1142,6 +1263,38 @@ public class CourseGroupsTests : IDisposable
         Assert.Contains("강의실 관리 > Room (R1)", vm.StatusMessage);
         Assert.False(vm.IsSolving);
         Assert.False(vm.IsSolveComplete);
+    }
+
+    [Fact]
+    public void GoToSelection_WithUnsavedCourseEdit_ReportsIe037AndDoesNotNavigate()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "Room" });
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor One" });
+        _workspace.AddProfessor(new Professor { Id = "P2", Name = "Professor Two" });
+        _workspace.AddCourse(new Course
+        {
+            Id = "C-01",
+            Name = "Course",
+            Grade = 1,
+            HoursPerWeek = 1,
+            ProfessorId = "P1",
+            Section = 1,
+            BlockStructure = new List<int> { 1 },
+        });
+        var vm = MakeVm();
+        var group = Assert.Single(vm.CourseGroups);
+        group.IsEditing = true;
+        group.Sections[0].ProfessorId = "P2";
+        vm.IsSolveComplete = true;
+        var navigationCount = 0;
+        vm.GoToSelectionRequested += (_, _) => navigationCount++;
+
+        vm.GoToSelectionCommand.Execute(null);
+
+        Assert.Equal(0, navigationCount);
+        Assert.Contains("IE-037", vm.StatusMessage);
+        Assert.Equal("P2", group.Sections[0].ProfessorId);
+        Assert.Equal("P1", _workspace.Courses.Single().ProfessorId);
     }
 
     [Fact]

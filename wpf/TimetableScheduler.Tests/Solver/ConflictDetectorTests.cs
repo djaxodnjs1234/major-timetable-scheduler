@@ -225,21 +225,21 @@ public class ConflictDetectorTests
     }
 
     [Fact]
-    public void ProfRoomInconsistent_DetectsWarning()
+    public void DifferentRoomsForSameProfessor_IsNotAConflict()
     {
         var courses = new List<Course>
         {
             new() { Id = "A", Name = "A", ProfessorId = "P1" },
             new() { Id = "B", Name = "B", ProfessorId = "P1" },
         };
-        // Both courses no FixedRooms, same prof, different rooms — HC-21 violation
+        // Courses taught by the same professor may use different rooms.
         var assignment = new List<SolutionAssignment>
         {
             new("A", 0, 1, "R1"),
             new("B", 1, 1, "R2"),
         };
         var conflicts = ConflictDetector.Detect(assignment, courses);
-        Assert.Contains(conflicts, c => c.Type == ConflictType.ProfRoomInconsistent);
+        Assert.DoesNotContain(conflicts, c => c.Type == ConflictType.ProfRoomInconsistent);
     }
 
     [Fact]

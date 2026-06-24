@@ -119,73 +119,48 @@ public static class BlockHcs
         }
     }
 
-    public static void AddHc21_ProfRoomConsistent(
+    public static void AddHc21_ProfRoomEligibility(
         CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms,
         Dictionary<string, Professor> profMap)
     {
-        var autoCoursesByPid = new Dictionary<string, List<Course>>();
         foreach (var c in courses)
         {
             if (c.FixedRooms.Count > 0) continue;
-            var pid = c.ProfessorId;
-            if (string.IsNullOrEmpty(pid)) continue;
-            if (!autoCoursesByPid.TryGetValue(pid, out var list))
-                autoCoursesByPid[pid] = list = new List<Course>();
-            list.Add(c);
-        }
+            if (!profMap.TryGetValue(c.ProfessorId, out var prof)) continue;
 
-        var profRoom = new Dictionary<string, Dictionary<string, BoolVar>>();
-        foreach (var pid in autoCoursesByPid.Keys)
-        {
-            profMap.TryGetValue(pid, out var prof);
-            var unavailable = (prof?.UnavailableRooms ?? new List<string>()).ToHashSet();
-            var candidates = rooms.Select(r => r.Id).Where(rid => !unavailable.Contains(rid)).ToList();
-            if (candidates.Count == 0)
+            var unavailable = prof.UnavailableRooms.ToHashSet();
+            var allowed = prof.AllowedRooms.Count == 0
+                ? null
+                : prof.AllowedRooms.ToHashSet();
+
+            foreach (var r in rooms)
             {
-                var infeasible = model.NewBoolVar($"__prof_room_infeasible_{pid}");
-                model.Add(infeasible == 1);
-                model.Add(infeasible == 0);
-                continue;
+                if (unavailable.Contains(r.Id) || (allowed != null && !allowed.Contains(r.Id)))
+                    for (int d = 0; d < Constants.Days; d++)
+                        foreach (var p in Constants.ValidPeriods)
+                            model.Add(x[(c.Id, d, p, r.Id)] == 0);
             }
-            var rdict = new Dictionary<string, BoolVar>();
-            foreach (var rid in candidates)
-                rdict[rid] = model.NewBoolVar($"prof_room_{pid}_{rid}");
-            model.Add(LinearExpr.Sum(rdict.Values) == 1);
-            profRoom[pid] = rdict;
-        }
-
-        foreach (var (pid, clist) in autoCoursesByPid)
-        {
-            if (!profRoom.TryGetValue(pid, out var rdict)) continue;
-            foreach (var c in clist)
-                for (int d = 0; d < Constants.Days; d++)
-                    foreach (var p in Constants.ValidPeriods)
-                        foreach (var r in rooms)
-                        {
-                            if (rdict.TryGetValue(r.Id, out var rv))
-                                model.Add(x[(c.Id, d, p, r.Id)] <= rv);
-                            else
-                                model.Add(x[(c.Id, d, p, r.Id)] == 0);
-                        }
         }
     }
 
-    public static void AddHc18_BlockDayGap(CpModel model, DayVarMap dayVarsByCourse)
+    public static void AddHc22_SectionRoomConsistent(
+        CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms)
     {
-        foreach (var (cid, dayVars) in dayVarsByCourse)
+        foreach (var (_, sections) in ConstraintHelpers.GroupByBaseId(courses))
         {
-            if (dayVars.Count < 2) continue;
-            for (int i = 0; i < dayVars.Count; i++)
-                for (int j = i + 1; j < dayVars.Count; j++)
-                {
-                    var diff = model.NewIntVar(
-                        -(Constants.Days - 1), Constants.Days - 1, $"hc18_diff_{cid}_{i}_{j}");
-                    var absDiff = model.NewIntVar(
-                        0, Constants.Days - 1, $"hc18_abs_{cid}_{i}_{j}");
-                    model.Add(diff == dayVars[i] - dayVars[j]);
-                    model.AddAbsEquality(absDiff, diff);
-                    model.Add(absDiff <= 2);
-                }
+            if (sections.Count < 2) continue;
+            if (sections.Any(section => section.FixedRooms.Count > 0)) continue;
+
+            var sharedRoom = rooms.ToDictionary(
+                room => room.Id,
+                room => model.NewBoolVar($"section_room_{sections[0].Id}_{room.Id}"));
+            model.Add(LinearExpr.Sum(sharedRoom.Values) == 1);
+
+            foreach (var section in sections)
+                for (int d = 0; d < Constants.Days; d++)
+                    foreach (var p in Constants.ValidPeriods)
+                        foreach (var room in rooms)
+                            model.Add(x[(section.Id, d, p, room.Id)] <= sharedRoom[room.Id]);
         }
     }
 
@@ -291,6 +266,11 @@ public static class BlockHcs
                 int b = blocks1[i];
                 if (!startVarsByBlock.TryGetValue((c1.Id, i), out var sv1)) continue;
                 if (!startVarsByBlock.TryGetValue((c2.Id, i), out var sv2)) continue;
+                var hasAnyAdjacentPair = sv1.Keys.Any(start =>
+                    sv2.ContainsKey((start.Day, start.StartPeriod + b)) ||
+                    sv2.ContainsKey((start.Day, start.StartPeriod - b)));
+                if (!hasAnyAdjacentPair) continue;
+
                 foreach (var ((d, sp), v1) in sv1)
                 {
                     var candidates = new List<BoolVar>();

@@ -71,10 +71,10 @@ public static class ModelBuilder
         BlockHcs.AddHc15_SectionBackToBack(model, startVarsByBlock, courses);
         GroupingHcs.AddHc16_Cross(model, y, courses, crosses);
         GroupingHcs.AddHc17_Retake(model, y, courses, retakes);
-        BlockHcs.AddHc18_BlockDayGap(model, dayVarsByCourse);
         BlockHcs.AddHc19_Len2StartPeriods(model, startVarsByBlock, courses, crosses);
         BlockHcs.AddHc20_BlockDaysDistinct(model, dayVarsByCourse);
-        BlockHcs.AddHc21_ProfRoomConsistent(model, x, courses, rooms, profMap);
+        BlockHcs.AddHc21_ProfRoomEligibility(model, x, courses, rooms, profMap);
+        BlockHcs.AddHc22_SectionRoomConsistent(model, x, courses, rooms);
 
         return new BuildResult
         {

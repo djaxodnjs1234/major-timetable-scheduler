@@ -18,6 +18,15 @@
         <SolidColorBrush x:Key="OnSurface" Color="#191C21" />
         <SolidColorBrush x:Key="OnSurfaceVariant" Color="#424752" />
 
+        <Style x:Key="DataInputComboBoxItemStyle" TargetType="{x:Type ComboBoxItem}">
+            <Setter Property="HorizontalContentAlignment" Value="Left" />
+            <Setter Property="VerticalContentAlignment" Value="Center" />
+        </Style>
+
+        <Style TargetType="{x:Type ComboBox}">
+            <Setter Property="ItemContainerStyle" Value="{StaticResource DataInputComboBoxItemStyle}" />
+        </Style>
+
         <Style x:Key="NavButtonStyle" TargetType="RadioButton">
             <Setter Property="Foreground" Value="{StaticResource OnSurfaceVariant}" />
             <Setter Property="FontSize" Value="12" />

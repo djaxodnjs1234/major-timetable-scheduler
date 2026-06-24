@@ -247,40 +247,19 @@ public static class ConflictDetector
                 g.Select(x => x.Assignment).ToList()));
         }
 
-        // HC-21: professor's auto-placed courses (no FixedRooms) should all share one room
-        var autoRoomsByProf = new Dictionary<string, HashSet<string>>();
-        foreach (var a in assignment)
-        {
-            var c = ResolveCourseForAssignment(a, courses);
-            if (c == null) continue;
-            if (c.FixedRooms.Count > 0) continue;
-            var pid = c.ProfessorId;
-            if (string.IsNullOrEmpty(pid)) continue;
-            if (!autoRoomsByProf.TryGetValue(pid, out var set))
-                autoRoomsByProf[pid] = set = new HashSet<string>();
-            set.Add(a.RoomId);
-        }
-        foreach (var (pid, rooms) in autoRoomsByProf)
-        {
-            if (rooms.Count <= 1) continue;
-            list.Add(new ConflictItem(
-                ConflictType.ProfRoomInconsistent, ConflictSeverity.Warning,
-                $"교수 {pid}의 자동 배정 과목들이 서로 다른 강의실 사용: {string.Join(",", rooms)}",
-                0, 0));
-        }
-
-        // HC-21 candidate-room subset for auto-assigned courses.
+        // HC-21: professor room eligibility for auto-assigned courses.
         foreach (var a in assignment)
         {
             var c = ResolveCourseForAssignment(a, courses);
             if (c == null) continue;
             if (c.FixedRooms.Count > 0) continue;
             if (!profMap.TryGetValue(c.ProfessorId, out var prof)) continue;
-            if (prof.UnavailableRooms.Contains(a.RoomId))
+            if (prof.UnavailableRooms.Contains(a.RoomId)
+                || (prof.AllowedRooms.Count > 0 && !prof.AllowedRooms.Contains(a.RoomId)))
             {
                 list.Add(new ConflictItem(
                     ConflictType.ProfAllowedRoomViolation, ConflictSeverity.Error,
-                    $"{c.Name}({c.Id})은 교수 {c.ProfessorId}의 불가 강의실 [{string.Join(",", prof.UnavailableRooms)}]에 배정할 수 없습니다.",
+                    $"{c.Name}({c.Id})은 교수 {c.ProfessorId}의 강의실 조건을 만족하지 않습니다.",
                     a.Day, a.Period,
                     new[] { a }));
                 continue;
@@ -363,6 +342,9 @@ public static class ConflictDetector
         if (candidates.Count == 0) return null;
         if (candidates.Count == 1) return candidates[0];
 
+        var assignmentIdCourse = ResolveCourseFromAssignmentId(assignment.AssignmentId, candidates);
+        if (assignmentIdCourse != null) return assignmentIdCourse;
+
         var roomId = NormalizeRoomId(assignment.RoomId);
         var fixedRoomMatches = candidates
             .Where(c => c.FixedRooms.Any(room => string.Equals(NormalizeRoomId(room), roomId, StringComparison.Ordinal)))
@@ -379,6 +361,29 @@ public static class ConflictDetector
         return null;
     }
 
+    private static Course? ResolveCourseFromAssignmentId(
+        string? assignmentId,
+        IReadOnlyList<Course> candidates)
+    {
+        if (string.IsNullOrWhiteSpace(assignmentId)) return null;
+
+        var parts = assignmentId.Split('\u001f');
+        if (parts.Length < 7 || !string.Equals(parts[0], "occ", StringComparison.Ordinal))
+            return null;
+
+        var courseId = parts[1];
+        var sectionText = parts[2];
+        var professorId = parts[3];
+        if (!int.TryParse(sectionText, out var section)) return null;
+
+        var matches = candidates
+            .Where(c => string.Equals(c.Id, courseId, StringComparison.Ordinal)
+                && c.Section == section
+                && string.Equals(c.ProfessorId, professorId, StringComparison.Ordinal))
+            .ToList();
+        return matches.Count == 1 ? matches[0] : null;
+    }
+
     private static string AssignmentConflictIdentity(SolutionAssignment assignment) =>
         string.IsNullOrWhiteSpace(assignment.AssignmentId)
             ? string.Join("\u001f", assignment.CourseId, assignment.Day, assignment.Period, assignment.RoomId)
@@ -389,7 +394,11 @@ public static class ConflictDetector
 
     private static string DayName(int d) => d switch
     {
-        0 => "월", 1 => "화", 2 => "수", 3 => "목", 4 => "금",
+        0 => "월",
+        1 => "화",
+        2 => "수",
+        3 => "목",
+        4 => "금",
         _ => "?"
     };
 

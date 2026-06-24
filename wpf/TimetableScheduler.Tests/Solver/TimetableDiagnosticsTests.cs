@@ -251,6 +251,34 @@ public class TimetableDiagnosticsTests
             diagnostic.Id == "GE-026" && diagnostic.Message.Contains("블록구조가 다릅니다"));
     }
 
+    [Fact]
+    public void CrossSharedFixedRoom_ReportsSpecificDiagnostics()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "A-01", Name = "A", Grade = 1, HoursPerWeek = 1, ProfessorId = "P1", Section = 1, FixedRooms = new List<string> { "R1" }, BlockStructure = new List<int> { 1 } },
+            new() { Id = "A-02", Name = "A", Grade = 1, HoursPerWeek = 1, ProfessorId = "P1", Section = 2, FixedRooms = new List<string> { "R1" }, BlockStructure = new List<int> { 1 } },
+            new() { Id = "B-01", Name = "B", Grade = 1, HoursPerWeek = 1, ProfessorId = "P2", Section = 1, FixedRooms = new List<string> { "R1" }, BlockStructure = new List<int> { 1 } },
+            new() { Id = "B-02", Name = "B", Grade = 1, HoursPerWeek = 1, ProfessorId = "P2", Section = 2, FixedRooms = new List<string> { "R1" }, BlockStructure = new List<int> { 1 } },
+        };
+        var professors = new List<Professor>
+        {
+            new() { Id = "P1", Name = "P1" },
+            new() { Id = "P2", Name = "P2" },
+        };
+        var rooms = new List<Room> { new() { Id = "R1", Name = "Room" } };
+        var crosses = new List<CrossGroup>
+        {
+            new() { Id = "X001", BaseIds = new List<string> { "A", "B" } },
+        };
+
+        var inputDiagnostics = TimetableDiagnostics.GetInputErrors(courses, professors, rooms, crosses);
+        var generationDiagnostics = TimetableDiagnostics.GetGenerationErrors(courses, professors, rooms, crosses);
+
+        Assert.Contains(inputDiagnostics, diagnostic => diagnostic.Id == "IE-039");
+        Assert.Contains(generationDiagnostics, diagnostic => diagnostic.Id == "GE-028");
+    }
+
     [Theory]
     [InlineData(new[] { 1, 2, 2 }, false)]
     [InlineData(new[] { 2, 3 }, false)]

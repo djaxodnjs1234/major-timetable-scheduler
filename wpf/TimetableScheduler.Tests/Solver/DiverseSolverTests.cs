@@ -76,6 +76,56 @@ public class DiverseSolverTests
     }
 
     [Fact]
+    public void Sc01AndSc03Enabled_GeneratesDistantTwoPlusThreeBlockCourse()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "X-01",
+                Name = "X",
+                Grade = 1,
+                HoursPerWeek = 5,
+                ProfessorId = "P1",
+                BlockStructure = new List<int> { 2, 3 },
+            },
+        };
+        var profs = new List<Professor>
+        {
+            new()
+            {
+                Id = "P1",
+                Name = "P1",
+                UnavailableSlots = Constants.ValidPeriods
+                    .SelectMany(p => Enumerable.Range(0, Constants.Days).Select(d => new TimeSlot(d, p)))
+                    .Where(slot =>
+                        !(slot.Day == 0 && slot.Period is 1 or 2) &&
+                        !(slot.Day == 4 && slot.Period is 6 or 7 or 8))
+                    .ToList(),
+            },
+        };
+        var rooms = new List<Room> { new() { Id = "R1", Name = "R1" } };
+        var opts = new DiverseSolverOptions
+        {
+            UseSc01 = true,
+            UseSc03 = true,
+            TotalSolutions = 1,
+            TimeLimitSec = 30,
+            PerSolveTimeSec = 2,
+        };
+
+        var result = DiverseSolver.Solve(courses, profs, rooms, opts);
+
+        Assert.True(result.Status is "OPTIMAL" or "FEASIBLE", result.Status);
+        var solution = Assert.Single(result.Solutions);
+        Assert.Equal(
+            new[] { (0, 1), (0, 2), (4, 6), (4, 7), (4, 8) },
+            solution.Select(a => (a.Day, a.Period))
+                .OrderBy(slot => slot.Day)
+                .ThenBy(slot => slot.Period));
+    }
+
+    [Fact]
     public void UnlimitedPerSolutionTime_WithTotalLimit_StillCollectsSolutions()
     {
         var (courses, profs, rooms) = MakeSetup();
