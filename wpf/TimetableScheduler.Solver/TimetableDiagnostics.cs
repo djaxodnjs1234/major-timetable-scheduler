@@ -103,6 +103,7 @@ public static class TimetableDiagnostics
 
         AddFixedOverlapInputErrors(issues, courses, crosses);
         AddRoomAndTimeCandidateInputErrors(issues, courses, professors, rooms);
+        AddSectionAdjacencyErrors(issues, courses, professors, "IE-041", inputLocation: true);
         AddCrossInputErrors(issues, courses, crosses);
         AddGradeSlotCapacityErrors(issues, courses, crosses, "IE-038");
     }
@@ -162,6 +163,7 @@ public static class TimetableDiagnostics
 
         AddFixedOverlapGenerationErrors(issues, courses, crosses);
         AddTeamTeachingGenerationErrors(issues, courses, professors, rooms);
+        AddSectionAdjacencyErrors(issues, courses, professors, "GE-030", inputLocation: false);
         AddCrossGenerationErrors(issues, courses, crosses);
         AddGraduateThreeHourBlockCapacityErrors(issues, courses, crosses);
         AddGradeSlotCapacityErrors(issues, courses, crosses, "GE-027");
@@ -319,6 +321,63 @@ public static class TimetableDiagnostics
 
             if (rooms.Count > 0 && CommonCandidateRooms(course, teachingProfessors, rooms).Count == 0)
                 Add(issues, "GE-012", $"{CourseLabel(course)} 팀티칭 교수들의 공통 가능 강의실이 없습니다. 교수 강의실 조건을 수정하세요.");
+        }
+    }
+
+    private static void AddSectionAdjacencyErrors(
+        List<TimetableDiagnostic> issues,
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<Professor> professors,
+        string id,
+        bool inputLocation)
+    {
+        var professorMap = professors.ToDictionary(professor => professor.Id, StringComparer.Ordinal);
+        foreach (var sections in GroupByBaseId(courses).Values)
+        {
+            if (sections.Count != 2) continue;
+            var first = sections[0];
+            var second = sections[1];
+            if (first.IsFixed || second.IsFixed) continue;
+
+            var firstProfIds = DomainHelpers.CourseProfIds(first);
+            var secondProfIds = DomainHelpers.CourseProfIds(second);
+            if (!firstProfIds.SetEquals(secondProfIds) || firstProfIds.Count == 0) continue;
+
+            var firstBlocks = EffectiveBlocks(first);
+            var secondBlocks = EffectiveBlocks(second);
+            if (!firstBlocks.SequenceEqual(secondBlocks)) continue;
+
+            if (firstProfIds.Any(professorId => !professorMap.ContainsKey(professorId)))
+                continue;
+
+            for (var index = 0; index < firstBlocks.Count; index++)
+            {
+                var block = firstBlocks[index];
+                if (block == 3) continue;
+
+                var potentialFirst = PotentialBlockStarts(first, block);
+                var potentialSecond = PotentialBlockStarts(second, block);
+                if (!HasAdjacentStartPair(potentialFirst, potentialSecond, block))
+                    continue;
+
+                var feasibleFirst = FeasibleBlockStarts(first, block, professorMap);
+                var feasibleSecond = FeasibleBlockStarts(second, block, professorMap);
+                if (feasibleFirst.Count == 0 || feasibleSecond.Count == 0)
+                    continue;
+                if (HasAdjacentStartPair(feasibleFirst, feasibleSecond, block))
+                    continue;
+
+                var courseLabel = inputLocation
+                    ? InputCoursePair(first, second)
+                    : $"{CourseLabel(first)} / {CourseLabel(second)}";
+                var professorLabels = string.Join(", ", firstProfIds
+                    .OrderBy(professorId => professorId, StringComparer.Ordinal)
+                    .Select(professorId => ProfessorLabel(professorMap[professorId])));
+                Add(
+                    issues,
+                    id,
+                    $"{courseLabel}: 같은 교수({professorLabels})의 분반은 {block}시간 블록을 같은 날 인접하게 배치해야 하지만 가능한 인접 시간쌍이 없습니다. 교수 불가 시간을 줄이거나 담당 교수를 분리하세요.");
+            }
         }
     }
 
@@ -497,11 +556,7 @@ public static class TimetableDiagnostics
         return rooms.Where(room =>
             !course.UnavailableRooms.Contains(room.Id) &&
             (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)) &&
-            (professor == null || !professor.UnavailableRooms.Contains(room.Id)) &&
-            (professor == null ||
-                professor.AllowedRooms.Count == 0 ||
-                professor.AllowedRooms.Contains(room.Id) ||
-                course.FixedRooms.Contains(room.Id)))
+            (professor == null || !professor.UnavailableRooms.Contains(room.Id)))
             .ToList();
     }
 
@@ -513,11 +568,7 @@ public static class TimetableDiagnostics
         return rooms.Where(room =>
             !course.UnavailableRooms.Contains(room.Id) &&
             (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)) &&
-            professors.All(professor =>
-                !professor.UnavailableRooms.Contains(room.Id) &&
-                (professor.AllowedRooms.Count == 0 ||
-                 professor.AllowedRooms.Contains(room.Id) ||
-                 course.FixedRooms.Contains(room.Id))))
+            professors.All(professor => !professor.UnavailableRooms.Contains(room.Id)))
             .ToList();
     }
 
@@ -620,7 +671,7 @@ public static class TimetableDiagnostics
             .GroupBy(course => (course.Grade, BaseId: DomainHelpers.BaseId(course.Id)))
             .ToDictionary(
                 group => group.Key,
-                group => group.Max(RequiredSlotCount));
+                group => group.Sum(RequiredSlotCount));
 
     private static Dictionary<int, int> CrossSlotOverlapByGrade(
         IReadOnlyList<CrossGroup>? crosses,
@@ -737,6 +788,56 @@ public static class TimetableDiagnostics
 
     private static bool IsAllowedPeriod(Course course, int period) =>
         AllowedPeriods(course).Contains(period);
+
+    private static HashSet<(int Day, int StartPeriod)> PotentialBlockStarts(Course course, int block)
+    {
+        var starts = new HashSet<(int Day, int StartPeriod)>();
+        for (var day = 0; day < Constants.Days; day++)
+            foreach (var start in AllowedPeriods(course))
+            {
+                if (block == 2 && !Constants.Len2StartPeriods.Contains(start))
+                    continue;
+
+                var periods = Enumerable.Range(start, block).ToList();
+                if (periods.All(period => AllowedPeriods(course).Contains(period)))
+                    starts.Add((day, start));
+            }
+        return starts;
+    }
+
+    private static HashSet<(int Day, int StartPeriod)> FeasibleBlockStarts(
+        Course course,
+        int block,
+        IReadOnlyDictionary<string, Professor> professorMap)
+    {
+        var starts = PotentialBlockStarts(course, block);
+        var courseProfessors = DomainHelpers.CourseProfIds(course)
+            .Select(id => professorMap.TryGetValue(id, out var professor) ? professor : null)
+            .Where(professor => professor != null)
+            .Cast<Professor>()
+            .ToList();
+        if (courseProfessors.Count == 0)
+            return starts;
+
+        starts.RemoveWhere(start =>
+        {
+            var periods = Enumerable.Range(start.StartPeriod, block);
+            return periods.Any(period =>
+                courseProfessors.Any(professor =>
+                    professor.UnavailableSlots.Any(slot => slot.Day == start.Day && slot.Period == period)));
+        });
+        return starts;
+    }
+
+    private static bool HasAdjacentStartPair(
+        IReadOnlySet<(int Day, int StartPeriod)> firstStarts,
+        IReadOnlySet<(int Day, int StartPeriod)> secondStarts,
+        int block)
+    {
+        return firstStarts.Any(start =>
+            secondStarts.Contains((start.Day, start.StartPeriod + block)) ||
+            secondStarts.Contains((start.Day, start.StartPeriod - block)));
+    }
 
     private static bool IsRequiredMajor(Course course) =>
         course.CourseType == RequiredCourseType;

@@ -1066,7 +1066,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
                 var overlap = current.Slots
                     .FirstOrDefault(slot => other.FixedSlots.Contains(slot));
-                if (current.Slots.Contains(overlap))
+                if (current.Slots.Contains(overlap) && IsBlockingFixedTimeOverlap(current.Section, other))
                 {
                     return new FixedTimeOverlapInfo(
                         other.Id,
@@ -1084,7 +1084,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             {
                 var overlap = candidateSections[i].Slots
                     .FirstOrDefault(slot => candidateSections[j].Slots.Contains(slot));
-                if (candidateSections[i].Slots.Contains(overlap))
+                if (candidateSections[i].Slots.Contains(overlap) &&
+                    IsBlockingFixedTimeOverlap(candidateSections[i].Section, candidateSections[j].Section))
                 {
                     var other = candidateSections[j].Section;
                     return new FixedTimeOverlapInfo(
@@ -1098,6 +1099,29 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         }
 
         return null;
+    }
+
+    private bool IsBlockingFixedTimeOverlap(Course first, Course second)
+    {
+        var firstBaseId = DomainHelpers.BaseId(first.Id);
+        var secondBaseId = DomainHelpers.BaseId(second.Id);
+        if (string.Equals(firstBaseId, secondBaseId, StringComparison.Ordinal))
+            return true;
+
+        if (DomainHelpers.CourseProfIds(first)
+            .Intersect(DomainHelpers.CourseProfIds(second), StringComparer.Ordinal)
+            .Any())
+            return true;
+
+        if (first.FixedRooms.Intersect(second.FixedRooms, StringComparer.Ordinal).Any())
+            return true;
+
+        if (first.Grade != second.Grade)
+            return false;
+
+        return !_workspace.CrossGroups.Any(cross =>
+            cross.BaseIds.Contains(firstBaseId, StringComparer.Ordinal) &&
+            cross.BaseIds.Contains(secondBaseId, StringComparer.Ordinal));
     }
 
     private void RebuildCourseGroups()
@@ -1208,7 +1232,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         Id = src.Id,
         Name = src.Name,
         UnavailableSlots = new List<TimeSlot>(src.UnavailableSlots),
-        AllowedRooms = new List<string>(src.AllowedRooms),
         UnavailableRooms = new List<string>(src.UnavailableRooms),
     };
 
@@ -1796,8 +1819,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 var availableProfessorRooms = scheduleSnapshot.Rooms.Count(room =>
                     !course.UnavailableRooms.Contains(room.Id) &&
                     !professor.UnavailableRooms.Contains(room.Id) &&
-                    (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)) &&
-                    (professor.AllowedRooms.Count == 0 || professor.AllowedRooms.Contains(room.Id) || course.FixedRooms.Contains(room.Id)));
+                    (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)));
                 if (scheduleSnapshot.Rooms.Count > 0 && availableProfessorRooms == 0)
                     reasons.Add($"room capacity/type conflict: {course.Name} / {professor.Name} 조건을 만족하는 강의실이 없습니다");
 
@@ -1815,10 +1837,10 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
         foreach (var prof in scheduleSnapshot.Professors)
             if (scheduleSnapshot.Rooms.Count > 0 && prof.UnavailableRooms.Count >= scheduleSnapshot.Rooms.Count)
-                reasons.Add($"room capacity/type conflict: {prof.Name} 교수의 사용 가능 강의실이 없습니다");
+                reasons.Add($"room capacity/type conflict: {prof.Name} 교수의 불가 강의실이 모든 강의실을 막고 있습니다");
         foreach (var course in scheduleSnapshot.Courses)
             if (scheduleSnapshot.Rooms.Count > 0 && course.UnavailableRooms.Count >= scheduleSnapshot.Rooms.Count)
-                reasons.Add($"room capacity/type conflict: {course.Name} 과목의 사용 가능 강의실이 없습니다");
+                reasons.Add($"room capacity/type conflict: {course.Name} 과목의 불가 강의실이 모든 강의실을 막고 있습니다");
 
         foreach (var cross in scheduleSnapshot.CrossGroups)
         {

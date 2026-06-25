@@ -45,7 +45,7 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         ConflictType.FixedTimeViolation => "고정 시간 위반",
         ConflictType.BlockStartViolation => "블록 시작 교시",
         ConflictType.SameCourseSameDayConflict => "같은 요일 중복 배치",
-        ConflictType.ProfAllowedRoomViolation => "교수 강의실 제한",
+        ConflictType.ProfUnavailableRoomViolation => "교수 불가 강의실",
         ConflictType.ProfRoomInconsistent => "교수 강의실 일관성",
         _ => "제약조건 위반",
     };

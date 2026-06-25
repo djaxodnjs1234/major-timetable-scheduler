@@ -2649,7 +2649,6 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Equal("아니오", vm.SelectedFixedText);
         Assert.Equal("없음", vm.SelectedCoteachText);
         Assert.Equal("아니오", vm.SelectedMultiRoomText);
-        Assert.Equal("제한 없음", vm.SelectedAllowedRoomsText);
         Assert.Equal("이동 가능", vm.SelectedMoveStateText);
         Assert.Equal("없음", vm.SelectedBlockedReasonText);
         Assert.False(vm.HasBlockingReasons);
@@ -2704,7 +2703,6 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Equal("예", vm.SelectedFixedText);
         Assert.Equal("공동교수", vm.SelectedCoteachText);
         Assert.Equal("예 (강의실1, 강의실2)", vm.SelectedMultiRoomText);
-        Assert.Equal("강의실1, 강의실2", vm.SelectedAllowedRoomsText);
         Assert.Equal("이동 불가", vm.SelectedMoveStateText);
         Assert.Contains("고정된 수업", vm.SelectedBlockedReasonText);
         Assert.DoesNotContain("HC-13", vm.SelectedBlockedReasonText);
@@ -7825,22 +7823,6 @@ public class ManualEditViewModelTests : IDisposable
         Assert.All(
             vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"),
             cell => Assert.Equal(new[] { "R1" }, cell.Assignment.Rooms));
-    }
-
-    [Fact]
-    public void RoomChange_ProfessorAllowedRoomRestriction_DoesNotBlockManualChange()
-    {
-        _ws.Professors.Single(p => p.Id == "P1").AllowedRooms = new List<string> { "R1" };
-        var vm = BuildFixedTwoHourRoomChangeVm();
-
-        vm.NewRoomId = "R2";
-        vm.ApplyRoomChangeCommand.Execute(null);
-
-        Assert.Equal("강의실을 변경했습니다.", vm.RoomChangeStatusMessage);
-        Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.ProfAllowedRoomViolation);
-        Assert.All(
-            vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"),
-            cell => Assert.Equal(new[] { "R2" }, cell.Assignment.Rooms));
     }
 
     [Fact]

@@ -401,20 +401,6 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         ? "-"
         : SelectedAssignment.Rooms.Count > 1 ? $"예 ({SelectedRoomsText})" : "아니오";
 
-    public string SelectedAllowedRoomsText
-    {
-        get
-        {
-            if (SelectedCourse == null) return "-";
-            var professor = SessionProfessors.FirstOrDefault(p => p.Id == SelectedCourse.ProfessorId);
-            if (SelectedCourse.FixedRooms.Count > 0)
-                return string.Join(", ", SelectedCourse.FixedRooms.Select(RoomDisplayName));
-            if (professor == null || professor.AllowedRooms.Count == 0)
-                return "제한 없음";
-            return string.Join(", ", professor.AllowedRooms.Select(RoomDisplayName));
-        }
-    }
-
     public string SelectedSlotDisplayText
     {
         get
@@ -2761,7 +2747,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         ConflictType.ProfUnavailable => BuildProfessorUnavailableDescription(conflict),
         ConflictType.FixedRoomViolation => BuildFixedRoomViolationDescription(conflict),
         ConflictType.CourseUnavailableRoomViolation => BuildCourseUnavailableRoomDescription(conflict),
-        ConflictType.ProfAllowedRoomViolation => BuildProfessorRoomRestrictionDescription(conflict),
+        ConflictType.ProfUnavailableRoomViolation => BuildProfessorRoomRestrictionDescription(conflict),
         ConflictType.ProfRoomInconsistent => BuildProfessorRoomInconsistentDescription(conflict),
         ConflictType.BlockStartViolation => BuildBlockStartViolationDescription(conflict),
         ConflictType.SameCourseSameDayConflict => BuildSameCourseSameDayDescription(conflict),
@@ -2781,7 +2767,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         ConflictType.CourseUnavailableRoomViolation => "불가 강의실 위반",
         ConflictType.BlockStartViolation => "블록 시작 교시 위반",
         ConflictType.SameCourseSameDayConflict => "같은 요일 중복 배치",
-        ConflictType.ProfAllowedRoomViolation => "교수 강의실 제한",
+        ConflictType.ProfUnavailableRoomViolation => "교수 불가 강의실",
         ConflictType.ProfRoomInconsistent => "교수 강의실 일관성",
         ConflictType.AcademicLevelTimeBandViolation => "학위과정 시간대 위반",
         _ => "제약조건 위반",
@@ -3342,7 +3328,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             SessionProfessors,
             _workingCrossGroups,
             strictManualCrossValidation ? IsManualGradeOverlapAllowedStrict : IsManualGradeOverlapAllowed)
-            .Where(c => c.Type is not ConflictType.FixedRoomViolation and not ConflictType.ProfAllowedRoomViolation)
+            .Where(c => c.Type is not ConflictType.FixedRoomViolation and not ConflictType.ProfUnavailableRoomViolation)
             .ToList();
 
     private void ClearSelectionCore()
@@ -3602,7 +3588,6 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         OnPropertyChanged(nameof(SelectedFixedText));
         OnPropertyChanged(nameof(SelectedCoteachText));
         OnPropertyChanged(nameof(SelectedMultiRoomText));
-        OnPropertyChanged(nameof(SelectedAllowedRoomsText));
         OnPropertyChanged(nameof(AvailableRoomIds));
         OnPropertyChanged(nameof(SingleRoomChangeCandidates));
         OnPropertyChanged(nameof(AvailableRoomOptions));
@@ -4712,7 +4697,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         ConflictType.FixedRoomViolation => BuildFixedRoomMoveWarning(c),
         ConflictType.CourseUnavailableRoomViolation => BuildCourseUnavailableRoomMoveWarning(c),
-        ConflictType.ProfAllowedRoomViolation => BuildProfessorRoomRestrictionMoveWarning(c),
+        ConflictType.ProfUnavailableRoomViolation => BuildProfessorRoomRestrictionMoveWarning(c),
         ConflictType.ProfessorConflict => "해당 교수님의 다른 수업과 시간이 겹칩니다.",
         ConflictType.RoomConflict => "해당 강의실의 다른 수업과 시간이 겹칩니다.",
         ConflictType.GradeConflict => "같은 학년의 다른 수업과 시간이 겹칩니다.",

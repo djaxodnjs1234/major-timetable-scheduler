@@ -699,6 +699,61 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void FindFixedTimeOverlap_ReturnsNull_WhenDifferentGradeOnlySharesFixedTime()
+    {
+        var fixedCourse = MakeCourse("GA1005-01", 1, isFixed: true);
+        fixedCourse.Grade = 1;
+        fixedCourse.ProfessorId = "P1";
+        fixedCourse.FixedSlots = new List<TimeSlot> { new(1, 2), new(1, 3), new(2, 1) };
+        _workspace.AddCourse(fixedCourse);
+
+        var candidate = MakeCourse("GA1006-01", 1);
+        candidate.Grade = 2;
+        candidate.ProfessorId = "P2";
+        _workspace.AddCourse(candidate);
+        var vm = MakeVm();
+        var group = vm.CourseGroups.Single(g => g.BaseId == "GA1006");
+        group.Sections[0].IsFixed = true;
+
+        var overlap = vm.FindFixedTimeOverlap(
+            group,
+            new List<IReadOnlyList<TimeSlot>>
+            {
+                new List<TimeSlot> { new(1, 2), new(1, 3), new(3, 1) }
+            });
+
+        Assert.Null(overlap);
+    }
+
+    [Fact]
+    public void FindFixedTimeOverlap_ReturnsConflict_WhenDifferentGradeSharesProfessor()
+    {
+        var fixedCourse = MakeCourse("GA1005-01", 1, isFixed: true);
+        fixedCourse.Grade = 1;
+        fixedCourse.ProfessorId = "P1";
+        fixedCourse.FixedSlots = new List<TimeSlot> { new(1, 2), new(1, 3), new(2, 1) };
+        _workspace.AddCourse(fixedCourse);
+
+        var candidate = MakeCourse("GA1006-01", 1);
+        candidate.Grade = 2;
+        candidate.ProfessorId = "P1";
+        _workspace.AddCourse(candidate);
+        var vm = MakeVm();
+        var group = vm.CourseGroups.Single(g => g.BaseId == "GA1006");
+        group.Sections[0].IsFixed = true;
+
+        var overlap = vm.FindFixedTimeOverlap(
+            group,
+            new List<IReadOnlyList<TimeSlot>>
+            {
+                new List<TimeSlot> { new(1, 2), new(1, 3), new(3, 1) }
+            });
+
+        Assert.NotNull(overlap);
+        Assert.Equal("GA1005-01", overlap!.ExistingCourseId);
+    }
+
+    [Fact]
     public void FindFixedTimeOverlap_ReturnsConflict_WhenCandidateSectionsOverlapEachOther()
     {
         _workspace.AddCourse(MakeCourse("GA1004-01", 1));

@@ -64,7 +64,6 @@ public class SqliteRepositoryTests : IDisposable
                 {
                     Id = "P1", Name = "교수1",
                     UnavailableSlots = new List<TimeSlot> { new(4, 7) },
-                    AllowedRooms = new List<string> { "R1" },
                     UnavailableRooms = new List<string> { "R2" },
                 },
             },
@@ -96,7 +95,6 @@ public class SqliteRepositoryTests : IDisposable
         var p = loaded.Professors[0];
         Assert.Equal("P1", p.Id);
         Assert.Equal(new TimeSlot(4, 7), p.UnavailableSlots[0]);
-        Assert.Equal(new[] { "R1" }, p.AllowedRooms);
         Assert.Equal(new[] { "R2" }, p.UnavailableRooms);
 
         Assert.Single(loaded.Rooms);
@@ -110,6 +108,46 @@ public class SqliteRepositoryTests : IDisposable
 
         Assert.Single(loaded.RetakeScenarios);
         Assert.Equal(3, loaded.RetakeScenarios[0].CurrentGrade);
+    }
+
+    [Fact]
+    public void EnsureCreated_OnOldProfessorRoomWhitelistSchema_RemovesLegacyColumn()
+    {
+        using (var conn = new Microsoft.Data.Sqlite.SqliteConnection(
+                   new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = _dbPath }.ToString()))
+        {
+            conn.Open();
+            using var cmd = conn.CreateCommand();
+            cmd.CommandText =
+                "CREATE TABLE Professors (" +
+                "Id TEXT PRIMARY KEY, Name TEXT NOT NULL, " +
+                "UnavailableSlotsJson TEXT NOT NULL, " +
+                "Allowed" + "RoomsJson TEXT NOT NULL, " +
+                "UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]');" +
+                "INSERT INTO Professors VALUES ('P1', '교수1', '[]', '[\"R1\"]', '[\"R2\"]');";
+            cmd.ExecuteNonQuery();
+        }
+
+        var repo = new SqliteRepository(_dbPath);
+        repo.EnsureCreated();
+
+        using (var conn = new Microsoft.Data.Sqlite.SqliteConnection(
+                   new Microsoft.Data.Sqlite.SqliteConnectionStringBuilder { DataSource = _dbPath }.ToString()))
+        {
+            conn.Open();
+            var columns = conn.CreateCommand();
+            columns.CommandText = "SELECT name FROM pragma_table_info('Professors')";
+            var names = new List<string>();
+            using var reader = columns.ExecuteReader();
+            while (reader.Read())
+                names.Add(reader.GetString(0));
+
+            Assert.DoesNotContain("Allowed" + "RoomsJson", names);
+        }
+
+        var professor = Assert.Single(repo.LoadAll().Professors);
+        Assert.Equal("P1", professor.Id);
+        Assert.Equal(new[] { "R2" }, professor.UnavailableRooms);
     }
 
     [Fact]

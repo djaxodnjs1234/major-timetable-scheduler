@@ -30,7 +30,6 @@ public class ModelDefaultsTests
         Assert.Equal("", p.Id);
         Assert.Equal("", p.Name);
         Assert.Empty(p.UnavailableSlots);
-        Assert.Empty(p.AllowedRooms);
         Assert.Empty(p.UnavailableRooms);
     }
 
