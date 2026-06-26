@@ -7,6 +7,7 @@ namespace TimetableScheduler.Data;
 
 public sealed class SqliteRepository
 {
+    private const string LegacyProfessorRoomWhitelistColumn = "Allowed" + "RoomsJson";
     private readonly string _connStr;
 
     public string DbPath { get; }
@@ -42,6 +43,7 @@ public sealed class SqliteRepository
         conn.Execute(SqliteSchema.CreateAll);
         MigrateCourseUnavailableRooms(conn);
         MigrateProfessorUnavailableRooms(conn);
+        MigrateLegacyProfessorRoomWhitelistRemoved(conn);
         MigrateRoomMetadata(conn);
         MigrateCoursePkIfNeeded(conn);
         MigrateSavedTimetableSnapshot(conn);
@@ -81,6 +83,25 @@ public sealed class SqliteRepository
             .Select(row => (string)row.name);
         if (columns.Contains("UnavailableRoomsJson")) return;
         conn.Execute("ALTER TABLE Professors ADD COLUMN UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]'");
+    }
+
+    private static void MigrateLegacyProfessorRoomWhitelistRemoved(SqliteConnection conn)
+    {
+        var columns = conn.Query("PRAGMA table_info(Professors)")
+            .Select(row => (string)row.name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!columns.Contains(LegacyProfessorRoomWhitelistColumn)) return;
+
+        conn.Execute("CREATE TABLE Professors_v2 (" +
+            "Id TEXT PRIMARY KEY, Name TEXT NOT NULL, " +
+            "UnavailableSlotsJson TEXT NOT NULL, " +
+            "UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]')");
+        conn.Execute(@"INSERT OR REPLACE INTO Professors_v2
+            (Id, Name, UnavailableSlotsJson, UnavailableRoomsJson)
+            SELECT Id, Name, UnavailableSlotsJson, UnavailableRoomsJson
+            FROM Professors");
+        conn.Execute("DROP TABLE Professors");
+        conn.Execute("ALTER TABLE Professors_v2 RENAME TO Professors");
     }
 
     private static void MigrateRoomMetadata(SqliteConnection conn)
@@ -154,8 +175,8 @@ public sealed class SqliteRepository
 
         foreach (var p in data.Professors)
             conn.Execute(@"INSERT INTO Professors
-                (Id,Name,UnavailableSlotsJson,AllowedRoomsJson,UnavailableRoomsJson)
-                VALUES (@Id,@Name,@UnavailableSlotsJson,@AllowedRoomsJson,@UnavailableRoomsJson)",
+                (Id,Name,UnavailableSlotsJson,UnavailableRoomsJson)
+                VALUES (@Id,@Name,@UnavailableSlotsJson,@UnavailableRoomsJson)",
                 FromProf(p), tx);
 
         foreach (var r in data.Rooms)
@@ -336,7 +357,6 @@ public sealed class SqliteRepository
         public string Id { get; set; } = "";
         public string Name { get; set; } = "";
         public string UnavailableSlotsJson { get; set; } = "[]";
-        public string AllowedRoomsJson { get; set; } = "[]";
         public string UnavailableRoomsJson { get; set; } = "[]";
     }
 
@@ -381,7 +401,6 @@ public sealed class SqliteRepository
         Id = r.Id,
         Name = r.Name,
         UnavailableSlots = JsonSerializer.Deserialize<List<TimeSlot>>(r.UnavailableSlotsJson) ?? new(),
-        AllowedRooms = JsonSerializer.Deserialize<List<string>>(r.AllowedRoomsJson) ?? new(),
         UnavailableRooms = JsonSerializer.Deserialize<List<string>>(r.UnavailableRoomsJson) ?? new(),
     };
 
@@ -389,7 +408,6 @@ public sealed class SqliteRepository
     {
         p.Id, p.Name,
         UnavailableSlotsJson = JsonSerializer.Serialize(p.UnavailableSlots),
-        AllowedRoomsJson = JsonSerializer.Serialize(p.AllowedRooms),
         UnavailableRoomsJson = JsonSerializer.Serialize(p.UnavailableRooms),
     };
 

@@ -279,6 +279,42 @@ public class TimetableDiagnosticsTests
         Assert.Contains(generationDiagnostics, diagnostic => diagnostic.Id == "GE-028");
     }
 
+    [Fact]
+    public void SameProfessorTwoHourSectionsWithoutAdjacentSlots_ReportSpecificDiagnostics()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "A-01", Name = "A", Grade = 1, HoursPerWeek = 2, ProfessorId = "P1", Section = 1, BlockStructure = new List<int> { 2 } },
+            new() { Id = "A-02", Name = "A", Grade = 1, HoursPerWeek = 2, ProfessorId = "P1", Section = 2, BlockStructure = new List<int> { 2 } },
+        };
+        var unavailableSlots = Constants.DaytimePeriods
+            .SelectMany(period => Enumerable.Range(0, Constants.Days).Select(day => new TimeSlot(day, period)))
+            .Where(slot =>
+                !(slot.Day == 0 && slot.Period is 1 or 2) &&
+                !(slot.Day == 1 && slot.Period is 1 or 2))
+            .ToList();
+        var professors = new List<Professor>
+        {
+            new() { Id = "P1", Name = "P1", UnavailableSlots = unavailableSlots },
+        };
+        var rooms = Rooms(1);
+
+        var solverResult = DiverseSolver.Solve(
+            courses,
+            professors,
+            rooms,
+            new DiverseSolverOptions { TotalSolutions = 1, TimeLimitSec = 5, PerSolveTimeSec = 1 });
+        var inputDiagnostics = TimetableDiagnostics.GetInputErrors(courses, professors, rooms);
+        var generationDiagnostics = TimetableDiagnostics.GetGenerationErrors(courses, professors, rooms);
+
+        Assert.Equal("INFEASIBLE", solverResult.Status);
+        Assert.DoesNotContain(inputDiagnostics, diagnostic => diagnostic.Id == "IE-024");
+        Assert.Contains(inputDiagnostics, diagnostic =>
+            diagnostic.Id == "IE-041" && diagnostic.Message.Contains("인접"));
+        Assert.Contains(generationDiagnostics, diagnostic =>
+            diagnostic.Id == "GE-030" && diagnostic.Message.Contains("인접"));
+    }
+
     [Theory]
     [InlineData(new[] { 1, 2, 2 }, false)]
     [InlineData(new[] { 2, 3 }, false)]
@@ -327,6 +363,31 @@ public class TimetableDiagnosticsTests
         Assert.Contains("41칸", inputDiagnostic.Message);
         Assert.Contains("교과목 관리 > 2학년", inputDiagnostic.Message);
         Assert.Contains("2학년", generationDiagnostic.Message);
+    }
+
+    [Fact]
+    public void GradeSlotCapacityOverflow_CountsSameCourseSections()
+    {
+        var courses = Enumerable.Range(1, 20)
+            .SelectMany(baseIndex => Enumerable.Range(1, 2)
+                .Select(sectionIndex =>
+                {
+                    var course = OneHourCourse($"G2SEC{baseIndex:00}-{sectionIndex:00}", $"P{baseIndex:00}{sectionIndex:00}");
+                    course.Section = sectionIndex;
+                    return course;
+                }))
+            .Append(OneHourCourse("G2OVER-01", "P999"))
+            .ToList();
+        var professors = ProfessorsFor(courses);
+        var rooms = Rooms(2);
+
+        var inputDiagnostics = TimetableDiagnostics.GetInputErrors(courses, professors, rooms);
+        var generationDiagnostics = TimetableDiagnostics.GetGenerationErrors(courses, professors, rooms);
+
+        var inputDiagnostic = Assert.Single(inputDiagnostics.Where(diagnostic => diagnostic.Id == "IE-038"));
+        var generationDiagnostic = Assert.Single(generationDiagnostics.Where(diagnostic => diagnostic.Id == "GE-027"));
+        Assert.Contains("41", inputDiagnostic.Message);
+        Assert.Contains("41", generationDiagnostic.Message);
     }
 
     [Fact]

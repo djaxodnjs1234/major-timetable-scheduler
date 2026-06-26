@@ -130,6 +130,20 @@ public class MainWindowViewModelTests : IDisposable
     }
 
     [Fact]
+    public void Edit_BackReturnsToSelectionPage()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var workspace = _sp.GetRequiredService<WorkspaceService>();
+        workspace.SaveTimetable("nav-test", Array.Empty<TimetableScheduler.Solver.SolutionAssignment>());
+        var record = workspace.SavedTimetables.First(t => t.Name == "nav-test");
+
+        main.Selection.EditCommand.Execute(record);
+        main.Manual.BackCommand.Execute(null);
+
+        Assert.Same(main.Selection, main.CurrentPage);
+    }
+
+    [Fact]
     public void ManualConstraintEdit_GoesToInputAndReturnsToManualPage()
     {
         var main = _sp.GetRequiredService<MainWindowViewModel>();
@@ -148,6 +162,26 @@ public class MainWindowViewModelTests : IDisposable
         Assert.IsType<ManualEditViewModel>(main.CurrentPage);
         Assert.Equal("수동 편집", main.CurrentPage.Title);
         Assert.Equal("nav-test", main.Manual.SaveName);
+    }
+
+    [Fact]
+    public void ManualConstraintEdit_ReturnedManualBackReturnsToConstraintInputPage()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var workspace = _sp.GetRequiredService<WorkspaceService>();
+        workspace.SaveTimetable("nav-test", Array.Empty<TimetableScheduler.Solver.SolutionAssignment>());
+        var record = workspace.SavedTimetables.First(t => t.Name == "nav-test");
+
+        main.Selection.EditCommand.Execute(record);
+        main.Manual.EditConstraintsCommand.Execute(null);
+        var inputPage = main.Input;
+        main.Input.GoToManualCommand.Execute(null);
+
+        main.Manual.BackCommand.Execute(null);
+
+        Assert.Same(inputPage, main.CurrentPage);
+        Assert.True(main.Input.IsExistingMode);
+        Assert.Equal("nav-test", main.Input.EditBaseName);
     }
 
     [Fact]

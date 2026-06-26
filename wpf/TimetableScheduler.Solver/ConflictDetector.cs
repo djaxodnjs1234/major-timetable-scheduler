@@ -15,7 +15,7 @@ public enum ConflictType
     FixedRoomViolation,
     CourseUnavailableRoomViolation,
     BlockStartViolation,
-    ProfAllowedRoomViolation,
+    ProfUnavailableRoomViolation,
     ProfRoomInconsistent,
     SameCourseSameDayConflict,
     AcademicLevelTimeBandViolation,
@@ -247,19 +247,18 @@ public static class ConflictDetector
                 g.Select(x => x.Assignment).ToList()));
         }
 
-        // HC-21: professor room eligibility for auto-assigned courses.
+        // HC-21: professor unavailable rooms for auto-assigned courses.
         foreach (var a in assignment)
         {
             var c = ResolveCourseForAssignment(a, courses);
             if (c == null) continue;
             if (c.FixedRooms.Count > 0) continue;
             if (!profMap.TryGetValue(c.ProfessorId, out var prof)) continue;
-            if (prof.UnavailableRooms.Contains(a.RoomId)
-                || (prof.AllowedRooms.Count > 0 && !prof.AllowedRooms.Contains(a.RoomId)))
+            if (prof.UnavailableRooms.Contains(a.RoomId))
             {
                 list.Add(new ConflictItem(
-                    ConflictType.ProfAllowedRoomViolation, ConflictSeverity.Error,
-                    $"{c.Name}({c.Id})은 교수 {c.ProfessorId}의 강의실 조건을 만족하지 않습니다.",
+                    ConflictType.ProfUnavailableRoomViolation, ConflictSeverity.Error,
+                    $"{c.Name}({c.Id})은 교수 {c.ProfessorId}의 불가 강의실을 사용할 수 없습니다.",
                     a.Day, a.Period,
                     new[] { a }));
                 continue;

@@ -42,7 +42,6 @@ public class HcCoverageTests
         var (courses, profs, rooms) = MakeBaseSetup();
         rooms.Add(new Room { Id = "R3", Name = "R3" });
         courses[0].FixedRooms = new List<string> { "R2" };
-        profs[0].AllowedRooms = new List<string> { "R1" };
 
         var build = ModelBuilder.Build(courses, profs, rooms);
         var solver = new CpSolver();
@@ -288,7 +287,7 @@ public class HcCoverageTests
     }
 
     [Fact]
-    public void HC21_PerCourseRoomEligibility_AllowsDifferentRoomsForSameProfessor()
+    public void HC14_CourseUnavailableRooms_AllowsDifferentRoomsForSameProfessor()
     {
         // Each course's unavailable room is local to that course, not all of P1's courses.
         var courses = new List<Course>
@@ -296,7 +295,7 @@ public class HcCoverageTests
             new() { Id = "A-01", Name = "A", Grade = 1, HoursPerWeek = 1, ProfessorId = "P1", UnavailableRooms = new List<string> { "R1" } },
             new() { Id = "B-01", Name = "B", Grade = 2, HoursPerWeek = 1, ProfessorId = "P1", UnavailableRooms = new List<string> { "R2" } },
         };
-        var profs = new List<Professor> { new() { Id = "P1", Name = "P", AllowedRooms = new List<string> { "R1", "R2" } } };
+        var profs = new List<Professor> { new() { Id = "P1", Name = "P" } };
         var rooms = new List<Room>
         {
             new() { Id = "R1", Name = "R1" },

@@ -98,7 +98,6 @@ public class SolverService
             Id = source.Id,
             Name = source.Name,
             UnavailableSlots = source.UnavailableSlots.ToList(),
-            AllowedRooms = source.AllowedRooms.ToList(),
             UnavailableRooms = source.UnavailableRooms.ToList(),
         };
 

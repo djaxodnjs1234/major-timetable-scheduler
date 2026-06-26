@@ -137,7 +137,7 @@ Cross 대응 분반이 공통 고정 강의실을 사용하면 같은 시간에 
 
 - exe 위치부터 위로 8단계까지 `개설강좌 편람.xlsx` 탐색 → 자동 임포트 (DB 비었을 때만)
 - 모든 CRUD는 즉시 SQLite 영속 (`WorkspaceService.Persist`)
-- List 필드 (FixedRooms, BlockStructure, FixedSlots, UnavailableSlots, AllowedRooms, Professor.UnavailableRooms, CoteachProfs, BaseIds)는 JSON 컬럼
+- List 필드 (FixedRooms, BlockStructure, FixedSlots, UnavailableSlots, Professor.UnavailableRooms, CoteachProfs, BaseIds)는 JSON 컬럼
 
 ## Python ↔ C# 차이
 

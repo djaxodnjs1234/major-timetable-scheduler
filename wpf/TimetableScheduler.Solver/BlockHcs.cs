@@ -129,13 +129,10 @@ public static class BlockHcs
             if (!profMap.TryGetValue(c.ProfessorId, out var prof)) continue;
 
             var unavailable = prof.UnavailableRooms.ToHashSet();
-            var allowed = prof.AllowedRooms.Count == 0
-                ? null
-                : prof.AllowedRooms.ToHashSet();
 
             foreach (var r in rooms)
             {
-                if (unavailable.Contains(r.Id) || (allowed != null && !allowed.Contains(r.Id)))
+                if (unavailable.Contains(r.Id))
                     for (int d = 0; d < Constants.Days; d++)
                         foreach (var p in Constants.ValidPeriods)
                             model.Add(x[(c.Id, d, p, r.Id)] == 0);

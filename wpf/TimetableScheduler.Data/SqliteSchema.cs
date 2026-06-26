@@ -25,7 +25,6 @@ CREATE TABLE IF NOT EXISTS Professors (
     Id                   TEXT PRIMARY KEY,
     Name                 TEXT NOT NULL,
     UnavailableSlotsJson TEXT NOT NULL,
-    AllowedRoomsJson     TEXT NOT NULL,
     UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]'
 );
 

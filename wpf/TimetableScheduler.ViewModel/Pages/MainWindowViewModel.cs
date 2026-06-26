@@ -54,10 +54,8 @@ public sealed partial class MainWindowViewModel : ObservableObject
                     handoff.ManualCrossLinks,
                     handoff.SavedTimetableId);
             }
-            var returnedFromManualConstraintEdit = ReferenceEquals(_inputBackTarget, _manual);
             _inputBackTarget = null;
-            if (!returnedFromManualConstraintEdit)
-                _manualBackTarget = _input;
+            _manualBackTarget = _input;
             NavigateTo(_manual);
         };
 
@@ -69,6 +67,7 @@ public sealed partial class MainWindowViewModel : ObservableObject
         };
         _selection.EditRequested += (_, record) =>
         {
+            _input.LoadForExistingTimetable(record);
             _manual.LoadFromSavedTimetable(record);
             _inputBackTarget = null;
             _manualBackTarget = _selection;
