@@ -33,8 +33,10 @@ public partial class TimeSlotPickerControl : UserControl
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (e.OldValue is TimeSlotPickerViewModel oldVm)
+        {
             foreach (var cell in oldVm.Cells)
                 cell.PropertyChanged -= OnCellPropertyChanged;
+        }
 
         if (e.NewValue is TimeSlotPickerViewModel newVm)
         {
@@ -72,17 +74,19 @@ public partial class TimeSlotPickerControl : UserControl
             .Distinct()
             .OrderBy(period => period)
             .ToList();
+        var rowByPeriod = periods
+            .Select((period, index) => new { period, row = index + 1 })
+            .ToDictionary(item => item.period, item => item.row);
 
-        // 1 header row plus one row per period
-        for (int i = 0; i <= periods.Count; i++)
+        RootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        foreach (var _ in periods)
             RootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
 
-        // 1 period-label col + 5 day cols = 6 cols
         RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(56) });
         for (int i = 0; i < 5; i++)
             RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
 
-        string[] dayNames = { "월", "화", "수", "목", "금" };
+        string[] dayNames = { "\uC6D4", "\uD654", "\uC218", "\uBAA9", "\uAE08" };
         for (int d = 0; d < 5; d++)
         {
             var hdr = new System.Windows.Controls.Border
@@ -95,7 +99,8 @@ public partial class TimeSlotPickerControl : UserControl
                     Text = dayNames[d],
                     HorizontalAlignment = HorizontalAlignment.Center,
                     VerticalAlignment = VerticalAlignment.Center,
-                    FontSize = 11, FontWeight = FontWeights.Bold,
+                    FontSize = 11,
+                    FontWeight = FontWeights.Bold,
                     Foreground = HeaderForeground,
                 },
             };
@@ -106,6 +111,7 @@ public partial class TimeSlotPickerControl : UserControl
 
         foreach (var cell in vm.Cells)
         {
+            var row = rowByPeriod[cell.Period];
             if (cell.Day == 0)
             {
                 var lbl = new System.Windows.Controls.Border
@@ -116,15 +122,15 @@ public partial class TimeSlotPickerControl : UserControl
                     Child = new TextBlock
                     {
                         Text = cell.IsLunch
-                            ? "점심"
-                            : $"{cell.Period}교시\n{8 + cell.Period:00}:00~{9 + cell.Period:00}:00",
+                            ? "\uC810\uC2EC"
+                            : $"{cell.Period}\uAD50\uC2DC\n{8 + cell.Period:00}:00~{9 + cell.Period:00}:00",
                         HorizontalAlignment = HorizontalAlignment.Center,
                         VerticalAlignment = VerticalAlignment.Center,
                         FontSize = 11,
                         Foreground = HeaderForeground,
                     },
                 };
-                Grid.SetRow(lbl, cell.Period);
+                Grid.SetRow(lbl, row);
                 Grid.SetColumn(lbl, 0);
                 RootGrid.Children.Add(lbl);
             }
@@ -140,7 +146,7 @@ public partial class TimeSlotPickerControl : UserControl
                 Child = BuildSlotContent(cell),
             };
             if (!cell.IsLunch) btn.MouseLeftButtonDown += OnCellClicked;
-            Grid.SetRow(btn, cell.Period);
+            Grid.SetRow(btn, row);
             Grid.SetColumn(btn, 1 + cell.Day);
             RootGrid.Children.Add(btn);
         }
@@ -163,7 +169,7 @@ public partial class TimeSlotPickerControl : UserControl
         {
             return new TextBlock
             {
-                Text = "점심",
+                Text = "\uC810\uC2EC",
                 HorizontalAlignment = HorizontalAlignment.Center,
                 VerticalAlignment = VerticalAlignment.Center,
                 FontSize = 9,

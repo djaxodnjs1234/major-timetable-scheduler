@@ -1,4 +1,5 @@
 using System.Collections.ObjectModel;
+using System.Text.Json;
 using CommunityToolkit.Mvvm.ComponentModel;
 using CommunityToolkit.Mvvm.Input;
 using TimetableScheduler.Data;
@@ -31,6 +32,17 @@ public sealed record CourseDeletionImpact(
 }
 
 public sealed record CrossGroupListItem(string Id, string Display);
+
+public sealed class UnsavedBackNavigationEventArgs : EventArgs
+{
+    public IReadOnlyList<string> UnsavedEditLabels { get; }
+    public bool ShouldContinue { get; set; }
+
+    public UnsavedBackNavigationEventArgs(IReadOnlyList<string> unsavedEditLabels)
+    {
+        UnsavedEditLabels = unsavedEditLabels;
+    }
+}
 
 public sealed partial class CrossCandidateItemViewModel : ObservableObject
 {
@@ -153,6 +165,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private CancellationTokenSource? _cts;
     private EventHandler? _workspaceChangedHandler;
     private List<string> _selectedCrossCandidateIds = new();
+    private AppData _backBaselineSnapshot = AppData.Empty();
+    private bool _hasGeneratedSolutionsForCurrentInput;
 
     public override string Title => "정보 입력";
 
@@ -320,6 +334,16 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             return;
         }
 
+        var sharedFixedRooms = SharedFixedRoomsForProposedCross(chosen, groups);
+        if (sharedFixedRooms.Count > 0)
+        {
+            CrossStatusMessage =
+                $"IE-039: Cross를 추가할 수 없습니다. 선택한 두 과목이 공통 고정 강의실({string.Join(", ", sharedFixedRooms)})을 사용합니다. " +
+                "Cross는 두 과목을 같은 시간에 배치하므로 같은 강의실을 동시에 사용할 수 없습니다. " +
+                "둘 중 하나의 고정강의실을 다른 강의실로 바꾸거나 고정강의실을 비운 뒤 다시 추가하세요.";
+            return;
+        }
+
         var cross = new CrossGroup
         {
             Id = NextCrossId(),
@@ -341,6 +365,33 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         CrossStatusMessage = "Cross를 추가했습니다.";
         RebuildCrossManager(clearCandidateSelection: true);
         RebuildCourseGroups();
+    }
+
+    private static IReadOnlyList<string> SharedFixedRoomsForProposedCross(
+        IReadOnlyList<string> baseIds,
+        IReadOnlyDictionary<string, List<Course>> groups)
+    {
+        if (baseIds.Count != 2)
+            return Array.Empty<string>();
+        if (!groups.TryGetValue(baseIds[0], out var firstGroup) ||
+            !groups.TryGetValue(baseIds[1], out var secondGroup))
+            return Array.Empty<string>();
+        if (firstGroup.Count == 0 || secondGroup.Count == 0)
+            return Array.Empty<string>();
+
+        var first = firstGroup.OrderBy(course => course.Section).ToList();
+        var second = secondGroup.OrderBy(course => course.Section).ToList();
+        var count = Math.Min(first.Count, second.Count);
+        var sharedRooms = new HashSet<string>(StringComparer.Ordinal);
+        for (var index = 0; index < count; index++)
+        {
+            var left = first[index];
+            var right = second[(index + 1) % count];
+            foreach (var roomId in left.FixedRooms.Intersect(right.FixedRooms, StringComparer.Ordinal))
+                sharedRooms.Add(roomId);
+        }
+
+        return sharedRooms.OrderBy(roomId => roomId, StringComparer.Ordinal).ToList();
     }
 
     [RelayCommand]
@@ -883,10 +934,23 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public event EventHandler? GoToSelectionRequested;
     public event EventHandler? GoToManualRequested;
     public event EventHandler? BackRequested;
+    public event EventHandler<UnsavedBackNavigationEventArgs>? BackConfirmationRequested;
     public event EventHandler<string>? DeleteBlocked;
 
     [RelayCommand]
-    private void Back() => BackRequested?.Invoke(this, EventArgs.Empty);
+    private void Back()
+    {
+        var backWarningLabels = GetBackWarningLabels();
+        if (backWarningLabels.Count > 0)
+        {
+            var args = new UnsavedBackNavigationEventArgs(backWarningLabels);
+            BackConfirmationRequested?.Invoke(this, args);
+            if (!args.ShouldContinue)
+                return;
+        }
+
+        BackRequested?.Invoke(this, EventArgs.Empty);
+    }
 
     [RelayCommand(CanExecute = nameof(CanGoToSelection))]
     private void GoToSelection()
@@ -953,6 +1017,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         };
         _workspace = workspace;
         _workspace.Changed += _workspaceChangedHandler;
+        SetBackBaseline(_workspace.Snapshot());
         RebuildProfessorItems();
         RebuildCourseGroups();
         RebuildRoomItems();
@@ -979,7 +1044,10 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     public void LoadForNewTimetable()
     {
-        SwitchWorkspace(WorkspaceService.CreateSession(AppData.Empty()));
+        var baseline = AppData.Empty();
+        SwitchWorkspace(WorkspaceService.CreateSession(baseline));
+        SetBackBaseline(baseline);
+        ClearGeneratedSolutions();
         IsExistingMode = false;
         _editBaseAssignments = null;
         _editBaseManualCrossLinks = Array.Empty<SavedManualCrossLinkRow>();
@@ -1014,6 +1082,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void LoadForManualEdit(ManualConstraintEditContext context)
     {
         SwitchWorkspace(WorkspaceService.CreateSession(context.Snapshot));
+        SetBackBaseline(context.Snapshot);
+        ClearGeneratedSolutions();
         IsExistingMode = true;
         SelectedCategory = InputCategory.Course;
         _editBaseAssignments = context.Handoff.Solution.Assignment.ToList();
@@ -1712,7 +1782,10 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             };
             IsSolveComplete = result.Status != "CANCELLED" && ranked.Count > 0;
             if (IsSolveComplete)
+            {
+                _hasGeneratedSolutionsForCurrentInput = true;
                 SolveCompleted?.Invoke(this, ranked);
+            }
         }
         catch (Exception ex) when (IsCancellationException(ex))
         {
@@ -1883,6 +1956,109 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 .Select(item => $"강의실 관리 > {EditItemLabel(item.HeaderName, item.HeaderId)}"))
             .ToList();
 
+    private IReadOnlyList<string> GetBackWarningLabels()
+    {
+        var labels = GetUnsavedEditLabels().ToList();
+        if (HasBackBaselineChanges())
+        {
+            labels.Add(IsExistingMode
+                ? "\uC800\uC7A5\uB41C \uC2DC\uAC04\uD45C\uC5D0 \uC544\uC9C1 \uBC18\uC601\uD558\uC9C0 \uC54A\uC740 \uC815\uBCF4 \uC785\uB825 \uBCC0\uACBD"
+                : "DB\uC5D0 \uC544\uC9C1 \uC800\uC7A5\uD558\uC9C0 \uC54A\uC740 \uC0C8 \uC2DC\uAC04\uD45C \uC785\uB825 \uB370\uC774\uD130");
+        }
+        if (_hasGeneratedSolutionsForCurrentInput && RankedResults.Count > 0)
+        {
+            labels.Add($"\uB4A4\uB85C\uAC00\uBA74 \uC0AC\uB77C\uC9C0\uB294 \uC800\uC7A5\uD558\uC9C0 \uC54A\uC740 \uC0DD\uC131 \uC2DC\uAC04\uD45C \uD574 {RankedResults.Count}\uAC1C");
+        }
+
+        return labels.Distinct(StringComparer.Ordinal).ToList();
+    }
+
+    private void ClearGeneratedSolutions()
+    {
+        RankedResults.Clear();
+        IsSolveComplete = false;
+        _hasGeneratedSolutionsForCurrentInput = false;
+    }
+
+    private bool HasBackBaselineChanges() =>
+        !string.Equals(SnapshotKey(_backBaselineSnapshot), SnapshotKey(_workspace.Snapshot()), StringComparison.Ordinal);
+
+    private void SetBackBaseline(AppData snapshot) =>
+        _backBaselineSnapshot = CloneSnapshot(snapshot);
+
+    private static AppData CloneSnapshot(AppData snapshot) => new(
+        snapshot.Courses.Select(CloneCourse).ToList(),
+        snapshot.Professors.Select(CloneProfessor).ToList(),
+        snapshot.Rooms.Select(CloneRoom).ToList(),
+        snapshot.CrossGroups.Select(group => new CrossGroup { Id = group.Id, BaseIds = group.BaseIds.ToList() }).ToList(),
+        snapshot.RetakeScenarios.Select(scenario => new RetakeScenario
+        {
+            CurrentGrade = scenario.CurrentGrade,
+            RetakeBaseId = scenario.RetakeBaseId,
+        }).ToList());
+
+    private static string SnapshotKey(AppData snapshot)
+    {
+        var normalized = new
+        {
+            Courses = snapshot.Courses
+                .OrderBy(course => course.Id, StringComparer.Ordinal)
+                .ThenBy(course => course.Section)
+                .Select(course => new
+                {
+                    course.Id,
+                    course.Name,
+                    course.Grade,
+                    course.HoursPerWeek,
+                    course.CourseType,
+                    course.ProfessorId,
+                    course.Section,
+                    course.Department,
+                    FixedRooms = course.FixedRooms.OrderBy(id => id, StringComparer.Ordinal).ToList(),
+                    UnavailableRooms = course.UnavailableRooms.OrderBy(id => id, StringComparer.Ordinal).ToList(),
+                    BlockStructure = course.BlockStructure.ToList(),
+                    course.IsFixed,
+                    FixedSlots = course.FixedSlots.OrderBy(slot => slot.Day).ThenBy(slot => slot.Period).ToList(),
+                    CoteachProfs = course.CoteachProfs.OrderBy(id => id, StringComparer.Ordinal).ToList(),
+                }),
+            Professors = snapshot.Professors
+                .OrderBy(professor => professor.Id, StringComparer.Ordinal)
+                .Select(professor => new
+                {
+                    professor.Id,
+                    professor.Name,
+                    UnavailableSlots = professor.UnavailableSlots.OrderBy(slot => slot.Day).ThenBy(slot => slot.Period).ToList(),
+                    UnavailableRooms = professor.UnavailableRooms.OrderBy(id => id, StringComparer.Ordinal).ToList(),
+                }),
+            Rooms = snapshot.Rooms
+                .OrderBy(room => room.Id, StringComparer.Ordinal)
+                .Select(room => new
+                {
+                    room.Id,
+                    room.Name,
+                    room.IsLab,
+                    room.Capacity,
+                    room.IsImportedFromExcel,
+                }),
+            CrossGroups = snapshot.CrossGroups
+                .OrderBy(group => group.Id, StringComparer.Ordinal)
+                .Select(group => new
+                {
+                    group.Id,
+                    BaseIds = group.BaseIds.OrderBy(id => id, StringComparer.Ordinal).ToList(),
+                }),
+            RetakeScenarios = snapshot.RetakeScenarios
+                .OrderBy(scenario => scenario.CurrentGrade)
+                .ThenBy(scenario => scenario.RetakeBaseId, StringComparer.Ordinal)
+                .Select(scenario => new
+                {
+                    scenario.CurrentGrade,
+                    scenario.RetakeBaseId,
+                }),
+        };
+        return JsonSerializer.Serialize(normalized);
+    }
+
     private static string EditItemLabel(string name, string id) =>
         string.IsNullOrWhiteSpace(name) ? id : $"{name} ({id})";
 
@@ -1900,9 +2076,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         var ordered = OrderDiagnosticsForStatus(diagnostics);
         var shown = ordered.Take(5).Select(diagnostic => diagnostic.ToString()).ToList();
         var suffix = diagnostics.Count > shown.Count
-            ? $" / 외 {diagnostics.Count - shown.Count}건"
+            ? $"{Environment.NewLine}- 외 {diagnostics.Count - shown.Count}건"
             : "";
-        return $"{title}: {string.Join(" / ", shown)}{suffix}";
+        return $"{title}:{Environment.NewLine}- {string.Join($"{Environment.NewLine}- ", shown)}{suffix}";
     }
 
     private static IReadOnlyList<TimetableDiagnostic> OrderDiagnosticsForStatus(IReadOnlyList<TimetableDiagnostic> diagnostics) =>

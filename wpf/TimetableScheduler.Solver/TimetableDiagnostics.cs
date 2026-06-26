@@ -1,3 +1,4 @@
+using Google.OrTools.Sat;
 using TimetableScheduler.Domain;
 
 namespace TimetableScheduler.Solver;
@@ -167,6 +168,7 @@ public static class TimetableDiagnostics
         AddCrossGenerationErrors(issues, courses, crosses);
         AddGraduateThreeHourBlockCapacityErrors(issues, courses, crosses);
         AddGradeSlotCapacityErrors(issues, courses, crosses, "GE-027");
+        AddTightGradePackingErrors(issues, courses, professors, crosses);
         AddRetakeGenerationErrors(issues, courses, crosses, retakes, considerRetakeStudents);
     }
 
@@ -498,6 +500,253 @@ public static class TimetableDiagnostics
             issues,
             "GE-031",
             $"교과목 관리 > 대학원: 3시간 연속 수업 블록이 {threeHourBlocks}개입니다. 야간은 하루 4교시뿐이고 대학원 수업끼리는 겹칠 수 없어 최대 {Constants.Days}개만 배치할 수 있습니다. 과목 수/블록구조를 줄이거나 Cross를 설정하세요.");
+    }
+
+    private static void AddTightGradePackingErrors(
+        List<TimetableDiagnostic> issues,
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<Professor> professors,
+        IReadOnlyList<CrossGroup>? crosses)
+    {
+        var baseRequirements = BaseGradeSlotRequirements(courses);
+        var requiredByGrade = baseRequirements
+            .GroupBy(pair => pair.Key.Grade)
+            .ToDictionary(group => group.Key, group => group.Sum(pair => pair.Value));
+        var crossOverlapByGrade = CrossSlotOverlapByGrade(crosses, baseRequirements);
+        var professorMap = professors.ToDictionary(professor => professor.Id, StringComparer.Ordinal);
+
+        foreach (var (grade, rawRequired) in requiredByGrade.OrderBy(pair => pair.Key))
+        {
+            var capacity = Constants.Days * AllowedPeriods(grade).Count;
+            var crossOverlap = crossOverlapByGrade.TryGetValue(grade, out var overlap) ? overlap : 0;
+            var requiredSlots = Math.Max(0, rawRequired - crossOverlap);
+            if (requiredSlots != capacity)
+                continue;
+
+            var gradeCourses = courses.Where(course => course.Grade == grade).ToList();
+            if (gradeCourses.Count == 0 || IsTightGradePackingFeasible(gradeCourses, professorMap, crosses))
+                continue;
+
+            Add(
+                issues,
+                "GE-032",
+                $"교과목 관리 > {AcademicLevels.DisplayName(grade)}: 해당 학년 시간칸이 꽉 찼습니다. 필요한 시간칸은 Cross 반영 후 {requiredSlots}칸이고 사용 가능한 시간칸도 {capacity}칸입니다. 이 상태에서 교수 불가시간, 같은 교수 분반 인접 배치, Cross, 블록구조를 동시에 만족하는 배치 조합이 없습니다. 수정 후보: 교수 불가시간을 줄이거나, 같은 교수 분반 인접이 필요한 과목의 교수/분반/블록구조를 조정하거나, Cross를 추가해 같은 시간 배치를 허용하거나, 과목 시수 또는 분반 수를 줄이세요.");
+        }
+    }
+
+    private static bool IsTightGradePackingFeasible(
+        IReadOnlyList<Course> gradeCourses,
+        IReadOnlyDictionary<string, Professor> professorMap,
+        IReadOnlyList<CrossGroup>? crosses)
+    {
+        var model = new CpModel();
+        var periods = AllowedPeriods(gradeCourses[0].Grade).ToList();
+        var slots = Enumerable.Range(0, Constants.Days)
+            .SelectMany(day => periods.Select(period => new TimeSlot(day, period)))
+            .ToList();
+        var y = new Dictionary<(string CourseId, int Day, int Period), BoolVar>();
+        var startsByBlock = new Dictionary<(string CourseId, int BlockIndex), Dictionary<(int Day, int StartPeriod), BoolVar>>();
+
+        foreach (var course in gradeCourses)
+        {
+            foreach (var slot in slots)
+                y[(course.Id, slot.Day, slot.Period)] = model.NewBoolVar($"tight_y_{course.Id}_{slot.Day}_{slot.Period}");
+
+            if (course.IsFixed)
+            {
+                var fixedSlots = course.FixedSlots.ToHashSet();
+                foreach (var slot in slots)
+                    model.Add(y[(course.Id, slot.Day, slot.Period)] == (fixedSlots.Contains(slot) ? 1 : 0));
+                continue;
+            }
+
+            var blocks = EffectiveBlocks(course);
+            var dayVars = new List<IntVar>();
+            for (var blockIndex = 0; blockIndex < blocks.Count; blockIndex++)
+            {
+                var block = blocks[blockIndex];
+                var startVars = FeasibleBlockStarts(course, block, professorMap)
+                    .ToDictionary(
+                        start => start,
+                        start => model.NewBoolVar($"tight_s_{course.Id}_{blockIndex}_{start.Day}_{start.StartPeriod}"));
+                if (startVars.Count == 0)
+                    return false;
+
+                model.Add(LinearExpr.Sum(startVars.Values) == 1);
+                startsByBlock[(course.Id, blockIndex)] = startVars;
+
+                var dayVar = model.NewIntVar(0, Constants.Days - 1, $"tight_day_{course.Id}_{blockIndex}");
+                dayVars.Add(dayVar);
+                foreach (var ((day, _), startVar) in startVars)
+                    model.Add(dayVar == day).OnlyEnforceIf(startVar);
+            }
+
+            foreach (var slot in slots)
+            {
+                var coveringStarts = new List<BoolVar>();
+                for (var blockIndex = 0; blockIndex < blocks.Count; blockIndex++)
+                {
+                    var block = blocks[blockIndex];
+                    foreach (var ((day, startPeriod), startVar) in startsByBlock[(course.Id, blockIndex)])
+                        if (day == slot.Day && startPeriod <= slot.Period && slot.Period < startPeriod + block)
+                            coveringStarts.Add(startVar);
+                }
+
+                if (coveringStarts.Count == 0)
+                    model.Add(y[(course.Id, slot.Day, slot.Period)] == 0);
+                else
+                    model.Add(y[(course.Id, slot.Day, slot.Period)] == LinearExpr.Sum(coveringStarts));
+            }
+
+            if (dayVars.Count >= 2)
+                model.AddAllDifferent(dayVars);
+        }
+
+        AddTightProfessorSingle(model, y, gradeCourses, slots);
+        AddTightSectionNoOverlap(model, y, gradeCourses, slots);
+        AddTightGradeNoOverlap(model, y, gradeCourses, slots, crosses);
+        AddTightCross(model, y, gradeCourses, slots, crosses);
+        AddTightSectionBackToBack(model, startsByBlock, gradeCourses);
+
+        using var solver = new CpSolver
+        {
+            StringParameters = "max_time_in_seconds:2 num_search_workers:8",
+        };
+        var status = solver.Solve(model);
+        return status is CpSolverStatus.Feasible or CpSolverStatus.Optimal or CpSolverStatus.Unknown;
+    }
+
+    private static void AddTightProfessorSingle(
+        CpModel model,
+        IReadOnlyDictionary<(string CourseId, int Day, int Period), BoolVar> y,
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<TimeSlot> slots)
+    {
+        var byProfessor = new Dictionary<string, List<Course>>(StringComparer.Ordinal);
+        foreach (var course in courses)
+            foreach (var professorId in DomainHelpers.CourseProfIds(course))
+            {
+                if (!byProfessor.TryGetValue(professorId, out var professorCourses))
+                    byProfessor[professorId] = professorCourses = new List<Course>();
+                professorCourses.Add(course);
+            }
+
+        foreach (var professorCourses in byProfessor.Values)
+            foreach (var slot in slots)
+                model.Add(LinearExpr.Sum(professorCourses.Select(course => y[(course.Id, slot.Day, slot.Period)])) <= 1);
+    }
+
+    private static void AddTightSectionNoOverlap(
+        CpModel model,
+        IReadOnlyDictionary<(string CourseId, int Day, int Period), BoolVar> y,
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<TimeSlot> slots)
+    {
+        foreach (var group in GroupByBaseId(courses).Values.Where(group => group.Count >= 2))
+            for (var first = 0; first < group.Count; first++)
+                for (var second = first + 1; second < group.Count; second++)
+                    foreach (var slot in slots)
+                        model.Add(y[(group[first].Id, slot.Day, slot.Period)] + y[(group[second].Id, slot.Day, slot.Period)] <= 1);
+    }
+
+    private static void AddTightGradeNoOverlap(
+        CpModel model,
+        IReadOnlyDictionary<(string CourseId, int Day, int Period), BoolVar> y,
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<TimeSlot> slots,
+        IReadOnlyList<CrossGroup>? crosses)
+    {
+        foreach (var (first, second) in CoursePairs(courses))
+        {
+            if (!SharesGradeConstraint(first, second, crosses))
+                continue;
+
+            foreach (var slot in slots)
+                model.Add(y[(first.Id, slot.Day, slot.Period)] + y[(second.Id, slot.Day, slot.Period)] <= 1);
+        }
+    }
+
+    private static void AddTightCross(
+        CpModel model,
+        IReadOnlyDictionary<(string CourseId, int Day, int Period), BoolVar> y,
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<TimeSlot> slots,
+        IReadOnlyList<CrossGroup>? crosses)
+    {
+        if (crosses == null || crosses.Count == 0) return;
+
+        var groups = GroupByBaseId(courses);
+        foreach (var cross in crosses)
+        {
+            if (cross.BaseIds.Count < 2) continue;
+
+            var groupedCourses = cross.BaseIds
+                .Select(baseId => groups.TryGetValue(baseId, out var group) ? group : new List<Course>())
+                .ToList();
+            if (groupedCourses.Any(group => group.Count == 0))
+                continue;
+
+            var count = groupedCourses.Min(group => group.Count);
+            for (var index = 0; index < cross.BaseIds.Count - 1; index++)
+                for (var sectionIndex = 0; sectionIndex < count; sectionIndex++)
+                {
+                    var first = groupedCourses[index][sectionIndex];
+                    var second = groupedCourses[index + 1][(sectionIndex + 1) % count];
+                    foreach (var slot in slots)
+                        model.Add(y[(first.Id, slot.Day, slot.Period)] == y[(second.Id, slot.Day, slot.Period)]);
+                }
+        }
+    }
+
+    private static void AddTightSectionBackToBack(
+        CpModel model,
+        IReadOnlyDictionary<(string CourseId, int BlockIndex), Dictionary<(int Day, int StartPeriod), BoolVar>> startsByBlock,
+        IReadOnlyList<Course> courses)
+    {
+        foreach (var group in GroupByBaseId(courses).Values)
+        {
+            if (group.Count != 2) continue;
+
+            var sorted = group.OrderBy(course => course.Section).ToList();
+            var first = sorted[0];
+            var second = sorted[1];
+            if (first.IsFixed || second.IsFixed) continue;
+
+            var firstProfessors = DomainHelpers.CourseProfIds(first);
+            var secondProfessors = DomainHelpers.CourseProfIds(second);
+            if (!firstProfessors.SetEquals(secondProfessors) || firstProfessors.Count == 0)
+                continue;
+
+            var firstBlocks = EffectiveBlocks(first);
+            var secondBlocks = EffectiveBlocks(second);
+            if (!firstBlocks.SequenceEqual(secondBlocks))
+                continue;
+
+            for (var blockIndex = 0; blockIndex < firstBlocks.Count; blockIndex++)
+            {
+                var block = firstBlocks[blockIndex];
+                if (block == 3)
+                    continue;
+                if (!startsByBlock.TryGetValue((first.Id, blockIndex), out var firstStarts) ||
+                    !startsByBlock.TryGetValue((second.Id, blockIndex), out var secondStarts))
+                    continue;
+                if (!HasAdjacentStartPair(PotentialBlockStarts(first, block), PotentialBlockStarts(second, block), block))
+                    continue;
+
+                foreach (var ((day, startPeriod), firstStart) in firstStarts)
+                {
+                    var candidates = new List<BoolVar>();
+                    foreach (var delta in new[] { block, -block })
+                        if (secondStarts.TryGetValue((day, startPeriod + delta), out var secondStart))
+                            candidates.Add(secondStart);
+
+                    if (candidates.Count == 0)
+                        model.Add(firstStart == 0);
+                    else
+                        model.Add(LinearExpr.Sum(candidates) >= 1).OnlyEnforceIf(firstStart);
+                }
+            }
+        }
     }
 
     private static void AddRetakeGenerationErrors(

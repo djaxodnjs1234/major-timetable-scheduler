@@ -59,5 +59,6 @@ prototype-py/data_files/*.db
 Thumbs.db
 desktop.ini
 
-# ===== md =====
-docs/implementation/archive
+.omo/
+artifacts/
+.codex/config.toml
