@@ -93,6 +93,38 @@ public class HcCoverageTests
     }
 
     [Fact]
+    public void HC23_GraduateOverflow_UsesOnlyNeededDaytimeSlots()
+    {
+        var courses = Enumerable.Range(1, AcademicLevelTimePolicy.GraduateNightCapacity + 1)
+            .Select(index => new Course
+            {
+                Id = $"GR{index:00}",
+                Name = $"Graduate {index}",
+                Grade = AcademicLevels.GraduateGrade,
+                HoursPerWeek = 1,
+                ProfessorId = $"P{index:00}",
+                BlockStructure = new List<int> { 1 },
+            })
+            .ToList();
+        var professors = courses
+            .Select(course => new Professor { Id = course.ProfessorId, Name = course.ProfessorId })
+            .ToList();
+        var rooms = new List<Room> { new() { Id = "R1", Name = "R1" } };
+
+        var build = ModelBuilder.Build(courses, professors, rooms);
+        var solver = new CpSolver();
+        Assert.True(solver.Solve(build.Model) is CpSolverStatus.Feasible or CpSolverStatus.Optimal);
+
+        var daytimeSlots = courses.Sum(course =>
+            Enumerable.Range(0, Constants.Days).Sum(day =>
+                Constants.DaytimePeriods.Sum(period =>
+                    (int)solver.Value(build.Y[(course.Id, day, period)]))));
+
+        Assert.Equal(1, AcademicLevelTimePolicy.GraduateDaytimeOverflowSlots(courses));
+        Assert.Equal(1, daytimeSlots);
+    }
+
+    [Fact]
     public void HC14_UnavailableRooms_BlocksThoseRooms()
     {
         var (courses, profs, rooms) = MakeBaseSetup();

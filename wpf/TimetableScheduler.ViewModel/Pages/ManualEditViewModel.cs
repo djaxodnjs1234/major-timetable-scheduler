@@ -2086,9 +2086,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return new[] { "수업 블록이 시간표 범위를 벗어납니다." };
         if (targetPeriods.Contains(Constants.LunchPeriod))
             return new[] { "점심시간에는 수업을 배정할 수 없습니다." };
-        var allowedPeriods = course.Grade == AcademicLevels.GraduateGrade
-            ? Constants.NightPeriods
-            : Constants.DaytimePeriods;
+        var allowedPeriods = AcademicLevelTimePolicy.AllowedPeriods(
+            course.Grade,
+            AllowGraduateDaytimeOverflow);
         if (targetPeriods.Any(period => !allowedPeriods.Contains(period)))
             return new[] { AcademicLevelTimeBandBlockedReason };
         if (!allowCrossDisplayColumn && IsCrossDisplayOnlyColumn(targetDay, targetPeriod, targetGrade, targetSubColumnIdx))
@@ -3327,9 +3327,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             SessionCourses,
             SessionProfessors,
             _workingCrossGroups,
-            strictManualCrossValidation ? IsManualGradeOverlapAllowedStrict : IsManualGradeOverlapAllowed)
+            strictManualCrossValidation ? IsManualGradeOverlapAllowedStrict : IsManualGradeOverlapAllowed,
+            AllowGraduateDaytimeOverflow)
             .Where(c => c.Type is not ConflictType.FixedRoomViolation and not ConflictType.ProfUnavailableRoomViolation)
             .ToList();
+
+    private bool AllowGraduateDaytimeOverflow =>
+        AcademicLevelTimePolicy.AllowsGraduateDaytimeOverflow(SessionCourses, SessionCrossGroups);
 
     private void ClearSelectionCore()
     {

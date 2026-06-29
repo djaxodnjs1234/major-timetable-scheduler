@@ -260,6 +260,7 @@ public static class FormattedTimetableExporter
         WriteCourses(ws, assignments, cMap, pMap, courses, dayStart, dayLayouts);
         WriteRemarks(ws, assignments, cMap, roomNameMap, dayStart, dayLayouts, totalCols);
         ApplyDayGroupBorders(ws, dayStart, dayLayouts);
+        ApplyNightSeparator(ws, totalCols);
         WriteLegend(ws);
 
         ws.SheetView.Freeze(5, 1);
@@ -752,10 +753,18 @@ public static class FormattedTimetableExporter
         for (int d = 0; d < DayNames.Length - 1; d++)
         {
             int endColumn = dayStart[d] + layouts[d].SubColCount - 1;
-            var boundary = ws.Range(4, endColumn, 15, endColumn);
+            var boundary = ws.Range(4, endColumn, LastPeriodRow, endColumn);
             boundary.Style.Border.RightBorder = XLBorderStyleValues.Medium;
             boundary.Style.Border.RightBorderColor = DayGroupLine;
         }
+    }
+
+    private static void ApplyNightSeparator(IXLWorksheet ws, int totalCols)
+    {
+        int nightRow = PeriodRow(SchedulePeriods.FirstNightPeriod);
+        var separator = ws.Range(nightRow, 1, nightRow, totalCols);
+        separator.Style.Border.TopBorder = XLBorderStyleValues.Medium;
+        separator.Style.Border.TopBorderColor = DayGroupLine;
     }
 
     private static void ApplyGridBorder(IXLRange range)

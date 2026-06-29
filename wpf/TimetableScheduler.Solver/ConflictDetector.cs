@@ -36,7 +36,8 @@ public static class ConflictDetector
         IReadOnlyList<Course> courses,
         IReadOnlyList<Professor>? professors = null,
         IReadOnlyList<CrossGroup>? crosses = null,
-        Func<string, string, int, int, bool>? isManualGradeOverlapAllowed = null)
+        Func<string, string, int, int, bool>? isManualGradeOverlapAllowed = null,
+        bool allowGraduateDaytimeOverflow = false)
     {
         var list = new List<ConflictItem>();
         var profMap = professors?.ToDictionary(p => p.Id) ?? new Dictionary<string, Professor>();
@@ -55,13 +56,13 @@ public static class ConflictDetector
                 new[] { a }));
         }
 
-        // HC-23: graduate courses use night periods only; undergraduate courses use daytime only.
+        // HC-23: graduate courses use night periods unless graduate overflow needs daytime;
+        // undergraduate courses use daytime only.
         foreach (var (a, course) in resolved)
         {
             if (course == null || a.Period == Constants.LunchPeriod) continue;
-            var allowedPeriods = course.Grade == AcademicLevels.GraduateGrade
-                ? Constants.NightPeriods
-                : Constants.DaytimePeriods;
+            var allowedPeriods =
+                AcademicLevelTimePolicy.AllowedPeriods(course.Grade, allowGraduateDaytimeOverflow);
             if (allowedPeriods.Contains(a.Period)) continue;
 
             list.Add(new ConflictItem(

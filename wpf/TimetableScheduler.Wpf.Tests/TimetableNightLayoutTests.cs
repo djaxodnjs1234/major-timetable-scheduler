@@ -9,7 +9,7 @@ public class TimetableNightLayoutTests
     {
         Assert.Equal(8, TimetableGridControl.BodyRowForPeriod(9));
         Assert.Equal(9, TimetableGridControl.NightSeparatorRow);
-        Assert.Equal(10, TimetableGridControl.BodyRowForPeriod(10));
+        Assert.Equal(9, TimetableGridControl.BodyRowForPeriod(10));
     }
 
     [Fact]
@@ -17,6 +17,6 @@ public class TimetableNightLayoutTests
     {
         Assert.Equal(10, UnifiedTimetableControl.GridRowForPeriod(9));
         Assert.Equal(11, UnifiedTimetableControl.NightSeparatorRow);
-        Assert.Equal(12, UnifiedTimetableControl.GridRowForPeriod(10));
+        Assert.Equal(11, UnifiedTimetableControl.GridRowForPeriod(10));
     }
 }

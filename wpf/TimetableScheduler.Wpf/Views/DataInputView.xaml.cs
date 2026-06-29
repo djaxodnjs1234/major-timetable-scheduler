@@ -403,6 +403,15 @@ public partial class DataInputView : UserControl
             Vm.SaveSectionCommand.Execute(item);
         else
             Vm.SaveGroupCommand.Execute(item);
+
+        if (item.IsEditing && Vm.StatusMessage.StartsWith("IE-042:", StringComparison.Ordinal))
+        {
+            MessageBox.Show(
+                Vm.StatusMessage,
+                "저장 불가",
+                MessageBoxButton.OK,
+                MessageBoxImage.Warning);
+        }
     }
 
     private void OnCourseGroupDeleteClick(object sender, RoutedEventArgs e)

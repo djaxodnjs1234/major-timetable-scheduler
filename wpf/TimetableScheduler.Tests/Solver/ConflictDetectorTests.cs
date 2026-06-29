@@ -34,6 +34,27 @@ public class ConflictDetectorTests
     }
 
     [Fact]
+    public void AcademicLevelTimeBand_AllowsGraduateDaytimeOverflowWhenEnabled()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "GR", Name = "GR", Grade = AcademicLevels.GraduateGrade },
+        };
+        var assignments = new List<SolutionAssignment>
+        {
+            new("GR", 0, 1, "R1"),
+        };
+
+        var conflicts = ConflictDetector.Detect(
+            assignments,
+            courses,
+            allowGraduateDaytimeOverflow: true);
+
+        Assert.DoesNotContain(conflicts, conflict =>
+            conflict.Type == ConflictType.AcademicLevelTimeBandViolation);
+    }
+
+    [Fact]
     public void RoomDoubleBooked_DetectsConflict()
     {
         var courses = new List<Course>

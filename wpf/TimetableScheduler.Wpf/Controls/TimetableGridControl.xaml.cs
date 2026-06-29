@@ -12,7 +12,6 @@ public partial class TimetableGridControl : UserControl
 {
     private static readonly Brush EmptyBg = Brushes.White;
     private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xF7, 0xF7, 0xF7));
-    private static readonly Brush NightBg = new SolidColorBrush(Color.FromRgb(0xEA, 0xF2, 0xFF));
     private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
     private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xEC, 0xEF, 0xF3));
     private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0xCB, 0xD5, 0xE1));
@@ -20,7 +19,6 @@ public partial class TimetableGridControl : UserControl
     static TimetableGridControl()
     {
         LunchBg.Freeze();
-        NightBg.Freeze();
         HeaderBg.Freeze();
         CellBorder.Freeze();
         DayBoundaryBorder.Freeze();
@@ -46,12 +44,12 @@ public partial class TimetableGridControl : UserControl
             typeof(TimetableGridControl),
             new PropertyMetadata(32.0, OnLayoutMetricsChanged));
 
-    public static readonly DependencyProperty NightRowMinHeightProperty =
+    public static readonly DependencyProperty NightSeparatorThicknessProperty =
         DependencyProperty.Register(
-            nameof(NightRowMinHeight),
+            nameof(NightSeparatorThickness),
             typeof(double),
             typeof(TimetableGridControl),
-            new PropertyMetadata(32.0, OnLayoutMetricsChanged));
+            new PropertyMetadata(3.0, OnLayoutMetricsChanged));
 
     public static readonly DependencyProperty DayColumnMinWidthProperty =
         DependencyProperty.Register(
@@ -72,10 +70,10 @@ public partial class TimetableGridControl : UserControl
         set => SetValue(LunchRowMinHeightProperty, value);
     }
 
-    public double NightRowMinHeight
+    public double NightSeparatorThickness
     {
-        get => (double)GetValue(NightRowMinHeightProperty);
-        set => SetValue(NightRowMinHeightProperty, value);
+        get => (double)GetValue(NightSeparatorThicknessProperty);
+        set => SetValue(NightSeparatorThicknessProperty, value);
     }
 
     public double DayColumnMinWidth
@@ -137,7 +135,7 @@ public partial class TimetableGridControl : UserControl
         AddLunchBorder(
             row: vm.Periods.TakeWhile(period => period != 5).Count(),
             colSpan: 2 + layout.DayWidths.Sum());
-        AddNightBorder(
+        AddNightSeparatorLine(
             row: NightSeparatorRow,
             colSpan: 2 + layout.DayWidths.Sum());
 
@@ -227,14 +225,6 @@ public partial class TimetableGridControl : UserControl
         BodyGrid.RowDefinitions.Clear();
         foreach (var period in periods)
         {
-            if (period == SchedulePeriods.FirstNightPeriod)
-            {
-                BodyGrid.RowDefinitions.Add(new RowDefinition
-                {
-                    Height = new GridLength(1, GridUnitType.Star),
-                    MinHeight = NightRowMinHeight,
-                });
-            }
             BodyGrid.RowDefinitions.Add(new RowDefinition
             {
                 Height = new GridLength(1, GridUnitType.Star),
@@ -372,21 +362,14 @@ public partial class TimetableGridControl : UserControl
         BodyGrid.Children.Add(border);
     }
 
-    private void AddNightBorder(int row, int colSpan)
+    private void AddNightSeparatorLine(int row, int colSpan)
     {
         var border = new Border
         {
             BorderBrush = DayBoundaryBorder,
-            BorderThickness = new Thickness(0, 1, 0, 1),
-            Background = NightBg,
-            Child = new TextBlock
-            {
-                Text = "야 간 수 업",
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                FontSize = 8,
-                FontWeight = FontWeights.Normal,
-            },
+            BorderThickness = new Thickness(0, NightSeparatorThickness, 0, 0),
+            Background = Brushes.Transparent,
+            IsHitTestVisible = false,
         };
         Grid.SetRow(border, row);
         Grid.SetColumn(border, 0);
@@ -396,9 +379,9 @@ public partial class TimetableGridControl : UserControl
     }
 
     internal static int BodyRowForPeriod(int period) =>
-        period - 1 + (period >= SchedulePeriods.FirstNightPeriod ? 1 : 0);
+        period - 1;
 
-    internal static int NightSeparatorRow => SchedulePeriods.FirstNightPeriod - 1;
+    internal static int NightSeparatorRow => BodyRowForPeriod(SchedulePeriods.FirstNightPeriod);
 
     private void AddDayBoundary(int col)
     {

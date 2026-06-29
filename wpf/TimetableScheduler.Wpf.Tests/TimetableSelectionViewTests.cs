@@ -26,10 +26,11 @@ public class TimetableSelectionViewTests
         Assert.Contains("Padding=\"5,2\" Margin=\"3,0,0,0\"", xaml);
         Assert.Equal(4, CountOccurrences(xaml, "PeriodRowMinHeight=\"52\""));
         Assert.Contains("LunchRowHeight=\"18\"", xaml);
-        Assert.Contains("NightRowHeight=\"18\"", xaml);
+        Assert.Equal(4, CountOccurrences(xaml, "NightSeparatorThickness=\"3\""));
+        Assert.DoesNotContain("NightRowHeight", xaml);
         Assert.Contains("DayColumnWidth=\"68\"", xaml);
         Assert.Equal(3, CountOccurrences(xaml, "LunchRowMinHeight=\"24\""));
-        Assert.Equal(3, CountOccurrences(xaml, "NightRowMinHeight=\"24\""));
+        Assert.DoesNotContain("NightRowMinHeight", xaml);
         Assert.Equal(3, CountOccurrences(xaml, "DayColumnMinWidth=\"66\""));
     }
 

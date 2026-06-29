@@ -65,7 +65,7 @@ public static class ModelBuilder
         BasicHcs.AddHc11_GradeNoOverlap(model, y, courses, crosses);
         BasicHcs.AddHc12_Lunch(model, x, courses, rooms);
         BasicHcs.AddHc13_Fixed(model, y, courses);
-        BasicHcs.AddHc23_GraduateNightOnly(model, x, courses, rooms);
+        BasicHcs.AddHc23_AcademicLevelTimeBands(model, x, y, courses, rooms, crosses);
         BlockHcs.AddHc14_FixedRooms(model, x, courses, rooms);
         BlockHcs.AddHc14_UnavailableRooms(model, x, courses, rooms);
         BlockHcs.AddHc15_SectionBackToBack(model, startVarsByBlock, courses);

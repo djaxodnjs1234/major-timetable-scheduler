@@ -345,6 +345,31 @@ public class TimetableDiagnosticsTests
     }
 
     [Fact]
+    public void InputErrors_GraduateFiveHourCourse_IsRejected()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "GR-01",
+                Name = "Graduate Five",
+                Grade = AcademicLevels.GraduateGrade,
+                HoursPerWeek = 5,
+                ProfessorId = "P1",
+                BlockStructure = new List<int> { 2, 3 },
+            },
+        };
+        var professors = new List<Professor> { new() { Id = "P1", Name = "Professor" } };
+        var rooms = new List<Room> { new() { Id = "R1", Name = "Room" } };
+
+        var inputDiagnostics = TimetableDiagnostics.GetInputErrors(courses, professors, rooms);
+        var generationDiagnostics = TimetableDiagnostics.GetGenerationErrors(courses, professors, rooms);
+
+        Assert.Contains(inputDiagnostics, diagnostic => diagnostic.Id == "IE-042");
+        Assert.Contains(generationDiagnostics, diagnostic => diagnostic.Id == "GE-033");
+    }
+
+    [Fact]
     public void GradeSlotCapacityOverflow_ReportsSpecificDiagnostics()
     {
         var courses = Enumerable.Range(1, 41)
@@ -450,7 +475,7 @@ public class TimetableDiagnosticsTests
     }
 
     [Fact]
-    public void GenerationErrors_SixGraduateThreeHourCourses_ReportGe031()
+    public void GenerationErrors_SixGraduateThreeHourCourses_AllowDaytimeOverflow()
     {
         var courses = Enumerable.Range(1, 6)
             .Select(index => new Course
@@ -469,9 +494,9 @@ public class TimetableDiagnosticsTests
             ProfessorsFor(courses),
             Rooms(1));
 
-        var diagnostic = Assert.Single(diagnostics.Where(diagnostic => diagnostic.Id == "GE-031"));
-        Assert.Contains("3시간 연속 수업 블록이 6개", diagnostic.Message);
-        Assert.Contains("최대 5개", diagnostic.Message);
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "GE-031");
+        Assert.True(AcademicLevelTimePolicy.AllowsGraduateDaytimeOverflow(courses));
+        Assert.Equal(3, AcademicLevelTimePolicy.GraduateDaytimeOverflowSlots(courses));
     }
 
     private static Course OneHourCourse(string id, string professorId) => new()

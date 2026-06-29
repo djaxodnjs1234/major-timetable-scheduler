@@ -190,12 +190,19 @@ public class ResultsViewTests
                 var periodTenLabel = FindDescendants<Border>(bodyGrid)
                     .Single(border => border.Child is TextBlock { Text: "10" });
                 var nightAssignment = FindDescendants<Border>(bodyGrid)
-                    .Single(border => border.Child is Border && Grid.GetRow(border) == 10);
+                    .Single(border => border.Child is Border && Grid.GetRow(border) == 9);
 
-                Assert.Equal(Constants.Periods.Count + 1, bodyGrid.RowDefinitions.Count);
-                Assert.Contains(FindDescendants<TextBlock>(bodyGrid), text => text.Text == "야 간 수 업");
-                Assert.Equal(10, Grid.GetRow(periodTenLabel));
-                Assert.Equal(10, Grid.GetRow(nightAssignment));
+                var nightSeparator = Assert.Single(FindDescendants<Border>(bodyGrid)
+                    .Where(border =>
+                        !border.IsHitTestVisible
+                        && Grid.GetRow(border) == TimetableGridControl.NightSeparatorRow
+                        && border.BorderThickness.Top == 3));
+
+                Assert.Equal(Constants.Periods.Count, bodyGrid.RowDefinitions.Count);
+                Assert.DoesNotContain(FindDescendants<TextBlock>(bodyGrid), text => text.Text == "야 간 수 업");
+                Assert.Equal(new Thickness(0, 3, 0, 0), nightSeparator.BorderThickness);
+                Assert.Equal(9, Grid.GetRow(periodTenLabel));
+                Assert.Equal(9, Grid.GetRow(nightAssignment));
             }
             finally
             {

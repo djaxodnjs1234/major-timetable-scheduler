@@ -597,6 +597,11 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                     StatusMessage = $"IE-001: {CourseInputLocation(c)}: 과목명을 입력해야 저장할 수 있습니다.";
                     return;
                 }
+                if (AcademicLevelTimePolicy.IsGraduateOverMaxHours(c))
+                {
+                    StatusMessage = $"IE-042: {CourseInputLocation(c)}: 대학원 과목은 주당 {AcademicLevelTimePolicy.GraduateMaxHoursPerWeek}시간까지만 설정할 수 있습니다.";
+                    return;
+                }
                 _workspace.UpdateCourse(c);
                 break;
             case Room r:
@@ -787,6 +792,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             var courseName = CourseInputLocation(course);
             if (string.IsNullOrWhiteSpace(course.Name))
                 return new TimetableDiagnostic("IE-001", $"{courseName}: 과목명을 입력해야 저장할 수 있습니다.");
+
+            if (AcademicLevelTimePolicy.IsGraduateOverMaxHours(course))
+                return new TimetableDiagnostic("IE-042", $"{courseName}: 대학원 과목은 주당 {AcademicLevelTimePolicy.GraduateMaxHoursPerWeek}시간까지만 설정할 수 있습니다.");
 
             if (course.BlockStructure.Count > 0 && course.BlockStructure.Sum() != course.HoursPerWeek)
                 return new TimetableDiagnostic("IE-007", $"{courseName} 블록구조 합계가 주당 수업시간과 일치하지 않습니다.");
@@ -1598,7 +1606,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     {
         if (item.Sections.Count == 0) return false;
         var rep = item.Sections[0];
-
         var hoursChanged = rep.HoursPerWeek != weeklyHours;
         var previousBlocks = EffectiveBlocks(rep);
         var nextBlocks = DefaultBlockStructureForHours(weeklyHours);

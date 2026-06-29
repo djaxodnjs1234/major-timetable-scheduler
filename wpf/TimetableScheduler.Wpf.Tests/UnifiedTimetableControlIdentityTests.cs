@@ -179,9 +179,16 @@ public class UnifiedTimetableControlIdentityTests
                 var rootGrid = FindDescendants<Grid>(view)
                     .Single(grid => grid.Name == "RootGrid");
 
-                Assert.Equal(Constants.Periods.Count + 3, rootGrid.RowDefinitions.Count);
-                Assert.Contains(FindDescendants<TextBlock>(rootGrid), text => text.Text == "야 간 수 업");
-                Assert.Equal(12, Grid.GetRow(AssignmentBorder(view, "NIGHT")));
+                var nightSeparator = Assert.Single(FindDescendants<Border>(rootGrid)
+                    .Where(border =>
+                        !border.IsHitTestVisible
+                        && Grid.GetRow(border) == UnifiedTimetableControl.NightSeparatorRow
+                        && border.BorderThickness.Top == 3));
+
+                Assert.Equal(Constants.Periods.Count + 2, rootGrid.RowDefinitions.Count);
+                Assert.DoesNotContain(FindDescendants<TextBlock>(rootGrid), text => text.Text == "야 간 수 업");
+                Assert.Equal(new Thickness(0, 3, 0, 0), nightSeparator.BorderThickness);
+                Assert.Equal(11, Grid.GetRow(AssignmentBorder(view, "NIGHT")));
             }
             finally
             {

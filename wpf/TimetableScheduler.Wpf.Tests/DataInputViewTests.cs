@@ -1,4 +1,5 @@
 using System.IO;
+using System.Runtime.CompilerServices;
 using System.Threading;
 using System.Windows;
 using System.Windows.Controls;
@@ -88,6 +89,28 @@ public class DataInputViewTests
         Assert.Contains("DataContext.CancelRoomCommand", xaml);
         Assert.Contains("Vm.CancelProfessorCommand.Execute(item);", source);
         Assert.Contains("Vm.CancelGroupCommand.Execute(item);", source);
+    }
+
+    [Fact]
+    public void CourseGroupSave_ShowsWarningWhenGraduateHoursValidationBlocksSave()
+    {
+        var source = File.ReadAllText(FindDataInputViewCodeBehind());
+        var methodStart = source.IndexOf("private void OnCourseGroupSaveClick", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0);
+
+        var nextMethodStart = source.IndexOf("private void OnCourseGroupDeleteClick", methodStart, StringComparison.Ordinal);
+        Assert.True(nextMethodStart > methodStart);
+
+        var methodBody = source[methodStart..nextMethodStart];
+        Assert.Contains("Vm.SaveGroupCommand.Execute(item);", methodBody);
+        var warningStart = methodBody.IndexOf(
+            "Vm.StatusMessage.StartsWith(\"IE-042:\", StringComparison.Ordinal)",
+            StringComparison.Ordinal);
+        Assert.True(warningStart >= 0);
+
+        var warningBody = methodBody[warningStart..];
+        Assert.Contains("MessageBox.Show(", warningBody);
+        Assert.Contains("Vm.StatusMessage,", warningBody);
     }
 
     [Fact]
@@ -573,9 +596,9 @@ public class DataInputViewTests
         }
     }
 
-    private static string FindDataInputViewXaml()
+    private static string FindDataInputViewXaml([CallerFilePath] string sourceFile = "")
     {
-        var starts = new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() };
+        var starts = new[] { Path.GetDirectoryName(sourceFile) ?? "", AppContext.BaseDirectory, Directory.GetCurrentDirectory() };
         foreach (var start in starts)
         {
             var dir = start;
@@ -591,9 +614,9 @@ public class DataInputViewTests
         throw new InvalidOperationException("DataInputView.xaml not found");
     }
 
-    private static string FindDataInputViewCodeBehind()
+    private static string FindDataInputViewCodeBehind([CallerFilePath] string sourceFile = "")
     {
-        var starts = new[] { AppContext.BaseDirectory, Directory.GetCurrentDirectory() };
+        var starts = new[] { Path.GetDirectoryName(sourceFile) ?? "", AppContext.BaseDirectory, Directory.GetCurrentDirectory() };
         foreach (var start in starts)
         {
             var dir = start;

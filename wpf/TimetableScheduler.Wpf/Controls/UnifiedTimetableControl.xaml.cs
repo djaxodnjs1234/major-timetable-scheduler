@@ -11,9 +11,13 @@ namespace TimetableScheduler.Wpf.Controls;
 public partial class UnifiedTimetableControl : UserControl
 {
     private const string DragDataFormat = "TimetableScheduler.UnifiedCellDrag";
+    internal const int MaxCardTitleLinesPerBlock = 2;
+    internal const int MaxCardProfessorLinesPerBlock = 2;
+    internal const int MaxCardRoomLinesPerBlock = 1;
+    internal const double CardTitleLineHeight = 13;
+    internal const double CardMetaLineHeight = 10;
     private static readonly Brush EmptyBg = Brushes.White;
     private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xF7, 0xF7, 0xF7));
-    private static readonly Brush NightBg = new SolidColorBrush(Color.FromRgb(0xEA, 0xF2, 0xFF));
     private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
     private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xEC, 0xEF, 0xF3));
     private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0xCB, 0xD5, 0xE1));
@@ -37,7 +41,6 @@ public partial class UnifiedTimetableControl : UserControl
     static UnifiedTimetableControl()
     {
         LunchBg.Freeze();
-        NightBg.Freeze();
         HeaderBg.Freeze();
         CellBorder.Freeze();
         DayBoundaryBorder.Freeze();
@@ -100,12 +103,12 @@ public partial class UnifiedTimetableControl : UserControl
             typeof(UnifiedTimetableControl),
             new PropertyMetadata(22.0, OnLayoutMetricsChanged));
 
-    public static readonly DependencyProperty NightRowHeightProperty =
+    public static readonly DependencyProperty NightSeparatorThicknessProperty =
         DependencyProperty.Register(
-            nameof(NightRowHeight),
+            nameof(NightSeparatorThickness),
             typeof(double),
             typeof(UnifiedTimetableControl),
-            new PropertyMetadata(22.0, OnLayoutMetricsChanged));
+            new PropertyMetadata(3.0, OnLayoutMetricsChanged));
 
     public static readonly DependencyProperty DayColumnWidthProperty =
         DependencyProperty.Register(
@@ -126,10 +129,10 @@ public partial class UnifiedTimetableControl : UserControl
         set => SetValue(LunchRowHeightProperty, value);
     }
 
-    public double NightRowHeight
+    public double NightSeparatorThickness
     {
-        get => (double)GetValue(NightRowHeightProperty);
-        set => SetValue(NightRowHeightProperty, value);
+        get => (double)GetValue(NightSeparatorThicknessProperty);
+        set => SetValue(NightSeparatorThicknessProperty, value);
     }
 
     public double DayColumnWidth
@@ -216,14 +219,11 @@ public partial class UnifiedTimetableControl : UserControl
         RootGrid.RowDefinitions.Clear();
         RootGrid.ColumnDefinitions.Clear();
 
-        // 2 header rows + period rows, with a separator before night classes.
+        // 2 header rows + period rows.
         for (int i = 0; i < 2; i++)
             RootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         foreach (var period in vm.Periods)
         {
-            if (period == SchedulePeriods.FirstNightPeriod)
-                RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(NightRowHeight) });
-
             if (period == 5)
                 RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(LunchRowHeight) });
             else
@@ -359,7 +359,7 @@ public partial class UnifiedTimetableControl : UserControl
             }
         }
 
-        AddNightBorder(NightSeparatorRow, 2 + totalDayCols);
+        AddNightSeparatorLine(NightSeparatorRow, 2 + totalDayCols);
     }
 
     private void AddSelectedOverlay(int row, int column, int rowSpan)
@@ -429,21 +429,14 @@ public partial class UnifiedTimetableControl : UserControl
         RootGrid.Children.Add(border);
     }
 
-    private void AddNightBorder(int row, int colSpan)
+    private void AddNightSeparatorLine(int row, int colSpan)
     {
         var border = new Border
         {
             BorderBrush = DayBoundaryBorder,
-            BorderThickness = new Thickness(0, 1, 0, 1),
-            Background = NightBg,
-            Child = new TextBlock
-            {
-                Text = "야 간 수 업",
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                FontSize = 8,
-                FontWeight = FontWeights.Normal,
-            },
+            BorderThickness = new Thickness(0, NightSeparatorThickness, 0, 0),
+            Background = Brushes.Transparent,
+            IsHitTestVisible = false,
         };
         Grid.SetRow(border, row);
         Grid.SetColumn(border, 0);
@@ -453,15 +446,18 @@ public partial class UnifiedTimetableControl : UserControl
     }
 
     internal static int GridRowForPeriod(int period) =>
-        1 + period + (period >= SchedulePeriods.FirstNightPeriod ? 1 : 0);
+        1 + period;
 
-    internal static int NightSeparatorRow => SchedulePeriods.FirstNightPeriod + 1;
+    internal static int NightSeparatorRow => GridRowForPeriod(SchedulePeriods.FirstNightPeriod);
 
     internal static Border MakeChipBorder(CellAssignment a, Brush bg, string? crossLabel)
     {
+        var titleLines = CardTitleLinesFor(a.RowSpan);
+        var professorLines = CardProfessorLinesFor(a.RowSpan);
+        var roomLines = CardRoomLinesFor(a.RowSpan);
         var content = new StackPanel
         {
-            Margin = new Thickness(5, 4, 5, 5),
+            Margin = new Thickness(5, 7, 5, 5),
         };
 
         var sectionText = FormatSectionForCard(a.SectionLabel);
@@ -473,34 +469,44 @@ public partial class UnifiedTimetableControl : UserControl
 
         content.Children.Add(new TextBlock
         {
-            Text = AddWrapHints(nameText),
-            FontSize = 9,
+            Text = nameText,
+            FontSize = 11,
             FontWeight = FontWeights.SemiBold,
             Foreground = CourseTitleText,
             TextAlignment = TextAlignment.Center,
-            TextWrapping = TextWrapping.WrapWithOverflow,
-            TextTrimming = TextTrimming.None,
+            TextWrapping = TextWrapping.Wrap,
+            TextTrimming = TextTrimming.CharacterEllipsis,
+            MaxHeight = CardTitleLineHeight * titleLines,
+            LineHeight = CardTitleLineHeight,
+            LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
         });
         if (!string.IsNullOrEmpty(a.ProfessorLine))
             content.Children.Add(new TextBlock
             {
-                Text = AddWrapHints(a.ProfessorLine),
-                FontSize = 8,
+                Text = a.ProfessorLine,
+                FontSize = 7.5,
                 FontWeight = FontWeights.Normal,
                 Foreground = CourseMetaText,
                 TextAlignment = TextAlignment.Center,
                 TextWrapping = TextWrapping.Wrap,
-                TextTrimming = TextTrimming.None,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxHeight = CardMetaLineHeight * professorLines,
+                LineHeight = CardMetaLineHeight,
+                LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
+                Margin = new Thickness(0, 2, 0, 0),
             });
         if (!string.IsNullOrEmpty(a.RoomsLabel))
             content.Children.Add(new TextBlock
             {
-                Text = AddWrapHints(a.RoomsLabel.Replace("\n", ", ")),
-                FontSize = 8,
+                Text = FormatRoomsForCard(a.RoomsLabel),
+                FontSize = 7.5,
                 FontWeight = FontWeights.Normal,
                 TextAlignment = TextAlignment.Center,
-                TextWrapping = TextWrapping.Wrap,
-                TextTrimming = TextTrimming.None,
+                TextWrapping = roomLines == 1 ? TextWrapping.NoWrap : TextWrapping.Wrap,
+                TextTrimming = TextTrimming.CharacterEllipsis,
+                MaxHeight = CardMetaLineHeight * roomLines,
+                LineHeight = CardMetaLineHeight,
+                LineStackingStrategy = LineStackingStrategy.BlockLineHeight,
                 Foreground = CourseMetaText,
             });
 
@@ -542,6 +548,31 @@ public partial class UnifiedTimetableControl : UserControl
             Child = overlay,
             ToolTip = NullIfBlank(crossLabel) is { } label ? $"크로스: {label}" : null,
         };
+    }
+
+    internal static int CardTitleLinesFor(int rowSpan) =>
+        SafeCardRowSpan(rowSpan) * MaxCardTitleLinesPerBlock;
+
+    internal static int CardProfessorLinesFor(int rowSpan) =>
+        SafeCardRowSpan(rowSpan) * MaxCardProfessorLinesPerBlock;
+
+    internal static int CardRoomLinesFor(int rowSpan) =>
+        SafeCardRowSpan(rowSpan) * MaxCardRoomLinesPerBlock;
+
+    private static int SafeCardRowSpan(int rowSpan) => Math.Max(1, rowSpan);
+
+    internal static string FormatRoomsForCard(string? roomsLabel)
+    {
+        if (string.IsNullOrWhiteSpace(roomsLabel))
+            return string.Empty;
+
+        var lines = roomsLabel
+            .Replace("\r\n", "\n")
+            .Replace('\r', '\n')
+            .Split('\n', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Where(line => !string.IsNullOrWhiteSpace(line))
+            .ToList();
+        return string.Join(", ", lines);
     }
 
     private static string AddWrapHints(string? text)

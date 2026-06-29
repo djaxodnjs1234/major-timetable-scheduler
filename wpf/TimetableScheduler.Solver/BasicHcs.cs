@@ -147,18 +147,36 @@ public static class BasicHcs
         }
     }
 
-    public static void AddHc23_GraduateNightOnly(
-        CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms)
+    public static void AddHc23_AcademicLevelTimeBands(
+        CpModel model,
+        XDict x,
+        YDict y,
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<Room> rooms,
+        IReadOnlyList<CrossGroup>? crosses)
     {
+        var allowGraduateDaytimeOverflow =
+            AcademicLevelTimePolicy.AllowsGraduateDaytimeOverflow(courses, crosses);
         foreach (var course in courses)
         {
-            var disallowedPeriods = course.Grade == AcademicLevels.GraduateGrade
-                ? Constants.DaytimePeriods
-                : Constants.NightPeriods;
+            var disallowedPeriods =
+                AcademicLevelTimePolicy.DisallowedPeriods(course.Grade, allowGraduateDaytimeOverflow);
             foreach (var day in Enumerable.Range(0, Constants.Days))
                 foreach (var period in disallowedPeriods)
                     foreach (var room in rooms)
                         model.Add(x[(course.Id, day, period, room.Id)] == 0);
         }
+
+        if (!allowGraduateDaytimeOverflow) return;
+
+        var overflowLimit = AcademicLevelTimePolicy.GraduateDaytimeOverflowSlots(courses, crosses);
+        var graduateDaytimeTerms = courses
+            .Where(course => course.Grade == AcademicLevels.GraduateGrade)
+            .SelectMany(course => Enumerable.Range(0, Constants.Days)
+                .SelectMany(day => Constants.DaytimePeriods
+                    .Select(period => y[(course.Id, day, period)])))
+            .ToArray();
+        if (graduateDaytimeTerms.Length > 0)
+            model.Add(LinearExpr.Sum(graduateDaytimeTerms) <= overflowLimit);
     }
 }

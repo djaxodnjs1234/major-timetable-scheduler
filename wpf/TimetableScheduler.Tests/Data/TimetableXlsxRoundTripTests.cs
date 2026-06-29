@@ -182,12 +182,31 @@ public class TimetableXlsxRoundTripTests
             ws =>
             {
                 var mondayBoundary = ws.Cell(6, 2).Style.Border;
+                var mondayNightBoundary = ws.Cell(SchedulePeriods.LastPeriod + 5, 2).Style.Border;
                 var tuesdayInnerGrid = ws.Cell(6, 3).Style.Border;
 
                 Assert.Equal(XLBorderStyleValues.Medium, mondayBoundary.RightBorder);
                 Assert.Equal("#8FA3B8", ColorHex(mondayBoundary.RightBorderColor));
+                Assert.Equal(XLBorderStyleValues.Medium, mondayNightBoundary.RightBorder);
+                Assert.Equal("#8FA3B8", ColorHex(mondayNightBoundary.RightBorderColor));
                 Assert.Equal(XLBorderStyleValues.Thin, tuesdayInnerGrid.LeftBorder);
                 Assert.NotEqual(ColorHex(tuesdayInnerGrid.LeftBorderColor), ColorHex(mondayBoundary.RightBorderColor));
+            });
+    }
+
+    [Fact]
+    public void ExcelExport_NightSeparator_IsVisibleBeforePeriod10()
+    {
+        ExportAndInspectWorksheet(
+            new List<TimetableAssignmentRow> { new("NIGHT", 0, SchedulePeriods.FirstNightPeriod, "R1") },
+            new List<Course> { new() { Id = "NIGHT", Name = "Night", Grade = AcademicLevels.GraduateGrade } },
+            ws =>
+            {
+                int nightRow = SchedulePeriods.FirstNightPeriod + 5;
+                var nightSeparator = ws.Cell(nightRow, 2).Style.Border;
+
+                Assert.Equal(XLBorderStyleValues.Medium, nightSeparator.TopBorder);
+                Assert.Equal("#8FA3B8", ColorHex(nightSeparator.TopBorderColor));
             });
     }
 

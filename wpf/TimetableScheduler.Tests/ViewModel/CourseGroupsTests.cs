@@ -105,6 +105,46 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void HandleCourseHoursChanged_GraduateFiveHours_KeepsFiveHourDraft()
+    {
+        var course = MakeCourse("GR1001-01", 1);
+        course.Grade = AcademicLevels.GraduateGrade;
+        _workspace.AddCourse(course);
+        var vm = MakeVm();
+        var group = Assert.Single(vm.CourseGroups);
+
+        var changed = vm.HandleCourseHoursChanged(group, 5);
+
+        Assert.True(changed);
+        Assert.All(group.Sections, section =>
+        {
+            Assert.Equal(5, section.HoursPerWeek);
+            Assert.Equal(new[] { 1, 2, 2 }, section.BlockStructure);
+        });
+        Assert.DoesNotContain("IE-042", vm.StatusMessage);
+    }
+
+    [Fact]
+    public void SaveGroup_GraduateFiveHours_ShowsValidationAndKeepsEditOpen()
+    {
+        var course = MakeCourse("GR1001-01", 1);
+        course.Grade = AcademicLevels.GraduateGrade;
+        _workspace.AddCourse(course);
+        var vm = MakeVm();
+        var group = Assert.Single(vm.CourseGroups);
+        vm.EditCourseCommand.Execute(group);
+
+        vm.HandleCourseHoursChanged(group, 5);
+        vm.SaveGroupCommand.Execute(group);
+
+        Assert.True(group.IsEditing);
+        Assert.Contains("IE-042", vm.StatusMessage);
+        var saved = Assert.Single(_workspace.Courses);
+        Assert.Equal(3, saved.HoursPerWeek);
+        Assert.Equal(new[] { 2, 1 }, saved.BlockStructure);
+    }
+
+    [Fact]
     public void NonFixed_TwoSections_ProducesOneGroupRow()
     {
         _workspace.AddCourse(MakeCourse("GA1004-01", 1));
@@ -1515,7 +1555,7 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
-    public async Task Solve_SixGraduateThreeHourCourses_ShowsGe031BeforeSolver()
+    public async Task Solve_SixGraduateThreeHourCourses_AllowsDaytimeOverflow()
     {
         _workspace.AddRoom(new Room { Id = "R1", Name = "강의실1" });
         for (var index = 1; index <= 6; index++)
@@ -1533,11 +1573,17 @@ public class CourseGroupsTests : IDisposable
                 BlockStructure = new List<int> { 3 },
             });
         }
-        var vm = new DataInputViewModel(_workspace, null!);
+        var vm = new DataInputViewModel(_workspace, new InfeasibleSolverService())
+        {
+            TotalSolutions = 1,
+            UseSc01 = false,
+            UseSc02 = false,
+            UseSc03 = false,
+        };
 
         await vm.SolveCommand.ExecuteAsync(null);
 
-        Assert.Contains("GE-031", vm.StatusMessage);
+        Assert.DoesNotContain("GE-031", vm.StatusMessage);
         Assert.False(vm.IsSolveComplete);
     }
 
