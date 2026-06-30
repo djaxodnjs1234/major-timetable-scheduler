@@ -192,6 +192,7 @@ public partial class DataInputView : UserControl
         }
         item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, course.IsFixed);
         RefreshCourseBlockStructureCombo(expander, item);
+        RefreshSchoolFixedDependentControls(expander, item);
     }
 
     private void OnCourseHoursChanged(object sender, SelectionChangedEventArgs e)
@@ -262,6 +263,22 @@ public partial class DataInputView : UserControl
         item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, item.Sections[0].IsFixed);
     }
 
+    private void OnSchoolFixedCheckChanged(object sender, RoutedEventArgs e)
+    {
+        if (sender is not DependencyObject dep || Vm == null) return;
+        if (sender is CheckBox checkBox)
+            BindingOperations.GetBindingExpression(checkBox, CheckBox.IsCheckedProperty)?.UpdateSource();
+        var item = FindCourseGroupItem(dep);
+        if (item == null) return;
+        var expander = FindAncestor<Expander>(dep);
+        if (expander == null) return;
+
+        Vm.HandleCourseSchoolFixedChanged(item);
+        RefreshFixedTimeCheckBox(expander);
+        RefreshSchoolFixedDependentControls(expander, item);
+        RebuildFixedSlotEditor(item);
+    }
+
     private static void RefreshCourseBlockStructureCombo(Expander expander, CourseGroupItem item)
     {
         if (expander.FindName("BlockStructureComboBox") is not ComboBox combo) return;
@@ -282,6 +299,52 @@ public partial class DataInputView : UserControl
         if (expander.FindName("IsFixedCheckBox") is not CheckBox checkBox) return;
 
         BindingOperations.GetBindingExpression(checkBox, CheckBox.IsCheckedProperty)?.UpdateTarget();
+    }
+
+    private static void RefreshSchoolFixedDependentControls(Expander expander, CourseGroupItem item)
+    {
+        var isEnabled = item.Sections.Count == 0 || !item.Sections[0].IsSchoolFixed;
+
+        if (expander.FindName("CourseGradeComboBox") is ComboBox gradeCombo)
+        {
+            gradeCombo.IsEnabled = isEnabled;
+            BindingOperations.GetBindingExpression(gradeCombo, ComboBox.SelectedValueProperty)?.UpdateTarget();
+        }
+
+        if (expander.FindName("SectionProfessorItemsControl") is ItemsControl sectionProfessorItems)
+        {
+            sectionProfessorItems.IsEnabled = isEnabled;
+            foreach (var combo in FindDescendants<ComboBox>(sectionProfessorItems))
+                BindingOperations.GetBindingExpression(combo, ComboBox.SelectedValueProperty)?.UpdateTarget();
+        }
+
+        RefreshCheckListPickerEnabled(expander, "GroupCoteachProfsPicker", isEnabled);
+        RefreshCheckListPickerEnabled(expander, "GroupUnavailableRoomsPicker", isEnabled);
+        RefreshCheckListPickerEnabled(expander, "GroupFixedRoomsPicker", isEnabled);
+        RefreshButtonEnabled(expander, "CourseUnavailableLabRoomsButton", isEnabled);
+        RefreshButtonEnabled(expander, "CourseUnavailableNonLabRoomsButton", isEnabled);
+        RefreshButtonEnabled(expander, "CourseUnavailableClearRoomsButton", isEnabled);
+    }
+
+    private static void RefreshCheckListPickerEnabled(Expander expander, string name, bool isEnabled)
+    {
+        if (expander.FindName(name) is not CheckListPickerControl picker) return;
+
+        picker.IsEnabled = isEnabled;
+        if (picker.DataContext is not IEnumerable<CheckListItem> items) return;
+
+        foreach (var item in items)
+        {
+            if (!isEnabled)
+                item.IsChecked = false;
+            item.IsEnabled = isEnabled;
+        }
+    }
+
+    private static void RefreshButtonEnabled(Expander expander, string name, bool isEnabled)
+    {
+        if (expander.FindName(name) is Button button)
+            button.IsEnabled = isEnabled;
     }
 
     private static T? FindAncestor<T>(DependencyObject start) where T : DependencyObject
@@ -395,6 +458,30 @@ public partial class DataInputView : UserControl
                 MessageBoxImage.Warning);
             return;
         }
+        var schoolFixedOverlap = Vm.FindSchoolFixedTimeOverlapWarning(item, candidateFixedSlots);
+        if (schoolFixedOverlap != null)
+        {
+            var dayName = schoolFixedOverlap.Day switch
+            {
+                0 => "월",
+                1 => "화",
+                2 => "수",
+                3 => "목",
+                4 => "금",
+                _ => "?",
+            };
+            var sectionText = schoolFixedOverlap.ExistingSection > 0 ? $" ({schoolFixedOverlap.ExistingSection}분반)" : string.Empty;
+            var result = MessageBox.Show(
+                $"선택한 고정 시간이 학교 고정 시간과 겹칩니다.\n" +
+                $"겹치는 시간: {dayName}요일 {schoolFixedOverlap.Period}교시\n" +
+                $"겹치는 항목: {schoolFixedOverlap.ExistingCourseName}{sectionText}\n\n" +
+                "그래도 저장할까요?",
+                "저장 확인",
+                MessageBoxButton.YesNo,
+                MessageBoxImage.Warning);
+            if (result != MessageBoxResult.Yes)
+                return;
+        }
         if (editorCtrl?.DataContext is FixedSlotEditorViewModel editorVm)
         {
             editorVm.ApplyTo(item);
@@ -404,7 +491,7 @@ public partial class DataInputView : UserControl
         else
             Vm.SaveGroupCommand.Execute(item);
 
-        if (item.IsEditing && Vm.StatusMessage.StartsWith("IE-042:", StringComparison.Ordinal))
+        if (item.IsEditing && IsCourseSaveWarning(Vm.StatusMessage))
         {
             MessageBox.Show(
                 Vm.StatusMessage,
@@ -413,6 +500,14 @@ public partial class DataInputView : UserControl
                 MessageBoxImage.Warning);
         }
     }
+
+    private static bool IsCourseSaveWarning(string message) =>
+        message.StartsWith("IE-014:", StringComparison.Ordinal) ||
+        message.StartsWith("IE-015:", StringComparison.Ordinal) ||
+        message.StartsWith("IE-016:", StringComparison.Ordinal) ||
+        message.StartsWith("IE-017:", StringComparison.Ordinal) ||
+        message.StartsWith("IE-018:", StringComparison.Ordinal) ||
+        message.StartsWith("IE-042:", StringComparison.Ordinal);
 
     private void OnCourseGroupDeleteClick(object sender, RoutedEventArgs e)
     {

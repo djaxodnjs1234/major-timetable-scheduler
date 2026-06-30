@@ -279,7 +279,8 @@
                                             <TextBlock Text="{Binding Grade, Converter={StaticResource AcademicLevelLabel}}"
                                                        VerticalAlignment="Center" />
                                         </Border>
-                                        <ComboBox Height="28" Width="72" Padding="6,3"
+                                        <ComboBox x:Name="CourseGradeComboBox"
+                                                  Height="28" Width="72" Padding="6,3"
                                                     ItemsSource="{Binding DataContext.GradeOptions, RelativeSource={RelativeSource AncestorType=UserControl}}"
                                                     SelectedValue="{Binding Grade, Mode=TwoWay}"
                                                     SelectedValuePath="Grade"
@@ -322,6 +323,25 @@
                                                   SelectedItem="{Binding CourseType, Mode=TwoWay, UpdateSourceTrigger=Explicit}"
                                                   SelectionChanged="OnCourseSharedSelectionChanged"
                                                   Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
+                                    </StackPanel>
+                                    <StackPanel Width="92" Margin="0,0,8,8"
+                                                Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}">
+                                        <TextBlock Text="학교 고정" FontSize="11" Margin="0,0,0,3" />
+                                        <CheckBox x:Name="SchoolFixedCheckBox"
+                                                  Height="28"
+                                                  IsChecked="{Binding IsSchoolFixed, Mode=TwoWay}"
+                                                  Checked="OnSchoolFixedCheckChanged"
+                                                  Unchecked="OnSchoolFixedCheckChanged" />
+                                    </StackPanel>
+                                    <StackPanel Width="92" Margin="0,0,8,8"
+                                                Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}">
+                                        <TextBlock Text="적용 범위" FontSize="11" Margin="0,0,0,3" />
+                                        <ComboBox Height="28" Width="86" Padding="6,3"
+                                                  ItemsSource="{Binding DataContext.SchoolFixedTargetOptions, RelativeSource={RelativeSource AncestorType=UserControl}}"
+                                                  SelectedValue="{Binding SchoolFixedTargetGrade, Mode=TwoWay}"
+                                                  SelectedValuePath="Grade"
+                                                  DisplayMemberPath="DisplayName"
+                                                  SelectionChanged="OnCourseSharedSelectionChanged" />
                                     </StackPanel>
                                     <StackPanel Width="110" Margin="0,0,8,8">
                                         <StackPanel Orientation="Horizontal" Margin="0,0,0,3">
@@ -387,7 +407,8 @@
                                            FontSize="11" FontWeight="Bold" Margin="0,4,0,4"
                                            Foreground="{StaticResource OnSurfaceVariant}"
                                            Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}" />
-                                <ItemsControl ItemsSource="{Binding DataContext.Sections, RelativeSource={RelativeSource AncestorType=Expander}}"
+                                <ItemsControl x:Name="SectionProfessorItemsControl"
+                                              ItemsSource="{Binding DataContext.Sections, RelativeSource={RelativeSource AncestorType=Expander}}"
                                               Visibility="{Binding DataContext.IsEditing, RelativeSource={RelativeSource AncestorType=Expander}, Converter={StaticResource BoolToVisibility}}">
                                     <ItemsControl.ItemTemplate>
                                         <DataTemplate>

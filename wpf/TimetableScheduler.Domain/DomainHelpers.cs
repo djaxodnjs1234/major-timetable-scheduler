@@ -55,6 +55,8 @@ public static class DomainHelpers
         BlockStructure = new List<int>(src.BlockStructure),
         IsFixed = src.IsFixed,
         FixedSlots = new List<TimeSlot>(src.FixedSlots),
+        IsSchoolFixed = src.IsSchoolFixed,
+        SchoolFixedTargetGrade = src.SchoolFixedTargetGrade,
         CoteachProfs = new List<string>(src.CoteachProfs),
     };
 

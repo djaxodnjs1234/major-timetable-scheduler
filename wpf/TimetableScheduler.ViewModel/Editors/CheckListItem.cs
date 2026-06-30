@@ -10,6 +10,9 @@ public sealed partial class CheckListItem : ObservableObject
     [ObservableProperty]
     private bool isChecked;
 
+    [ObservableProperty]
+    private bool isEnabled = true;
+
     public CheckListItem(string id, string display, bool initial)
     {
         Id = id;

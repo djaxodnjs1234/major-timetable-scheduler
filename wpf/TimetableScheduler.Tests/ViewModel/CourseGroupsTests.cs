@@ -145,6 +145,49 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void SaveSection_FixedTimeWithoutFixedRoomOverlap_ShowsValidationAndKeepsEditOpen()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "Room" });
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "P1" });
+        _workspace.AddProfessor(new Professor { Id = "P2", Name = "P2" });
+        _workspace.AddCourse(new Course
+        {
+            Id = "A-01",
+            Name = "A",
+            Grade = 1,
+            HoursPerWeek = 1,
+            ProfessorId = "P1",
+            Section = 1,
+            IsFixed = true,
+            FixedSlots = new List<TimeSlot> { new(0, 1) },
+            BlockStructure = new List<int> { 1 },
+        });
+        _workspace.AddCourse(new Course
+        {
+            Id = "B-01",
+            Name = "B",
+            Grade = 2,
+            HoursPerWeek = 1,
+            ProfessorId = "P2",
+            Section = 1,
+            IsFixed = true,
+            FixedSlots = new List<TimeSlot> { new(1, 1) },
+            BlockStructure = new List<int> { 1 },
+        });
+        var vm = MakeVm();
+        var item = vm.CourseGroups.Single(group => group.BaseId == "B");
+        vm.EditCourseCommand.Execute(item);
+
+        item.Sections[0].FixedSlots = new List<TimeSlot> { new(0, 1) };
+        vm.SaveSectionCommand.Execute(item);
+
+        Assert.True(item.IsEditing);
+        Assert.Contains("IE-014", vm.StatusMessage);
+        var saved = _workspace.Courses.Single(course => course.Id == "B-01");
+        Assert.Equal(new List<TimeSlot> { new(1, 1) }, saved.FixedSlots);
+    }
+
+    [Fact]
     public void NonFixed_TwoSections_ProducesOneGroupRow()
     {
         _workspace.AddCourse(MakeCourse("GA1004-01", 1));
@@ -736,6 +779,74 @@ public class CourseGroupsTests : IDisposable
             });
 
         Assert.Null(overlap);
+    }
+
+    [Fact]
+    public void SchoolFixedOverlap_IsWarningAndSaveAllowed()
+    {
+        var schoolFixed = new Course
+        {
+            Id = "SF-01",
+            Name = "School",
+            Grade = 1,
+            HoursPerWeek = 1,
+            IsFixed = true,
+            FixedSlots = new List<TimeSlot> { new(1, 2) },
+            BlockStructure = new List<int> { 1 },
+            IsSchoolFixed = true,
+            SchoolFixedTargetGrade = SchoolFixedTimePolicy.AllGrades,
+        };
+        _workspace.AddCourse(schoolFixed);
+
+        _workspace.AddCourse(MakeCourse("GA1006-01", 1));
+        var vm = MakeVm();
+        var group = vm.CourseGroups.Single(g => g.BaseId == "GA1006");
+        group.Sections[0].IsFixed = true;
+        group.Sections[0].FixedSlots = new List<TimeSlot> { new(1, 2), new(1, 3), new(2, 1) };
+
+        var hardOverlap = vm.FindFixedTimeOverlap(group);
+        var warning = vm.FindSchoolFixedTimeOverlapWarning(group);
+        vm.SaveGroupCommand.Execute(group);
+
+        Assert.Null(hardOverlap);
+        Assert.NotNull(warning);
+        Assert.Equal("SF-01", warning!.ExistingCourseId);
+        Assert.False(group.IsEditing);
+        Assert.Equal(
+            new[] { new TimeSlot(1, 2), new TimeSlot(1, 3), new TimeSlot(2, 1) },
+            _workspace.Courses.Single(course => course.Id == "GA1006-01").FixedSlots);
+    }
+
+    [Fact]
+    public void SchoolFixedChange_ClearsNormalGradeProfessorAndRoomFields()
+    {
+        var course = MakeCourse("SF-01", 1);
+        course.Grade = 2;
+        course.HoursPerWeek = 1;
+        course.BlockStructure = new List<int> { 1 };
+        course.FixedSlots = new List<TimeSlot> { new(0, 1) };
+        course.ProfessorId = "P1";
+        course.CoteachProfs = new List<string> { "P2" };
+        course.FixedRooms = new List<string> { "R1" };
+        course.UnavailableRooms = new List<string> { "R2" };
+        _workspace.AddCourse(course);
+
+        var vm = MakeVm();
+        var group = vm.CourseGroups.Single(g => g.BaseId == "SF");
+        group.Sections[0].IsSchoolFixed = true;
+        group.Sections[0].SchoolFixedTargetGrade = 3;
+
+        vm.HandleCourseSchoolFixedChanged(group);
+        vm.SaveGroupCommand.Execute(group);
+
+        var saved = _workspace.Courses.Single(c => c.Id == "SF-01");
+        Assert.True(saved.IsFixed);
+        Assert.Equal(0, saved.Grade);
+        Assert.Equal(3, saved.SchoolFixedTargetGrade);
+        Assert.Equal("", saved.ProfessorId);
+        Assert.Empty(saved.CoteachProfs);
+        Assert.Empty(saved.FixedRooms);
+        Assert.Empty(saved.UnavailableRooms);
     }
 
     [Fact]
@@ -1809,4 +1920,5 @@ public class CourseGroupsTests : IDisposable
                 0));
         }
     }
+
 }

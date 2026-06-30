@@ -51,7 +51,10 @@ public static class FormattedTimetableExporter
         bool expandAllGrades = false)
     {
         var aList = assignments.ToList();
-        var cMap = BuildCourseMap(aList, courses);
+        var display = BuildSchoolFixedDisplayRows(aList, courses, expandAllGrades);
+        var displayRows = display.Assignments;
+        var displayCourses = display.Courses;
+        var cMap = BuildCourseMap(displayRows, displayCourses);
 
         using var wb = new XLWorkbook();
         var sheetNames = new HashSet<string>(StringComparer.OrdinalIgnoreCase) { DataSheetName };
@@ -61,8 +64,8 @@ public static class FormattedTimetableExporter
             sheetNames,
             "통합 시간표",
             timetableName,
-            aList,
-            courses,
+            displayRows,
+            displayCourses,
             professors,
             rooms,
             expandAllGrades,
@@ -70,7 +73,7 @@ public static class FormattedTimetableExporter
 
         foreach (var grade in AcademicLevels.AllGrades)
         {
-            var gradeRows = aList
+            var gradeRows = displayRows
                 .Where(a => cMap.TryGetValue(a.CourseId, out var course) && course.Grade == grade)
                 .ToList();
             if (gradeRows.Count == 0) continue;
@@ -82,7 +85,7 @@ public static class FormattedTimetableExporter
                 $"학년별_{gradeName}",
                 $"{timetableName} - {gradeName}",
                 gradeRows,
-                courses,
+                displayCourses,
                 professors,
                 rooms,
                 expandAllGrades: false,
@@ -91,7 +94,7 @@ public static class FormattedTimetableExporter
 
         foreach (var professor in professors)
         {
-            var professorRows = aList
+            var professorRows = displayRows
                 .Where(a => cMap.TryGetValue(a.CourseId, out var course) && IsCourseTaughtBy(course, professor.Id))
                 .ToList();
             if (professorRows.Count == 0) continue;
@@ -105,7 +108,7 @@ public static class FormattedTimetableExporter
                 $"교수별_{professorName}",
                 $"{timetableName} - {professorName}",
                 professorRows,
-                courses,
+                displayCourses,
                 professors,
                 rooms,
                 expandAllGrades: false,
@@ -114,7 +117,7 @@ public static class FormattedTimetableExporter
 
         foreach (var room in rooms ?? Array.Empty<Room>())
         {
-            var roomRows = aList
+            var roomRows = displayRows
                 .Where(a => string.Equals(NormalizeId(a.RoomId), NormalizeId(room.Id), StringComparison.Ordinal))
                 .ToList();
             if (roomRows.Count == 0) continue;
@@ -126,7 +129,7 @@ public static class FormattedTimetableExporter
                 $"강의실별_{roomName}",
                 $"{timetableName} - {roomName}",
                 roomRows,
-                courses,
+                displayCourses,
                 professors,
                 rooms,
                 expandAllGrades: false,
@@ -158,6 +161,108 @@ public static class FormattedTimetableExporter
     }
 
     // ── helpers ──────────────────────────────────────────────────────────────
+
+    private static (List<TimetableAssignmentRow> Assignments, List<Course> Courses)
+        BuildSchoolFixedDisplayRows(
+            List<TimetableAssignmentRow> assignments,
+            IReadOnlyList<Course> courses,
+            bool expandAllGrades)
+    {
+        var schoolFixedCourses = courses
+            .Where(course => course.IsSchoolFixed && course.IsFixed && course.FixedSlots.Count > 0)
+            .ToList();
+        if (schoolFixedCourses.Count == 0)
+            return (assignments, courses.ToList());
+
+        var displayAssignments = assignments.ToList();
+        var displayCourses = courses
+            .Where(course => !course.IsSchoolFixed)
+            .Select(CloneDisplayCourse)
+            .ToList();
+        var normalCourseMap = courses
+            .Where(course => !course.IsSchoolFixed)
+            .GroupBy(course => course.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var visibleGradesByDay = Enumerable.Range(0, 5)
+            .ToDictionary(day => day, _ => new HashSet<int>());
+
+        foreach (var assignment in assignments)
+            if (normalCourseMap.TryGetValue(assignment.CourseId, out var course))
+                visibleGradesByDay[assignment.Day].Add(course.Grade);
+
+        foreach (var course in schoolFixedCourses.Where(course => course.SchoolFixedTargetGrade != SchoolFixedTimePolicy.AllGrades))
+            foreach (var slot in course.FixedSlots)
+                if (AcademicLevels.AllGrades.Contains(course.SchoolFixedTargetGrade))
+                    visibleGradesByDay[slot.Day].Add(course.SchoolFixedTargetGrade);
+
+        if (expandAllGrades)
+            foreach (var grades in visibleGradesByDay.Values)
+                foreach (var grade in AcademicLevels.AllGrades)
+                    grades.Add(grade);
+
+        var addedCourseIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var course in schoolFixedCourses)
+        {
+            foreach (var slot in course.FixedSlots)
+            {
+                var grades = course.SchoolFixedTargetGrade == SchoolFixedTimePolicy.AllGrades
+                    ? visibleGradesByDay[slot.Day].OrderBy(grade => grade).ToList()
+                    : new List<int> { course.SchoolFixedTargetGrade };
+                if (grades.Count == 0)
+                    grades = AcademicLevels.AllGrades.ToList();
+
+                foreach (var grade in grades.Where(grade => AcademicLevels.AllGrades.Contains(grade)))
+                {
+                    var displayCourseId = SchoolFixedDisplayCourseId(course.Id, grade);
+                    if (addedCourseIds.Add(displayCourseId))
+                    {
+                        var clone = CloneDisplayCourse(course);
+                        clone.Id = displayCourseId;
+                        clone.Grade = grade;
+                        clone.Section = 0;
+                        clone.CourseType = "";
+                        clone.ProfessorId = "";
+                        clone.CoteachProfs.Clear();
+                        clone.FixedRooms.Clear();
+                        clone.UnavailableRooms.Clear();
+                        displayCourses.Add(clone);
+                    }
+
+                    displayAssignments.Add(new TimetableAssignmentRow(
+                        displayCourseId,
+                        slot.Day,
+                        slot.Period,
+                        "",
+                        $"school-fixed\u001f{course.Id}\u001f{grade}"));
+                }
+            }
+        }
+
+        return (displayAssignments, displayCourses);
+    }
+
+    private static string SchoolFixedDisplayCourseId(string courseId, int grade) =>
+        $"{courseId}__school_fixed__{grade}";
+
+    private static Course CloneDisplayCourse(Course course) => new()
+    {
+        Id = course.Id,
+        Name = course.Name,
+        Grade = course.Grade,
+        HoursPerWeek = course.HoursPerWeek,
+        CourseType = course.CourseType,
+        ProfessorId = course.ProfessorId,
+        Section = course.Section,
+        Department = course.Department,
+        FixedRooms = course.FixedRooms.ToList(),
+        UnavailableRooms = course.UnavailableRooms.ToList(),
+        BlockStructure = course.BlockStructure.ToList(),
+        IsFixed = course.IsFixed,
+        FixedSlots = course.FixedSlots.ToList(),
+        IsSchoolFixed = course.IsSchoolFixed,
+        SchoolFixedTargetGrade = course.SchoolFixedTargetGrade,
+        CoteachProfs = course.CoteachProfs.ToList(),
+    };
 
     private static void AddTimetableSheet(
         XLWorkbook wb,
@@ -472,7 +577,9 @@ public static class FormattedTimetableExporter
 
                 var profStr = FormatProfessorsForExport(course, pMap);
 
-                cellRange.Value = BuildCellText(course.Name, section, profStr, block.Rooms);
+                cellRange.Value = course.IsSchoolFixed
+                    ? SchoolFixedDisplayTitle(course)
+                    : BuildCellText(course.Name, section, profStr, block.Rooms);
 
                 cellRange.Style.Fill.BackgroundColor = fill;
                 cellRange.Style.Alignment.WrapText   = true;
@@ -505,6 +612,7 @@ public static class FormattedTimetableExporter
         foreach (var a in aList)
         {
             if (!cMap.TryGetValue(a.CourseId, out var c)) continue;
+            if (c.IsSchoolFixed) continue;
             if (c.IsFixed && !string.IsNullOrEmpty(c.Name))
                 notes.Add($"{c.Name} ({DayNames[a.Day]}{a.Period}교시, {FormatRoomForExport(a.RoomId, roomNameMap)})");
         }
@@ -625,6 +733,14 @@ public static class FormattedTimetableExporter
         if (!string.IsNullOrWhiteSpace(rooms)) { sb.Append('\n'); sb.Append(rooms); }
 
         return sb.ToString();
+    }
+
+    private static string SchoolFixedDisplayTitle(Course course)
+    {
+        var prefix = course.SchoolFixedTargetGrade == SchoolFixedTimePolicy.AllGrades
+            ? "[학교고정]"
+            : "[학년고정]";
+        return $"{prefix} {course.Name}";
     }
 
     private static string FormatProfessorsForExport(Course course, IReadOnlyDictionary<string, Professor> professors)

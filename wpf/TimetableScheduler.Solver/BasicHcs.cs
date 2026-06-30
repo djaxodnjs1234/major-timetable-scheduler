@@ -147,6 +147,28 @@ public static class BasicHcs
         }
     }
 
+    public static void AddHc24_SchoolFixedTimeBlocks(
+        CpModel model,
+        YDict y,
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<Course> schoolFixedCourses)
+    {
+        foreach (var schoolFixed in schoolFixedCourses)
+        {
+            if (!schoolFixed.IsSchoolFixed || !schoolFixed.IsFixed) continue;
+            foreach (var slot in schoolFixed.FixedSlots)
+            {
+                foreach (var course in courses)
+                {
+                    if (course.IsFixed) continue;
+                    if (!SchoolFixedTimePolicy.AppliesToGrade(schoolFixed, course.Grade)) continue;
+                    if (y.TryGetValue((course.Id, slot.Day, slot.Period), out var yv))
+                        model.Add(yv == 0);
+                }
+            }
+        }
+    }
+
     public static void AddHc23_AcademicLevelTimeBands(
         CpModel model,
         XDict x,

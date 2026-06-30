@@ -27,5 +27,9 @@ public class Course
 
     public List<TimeSlot> FixedSlots { get; set; } = new();
 
+    public bool IsSchoolFixed { get; set; }
+
+    public int SchoolFixedTargetGrade { get; set; }
+
     public List<string> CoteachProfs { get; set; } = new();
 }

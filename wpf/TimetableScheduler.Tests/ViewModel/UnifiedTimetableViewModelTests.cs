@@ -44,6 +44,68 @@ public class UnifiedTimetableViewModelTests
     }
 
     [Fact]
+    public void Render_AddsSchoolFixedDisplayBlocksFromCourses()
+    {
+        var vm = new UnifiedTimetableViewModel();
+        var courses = new List<Course>
+        {
+            new() { Id = "G2", Name = "Normal", Grade = 2, HoursPerWeek = 1 },
+            new()
+            {
+                Id = "SF-ALL",
+                Name = "All",
+                Grade = 1,
+                HoursPerWeek = 1,
+                ProfessorId = "P1",
+                FixedRooms = new List<string> { "R1" },
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 2) },
+                IsSchoolFixed = true,
+                SchoolFixedTargetGrade = SchoolFixedTimePolicy.AllGrades,
+            },
+            new()
+            {
+                Id = "SF-G3",
+                Name = "Grade3",
+                Grade = 3,
+                HoursPerWeek = 1,
+                ProfessorId = "P2",
+                FixedRooms = new List<string> { "R2" },
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 3) },
+                IsSchoolFixed = true,
+                SchoolFixedTargetGrade = 3,
+            },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("G2", 0, 1, "R"),
+        };
+
+        vm.Render(assignment, courses);
+
+        Assert.Contains(vm.DayGroups[0].Grades, grade => grade.Grade == 2);
+        Assert.Contains(vm.DayGroups[0].Grades, grade => grade.Grade == 3);
+        var allGradeCell = Assert.Single(vm.Cells, cell =>
+            cell.Grade == 2 &&
+            cell.Period == 2 &&
+            cell.Assignment.CourseName == "All" &&
+            cell.Assignment.IsSchoolFixed);
+        var targetGradeCell = Assert.Single(vm.Cells, cell =>
+            cell.Grade == 3 &&
+            cell.Period == 3 &&
+            cell.Assignment.CourseName == "Grade3" &&
+            cell.Assignment.IsSchoolFixed);
+        Assert.Equal("[학교고정] All", allGradeCell.Assignment.TitleLabel);
+        Assert.Equal("", allGradeCell.Assignment.ProfessorLine);
+        Assert.Equal("", allGradeCell.Assignment.RoomsLabel);
+        Assert.Equal("[학년고정] Grade3", targetGradeCell.Assignment.TitleLabel);
+        Assert.Equal("", targetGradeCell.Assignment.ProfessorLine);
+        Assert.Equal("", targetGradeCell.Assignment.RoomsLabel);
+        Assert.DoesNotContain(vm.Cells, cell => cell.Assignment.CourseId is "SF-ALL" or "SF-G3");
+    }
+
+    [Fact]
     public void ExpandAllGrades_True_AllAcademicLevelsShown()
     {
         var vm = new UnifiedTimetableViewModel { ExpandAllGrades = true };

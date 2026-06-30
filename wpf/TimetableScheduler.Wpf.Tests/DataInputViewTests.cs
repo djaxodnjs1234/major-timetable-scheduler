@@ -92,7 +92,7 @@ public class DataInputViewTests
     }
 
     [Fact]
-    public void CourseGroupSave_ShowsWarningWhenGraduateHoursValidationBlocksSave()
+    public void CourseGroupSave_ShowsWarningWhenSaveValidationBlocksSave()
     {
         var source = File.ReadAllText(FindDataInputViewCodeBehind());
         var methodStart = source.IndexOf("private void OnCourseGroupSaveClick", StringComparison.Ordinal);
@@ -103,14 +103,18 @@ public class DataInputViewTests
 
         var methodBody = source[methodStart..nextMethodStart];
         Assert.Contains("Vm.SaveGroupCommand.Execute(item);", methodBody);
-        var warningStart = methodBody.IndexOf(
-            "Vm.StatusMessage.StartsWith(\"IE-042:\", StringComparison.Ordinal)",
-            StringComparison.Ordinal);
-        Assert.True(warningStart >= 0);
+        Assert.Contains("IsCourseSaveWarning(Vm.StatusMessage)", methodBody);
 
-        var warningBody = methodBody[warningStart..];
-        Assert.Contains("MessageBox.Show(", warningBody);
-        Assert.Contains("Vm.StatusMessage,", warningBody);
+        var helperStart = source.IndexOf("private static bool IsCourseSaveWarning", StringComparison.Ordinal);
+        Assert.True(helperStart >= 0);
+        var helperEnd = source.IndexOf("private void OnCourseGroupDeleteClick", helperStart, StringComparison.Ordinal);
+        Assert.True(helperEnd > helperStart);
+
+        var helperBody = source[helperStart..helperEnd];
+        Assert.Contains("IE-014:", helperBody);
+        Assert.Contains("IE-042:", helperBody);
+        Assert.Contains("MessageBox.Show(", methodBody);
+        Assert.Contains("Vm.StatusMessage,", methodBody);
     }
 
     [Fact]
@@ -557,6 +561,25 @@ public class DataInputViewTests
                 if (File.Exists(dbPath)) File.Delete(dbPath);
             }
         });
+    }
+
+    [Fact]
+    public void SchoolFixedControls_ClearAndDisableGeneralCourseFields()
+    {
+        var xaml = File.ReadAllText(FindDataInputViewXaml());
+        var source = File.ReadAllText(FindDataInputViewCodeBehind());
+
+        Assert.Contains("x:Name=\"SchoolFixedCheckBox\"", xaml);
+        Assert.Contains("x:Name=\"CourseGradeComboBox\"", xaml);
+        Assert.Contains("x:Name=\"SectionProfessorItemsControl\"", xaml);
+        Assert.Contains("RefreshSchoolFixedDependentControls(expander, item);", source);
+        Assert.Contains("BindingOperations.GetBindingExpression(checkBox, CheckBox.IsCheckedProperty)?.UpdateSource();", source);
+        Assert.Contains("RefreshCheckListPickerEnabled(expander, \"GroupCoteachProfsPicker\", isEnabled);", source);
+        Assert.Contains("RefreshCheckListPickerEnabled(expander, \"GroupUnavailableRoomsPicker\", isEnabled);", source);
+        Assert.Contains("RefreshCheckListPickerEnabled(expander, \"GroupFixedRoomsPicker\", isEnabled);", source);
+        Assert.Contains("RefreshButtonEnabled(expander, \"CourseUnavailableLabRoomsButton\", isEnabled);", source);
+        Assert.Contains("item.IsChecked = false;", source);
+        Assert.Contains("item.IsEnabled = isEnabled;", source);
     }
 
     private static void RunSta(Action action)

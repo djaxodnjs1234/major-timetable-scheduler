@@ -17,6 +17,8 @@ CREATE TABLE IF NOT EXISTS Courses (
     BlockStructureJson TEXT NOT NULL,
     IsFixed           INTEGER NOT NULL,
     FixedSlotsJson    TEXT NOT NULL,
+    IsSchoolFixed     INTEGER NOT NULL DEFAULT 0,
+    SchoolFixedTargetGrade INTEGER NOT NULL DEFAULT 0,
     CoteachProfsJson  TEXT NOT NULL,
     PRIMARY KEY (Id, Section)
 );

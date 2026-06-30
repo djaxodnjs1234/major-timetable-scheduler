@@ -46,9 +46,13 @@ public static class DiverseSolver
         IReadOnlyList<CrossGroup>? crosses = null,
         IReadOnlyList<RetakeScenario>? retakes = null,
         IProgress<SolverProgress>? progress = null,
-        CancellationToken cancellationToken = default)
+        CancellationToken cancellationToken = default,
+        IReadOnlyList<Course>? schoolFixedCourses = null)
     {
         options ??= new DiverseSolverOptions();
+        var schedulableCourses = SchoolFixedTimePolicy.SchedulableCourses(courses);
+        var blockingCourses = (schoolFixedCourses ?? SchoolFixedTimePolicy.SchoolFixedCourses(courses)).ToList();
+        courses = schedulableCourses;
         var effectiveRetakes = EffectiveRetakes(courses, retakes, options.ConsiderRetakeStudents);
         var totalSw = Stopwatch.StartNew();
 
@@ -61,7 +65,7 @@ public static class DiverseSolver
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound);
             progress?.Report(new SolverProgress("1A", "SC-01 측정 중", 0, 0, 0));
-            var p1 = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes);
+            var p1 = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes, blockingCourses);
             var term = SoftConstraints.Sc01PenaltyTerm(p1.X, courses, rooms);
             p1.Model.Minimize(term);
             if (!TryGetSolveTimeLimit(options, totalSw, 2d, out var sc01TimeLimit))
@@ -91,7 +95,7 @@ public static class DiverseSolver
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound);
             progress?.Report(new SolverProgress("1B", "SC-02 측정 중", 0, 0, 0));
-            var p2 = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes);
+            var p2 = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes, blockingCourses);
             if (sc01Bound.HasValue)
                 p2.Model.Add(SoftConstraints.Sc01PenaltyTerm(p2.X, courses, rooms) <= sc01Bound.Value);
             var term = SoftConstraints.Sc02PenaltyTerm(p2.Model, p2.X, courses, rooms);
@@ -123,7 +127,7 @@ public static class DiverseSolver
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound);
             progress?.Report(new SolverProgress("1C", "SC-03 측정 중", 0, 0, 0));
-            var p3 = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes);
+            var p3 = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes, blockingCourses);
             if (sc01Bound.HasValue)
                 p3.Model.Add(SoftConstraints.Sc01PenaltyTerm(p3.X, courses, rooms) <= sc01Bound.Value);
             if (sc02Bound.HasValue)
@@ -154,7 +158,7 @@ public static class DiverseSolver
 
         // Phase 2: build full model with SC bounds, seed loop
         progress?.Report(new SolverProgress("2", "Phase 2 모델 빌드", 0, options.TotalSolutions, 0));
-        var build = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes);
+        var build = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes, blockingCourses);
         if (sc01Bound.HasValue)
             build.Model.Add(SoftConstraints.Sc01PenaltyTerm(build.X, courses, rooms) <= sc01Bound.Value);
         if (sc02Bound.HasValue)

@@ -317,6 +317,8 @@ public sealed class WorkspaceService
                 section.CourseType = rep.CourseType;
                 section.Department = rep.Department;
                 section.IsFixed = rep.IsFixed;
+                section.IsSchoolFixed = rep.IsSchoolFixed;
+                section.SchoolFixedTargetGrade = rep.SchoolFixedTargetGrade;
                 if (!section.IsFixed)
                     section.FixedSlots.Clear();
                 section.FixedRooms = new List<string>(rep.FixedRooms);
@@ -344,6 +346,8 @@ public sealed class WorkspaceService
         BlockStructure = new List<int>(src.BlockStructure),
         IsFixed = src.IsFixed,
         FixedSlots = new List<TimeSlot>(src.FixedSlots),
+        IsSchoolFixed = src.IsSchoolFixed,
+        SchoolFixedTargetGrade = src.SchoolFixedTargetGrade,
         CoteachProfs = new List<string>(src.CoteachProfs),
     };
 

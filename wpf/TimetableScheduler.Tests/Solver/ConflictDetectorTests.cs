@@ -282,6 +282,35 @@ public class ConflictDetectorTests
     }
 
     [Fact]
+    public void SchoolFixedCourseWithoutAssignment_DoesNotReportFixedTimeViolation()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "X",
+                Name = "X",
+                Grade = 2,
+            },
+            new()
+            {
+                Id = "SF",
+                Name = "School Fixed",
+                Grade = 2,
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1) },
+                IsSchoolFixed = true,
+                SchoolFixedTargetGrade = SchoolFixedTimePolicy.AllGrades,
+            },
+        };
+        var assignment = new List<SolutionAssignment> { new("X", 1, 1, "R1") };
+
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+
+        Assert.DoesNotContain(conflicts, c => c.Type == ConflictType.FixedTimeViolation);
+    }
+
+    [Fact]
     public void Len2BlockWrongStart_DetectsConflict()
     {
         var courses = new List<Course>

@@ -21,6 +21,8 @@ public sealed record CellAssignment(
     public string ProfessorDisplayName { get; init; } = "";
     public IReadOnlyList<string> CoteachProfDisplayNames { get; init; } = Array.Empty<string>();
     public IReadOnlyList<string> RoomDisplayNames { get; init; } = Array.Empty<string>();
+    public bool IsSchoolFixed { get; init; }
+    public int SchoolFixedTargetGrade { get; init; }
 
     public string ProfessorLabel => string.IsNullOrWhiteSpace(ProfessorDisplayName)
         ? ProfessorId
@@ -36,6 +38,9 @@ public sealed record CellAssignment(
     {
         get
         {
+            if (IsSchoolFixed)
+                return $"{SchoolFixedTitlePrefix}{CourseName}";
+
             var title = string.IsNullOrEmpty(SectionLabel)
                 ? CourseName
                 : $"{CourseName}·{SectionLabel}";
@@ -43,10 +48,17 @@ public sealed record CellAssignment(
         }
     }
 
+    private string SchoolFixedTitlePrefix => SchoolFixedTargetGrade == SchoolFixedTimePolicy.AllGrades
+        ? "[학교고정] "
+        : "[학년고정] ";
+
     public string ProfessorLine
     {
         get
         {
+            if (IsSchoolFixed)
+                return "";
+
             var labels = new List<string>();
             if (!string.IsNullOrWhiteSpace(ProfessorLabel))
                 labels.Add(ProfessorLabel);
@@ -67,6 +79,9 @@ public sealed record CellAssignment(
     {
         get
         {
+            if (IsSchoolFixed)
+                return "";
+
             var labels = RoomDisplayNames.Count == 0 ? Rooms : RoomDisplayNames;
             if (labels.Count == 0) return "";
             return string.Join("\n", labels.OrderBy(r => r, StringComparer.Ordinal));
@@ -94,6 +109,8 @@ public sealed record CellAssignment(
             CourseKey = courseKey,
             ShowSectionLabel = showSectionLabel,
             CourseType = course.CourseType,
+            IsSchoolFixed = course.IsSchoolFixed,
+            SchoolFixedTargetGrade = course.SchoolFixedTargetGrade,
             CoteachProfIds = course.CoteachProfs.ToList(),
             ProfessorDisplayName = DisplayName(professorNames, course.ProfessorId),
             CoteachProfDisplayNames = course.CoteachProfs.Select(id => DisplayName(professorNames, id)).ToList(),

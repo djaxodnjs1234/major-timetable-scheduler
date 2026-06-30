@@ -190,6 +190,10 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public string LastCourseGroupWarning { get; private set; } = "";
 
     public IReadOnlyList<AcademicLevel> GradeOptions { get; } = AcademicLevels.All;
+    public IReadOnlyList<AcademicLevel> SchoolFixedTargetOptions { get; } =
+        new[] { new AcademicLevel(SchoolFixedTimePolicy.AllGrades, "전체") }
+            .Concat(AcademicLevels.All)
+            .ToArray();
     public int[] HourOptions { get; } = { 1, 2, 3, 4, 5 };
     public string[] CourseTypeOptions { get; } = { "전필", "전선", "교양" };
     public string[] BlockStructureOptions { get; } = GenerateBlockStructureOptions(3).ToArray();
@@ -707,7 +711,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void SaveGroup(CourseGroupItem item)
     {
         if (item is null || item.Sections.Count == 0) return;
-        var saveError = FirstCourseSaveError(item.Sections);
+        NormalizeSchoolFixedFields(item.Sections);
+        var saveError = FirstCourseSaveError(item.Sections) ?? FixedTimeOverlapSaveError(item);
         if (saveError != null)
         {
             StatusMessage = saveError.ToString();
@@ -727,6 +732,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 sec.CourseType = rep.CourseType;
                 sec.Department = rep.Department;
                 sec.IsFixed = rep.IsFixed;
+                sec.IsSchoolFixed = rep.IsSchoolFixed;
+                sec.SchoolFixedTargetGrade = rep.SchoolFixedTargetGrade;
                 if (!sec.IsFixed)
                     sec.FixedSlots.Clear();
                 sec.FixedRooms = new List<string>(rep.FixedRooms);
@@ -757,7 +764,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private void SaveSection(CourseGroupItem item)
     {
         if (item is null || item.Sections.Count != 1) return;
-        var saveError = FirstCourseSaveError(item.Sections);
+        NormalizeSchoolFixedFields(item.Sections);
+        var saveError = FirstCourseSaveError(item.Sections) ?? FixedTimeOverlapSaveError(item);
         if (saveError != null)
         {
             StatusMessage = saveError.ToString();
@@ -792,6 +800,23 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             var courseName = CourseInputLocation(course);
             if (string.IsNullOrWhiteSpace(course.Name))
                 return new TimetableDiagnostic("IE-001", $"{courseName}: 과목명을 입력해야 저장할 수 있습니다.");
+
+            if (course.IsSchoolFixed)
+            {
+                if (!course.IsFixed || course.FixedSlots.Count == 0)
+                    return new TimetableDiagnostic("IE-010", $"{courseName}: 학교 고정 과목은 고정 시간이 필요합니다.");
+
+                if (course.FixedSlots.Any(slot => slot.Period == Constants.LunchPeriod))
+                    return new TimetableDiagnostic("IE-011", $"{courseName}: 학교 고정 시간에 점심시간 5교시를 포함할 수 없습니다.");
+
+                if (course.FixedSlots.Count > 0 && course.FixedSlots.Count != course.HoursPerWeek)
+                    return new TimetableDiagnostic("IE-012", $"{courseName}: 학교 고정 시간 개수가 주당 수업시간과 맞지 않습니다.");
+
+                if (course.FixedSlots.Count > 0 && !FixedSlotsMatchBlocks(course))
+                    return new TimetableDiagnostic("IE-013", $"{courseName}: 학교 고정 시간이 블록구조와 맞지 않습니다.");
+
+                continue;
+            }
 
             if (AcademicLevelTimePolicy.IsGraduateOverMaxHours(course))
                 return new TimetableDiagnostic("IE-042", $"{courseName}: 대학원 과목은 주당 {AcademicLevelTimePolicy.GraduateMaxHoursPerWeek}시간까지만 설정할 수 있습니다.");
@@ -831,6 +856,19 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         }
 
         return null;
+    }
+
+    private TimetableDiagnostic? FixedTimeOverlapSaveError(CourseGroupItem item)
+    {
+        var overlap = FindFixedTimeOverlap(item);
+        if (overlap == null) return null;
+
+        var candidateIds = item.Sections.Select(section => section.Id).ToHashSet(StringComparer.Ordinal);
+        var id = candidateIds.Contains(overlap.ExistingCourseId) ? "IE-015" : "IE-014";
+        var sectionText = overlap.ExistingSection > 0 ? $" ({SectionLetter(overlap.ExistingSection)}분반)" : string.Empty;
+        return new TimetableDiagnostic(
+            id,
+            $"고정 시간이 기존 수업과 겹칩니다: {DayName(overlap.Day)} {overlap.Period}교시, {overlap.ExistingCourseName}{sectionText}. 시간고정 또는 강의실 조건을 수정하세요.");
     }
 
     [RelayCommand]
@@ -1114,6 +1152,10 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         section >= 1 && section <= SectionLetters.Length
             ? SectionLetters[section - 1] : section.ToString();
 
+    private sealed record FixedCandidateCourse(Course Course, IReadOnlyList<TimeSlot> Slots);
+
+    private sealed record FixedRoomDemand(Course Course, IReadOnlyList<string> CandidateRoomIds);
+
     public FixedTimeOverlapInfo? FindFixedTimeOverlap(
         CourseGroupItem item,
         IReadOnlyList<IReadOnlyList<TimeSlot>>? candidateFixedSlots = null)
@@ -1122,13 +1164,11 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             return null;
 
         var candidateSections = item.Sections
-            .Select((section, index) => new
-            {
-                Section = section,
-                Slots = candidateFixedSlots != null && index < candidateFixedSlots.Count
+            .Select((section, index) => new FixedCandidateCourse(
+                section,
+                candidateFixedSlots != null && index < candidateFixedSlots.Count
                     ? candidateFixedSlots[index].ToList()
-                    : section.FixedSlots.ToList(),
-            })
+                    : section.FixedSlots.ToList()))
             .ToList();
 
         static (string Id, int Section) KeyOf(Course course) => (course.Id, course.Section);
@@ -1137,14 +1177,16 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         {
             foreach (var other in _workspace.Courses)
             {
-                if (KeyOf(other) == KeyOf(current.Section))
+                if (current.Course.IsSchoolFixed || other.IsSchoolFixed)
+                    continue;
+                if (KeyOf(other) == KeyOf(current.Course))
                     continue;
                 if (!other.IsFixed || other.FixedSlots.Count == 0)
                     continue;
 
                 var overlap = current.Slots
                     .FirstOrDefault(slot => other.FixedSlots.Contains(slot));
-                if (current.Slots.Contains(overlap) && IsBlockingFixedTimeOverlap(current.Section, other))
+                if (current.Slots.Contains(overlap) && IsBlockingFixedTimeOverlap(current.Course, other))
                 {
                     return new FixedTimeOverlapInfo(
                         other.Id,
@@ -1160,12 +1202,14 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         {
             for (int j = i + 1; j < candidateSections.Count; j++)
             {
+                if (candidateSections[i].Course.IsSchoolFixed || candidateSections[j].Course.IsSchoolFixed)
+                    continue;
                 var overlap = candidateSections[i].Slots
                     .FirstOrDefault(slot => candidateSections[j].Slots.Contains(slot));
                 if (candidateSections[i].Slots.Contains(overlap) &&
-                    IsBlockingFixedTimeOverlap(candidateSections[i].Section, candidateSections[j].Section))
+                    IsBlockingFixedTimeOverlap(candidateSections[i].Course, candidateSections[j].Course))
                 {
-                    var other = candidateSections[j].Section;
+                    var other = candidateSections[j].Course;
                     return new FixedTimeOverlapInfo(
                         other.Id,
                         other.Name,
@@ -1176,7 +1220,192 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             }
         }
 
+        var roomCapacityOverlap = FindFixedRoomCapacityOverlap(candidateSections);
+        if (roomCapacityOverlap != null)
+            return roomCapacityOverlap;
+
         return null;
+    }
+
+    public FixedTimeOverlapInfo? FindSchoolFixedTimeOverlapWarning(
+        CourseGroupItem item,
+        IReadOnlyList<IReadOnlyList<TimeSlot>>? candidateFixedSlots = null)
+    {
+        if (item.Sections.Count == 0)
+            return null;
+
+        static (string Id, int Section) KeyOf(Course course) => (course.Id, course.Section);
+
+        var candidateKeys = item.Sections
+            .Select(KeyOf)
+            .ToHashSet();
+        var candidateSections = item.Sections
+            .Select((section, index) => new FixedCandidateCourse(
+                section,
+                candidateFixedSlots != null && index < candidateFixedSlots.Count
+                    ? candidateFixedSlots[index].ToList()
+                    : section.FixedSlots.ToList()))
+            .ToList();
+        var allFixedCourses = _workspace.Courses
+            .Where(course => !candidateKeys.Contains(KeyOf(course)))
+            .Select(course => new FixedCandidateCourse(course, course.FixedSlots.ToList()))
+            .Concat(candidateSections)
+            .Where(candidate => candidate.Course.IsFixed && candidate.Slots.Count > 0)
+            .ToList();
+
+        var schoolFixedCourses = allFixedCourses
+            .Where(candidate => candidate.Course.IsSchoolFixed)
+            .ToList();
+        if (schoolFixedCourses.Count == 0)
+            return null;
+
+        foreach (var schoolFixed in schoolFixedCourses)
+        {
+            foreach (var normal in allFixedCourses.Where(candidate => !candidate.Course.IsSchoolFixed))
+            {
+                if (!SchoolFixedTimePolicy.AppliesToGrade(schoolFixed.Course, normal.Course.Grade))
+                    continue;
+
+                var overlap = schoolFixed.Slots.FirstOrDefault(slot => normal.Slots.Contains(slot));
+                if (!schoolFixed.Slots.Contains(overlap))
+                    continue;
+
+                var existing = candidateKeys.Contains(KeyOf(normal.Course))
+                    ? schoolFixed.Course
+                    : normal.Course;
+                return new FixedTimeOverlapInfo(
+                    existing.Id,
+                    existing.Name,
+                    existing.Section,
+                    overlap.Day,
+                    overlap.Period);
+            }
+        }
+
+        return null;
+    }
+
+    private FixedTimeOverlapInfo? FindFixedRoomCapacityOverlap(IReadOnlyList<FixedCandidateCourse> candidateSections)
+    {
+        if (_workspace.Rooms.Count == 0) return null;
+
+        static (string Id, int Section) KeyOf(Course course) => (course.Id, course.Section);
+
+        var candidateKeys = candidateSections
+            .Select(candidate => KeyOf(candidate.Course))
+            .ToHashSet();
+        var allFixedCourses = _workspace.Courses
+            .Where(course => !candidateKeys.Contains(KeyOf(course)))
+            .Where(course => !course.IsSchoolFixed && course.IsFixed && course.FixedSlots.Count > 0)
+            .Select(course => new FixedCandidateCourse(course, course.FixedSlots.ToList()))
+            .Concat(candidateSections.Where(candidate => !candidate.Course.IsSchoolFixed))
+            .ToList();
+        var candidateSlots = candidateSections
+            .SelectMany(candidate => candidate.Slots)
+            .Distinct()
+            .OrderBy(slot => slot.Day)
+            .ThenBy(slot => slot.Period)
+            .ToList();
+
+        foreach (var slot in candidateSlots)
+        {
+            var slotCourses = allFixedCourses
+                .Where(candidate => candidate.Slots.Contains(slot))
+                .ToList();
+            if (slotCourses.Count < 2) continue;
+
+            var demands = FixedRoomDemands(slotCourses.Select(candidate => candidate.Course).ToList());
+            if (demands.Count == 0 || CanAssignDistinctRooms(demands))
+                continue;
+
+            var existing = slotCourses.FirstOrDefault(candidate => !candidateKeys.Contains(KeyOf(candidate.Course)))
+                ?? slotCourses.First(candidate => candidateKeys.Contains(KeyOf(candidate.Course)));
+            return new FixedTimeOverlapInfo(
+                existing.Course.Id,
+                existing.Course.Name,
+                existing.Course.Section,
+                slot.Day,
+                slot.Period);
+        }
+
+        return null;
+    }
+
+    private IReadOnlyList<FixedRoomDemand> FixedRoomDemands(IReadOnlyList<Course> courses)
+    {
+        var roomIds = _workspace.Rooms.Select(room => room.Id).ToHashSet(StringComparer.Ordinal);
+        var professorMap = _workspace.Professors.ToDictionary(professor => professor.Id, StringComparer.Ordinal);
+        var demands = new List<FixedRoomDemand>();
+
+        foreach (var course in courses)
+        {
+            if (course.FixedRooms.Count > 0)
+            {
+                foreach (var fixedRoomId in course.FixedRooms.Where(roomIds.Contains))
+                    demands.Add(new FixedRoomDemand(course, new[] { fixedRoomId }));
+                continue;
+            }
+
+            professorMap.TryGetValue(course.ProfessorId, out var professor);
+            var candidateRoomIds = _workspace.Rooms
+                .Where(room =>
+                    !course.UnavailableRooms.Contains(room.Id) &&
+                    (professor == null || !professor.UnavailableRooms.Contains(room.Id)))
+                .Select(room => room.Id)
+                .Distinct(StringComparer.Ordinal)
+                .ToList();
+            demands.Add(new FixedRoomDemand(course, candidateRoomIds));
+        }
+
+        return demands;
+    }
+
+    private static bool CanAssignDistinctRooms(IReadOnlyList<FixedRoomDemand> demands)
+    {
+        var assignedDemandByRoom = new Dictionary<string, int>(StringComparer.Ordinal);
+        var ordered = demands
+            .Select((demand, index) => (Demand: demand, Index: index))
+            .OrderBy(item => item.Demand.CandidateRoomIds.Count)
+            .ToList();
+
+        foreach (var item in ordered)
+        {
+            if (item.Demand.CandidateRoomIds.Count == 0)
+                return false;
+            if (!TryAssignRoom(item.Index, item.Demand.CandidateRoomIds, ordered, assignedDemandByRoom, new HashSet<string>(StringComparer.Ordinal)))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryAssignRoom(
+        int demandIndex,
+        IReadOnlyList<string> candidateRoomIds,
+        IReadOnlyList<(FixedRoomDemand Demand, int Index)> orderedDemands,
+        Dictionary<string, int> assignedDemandByRoom,
+        HashSet<string> visitedRoomIds)
+    {
+        foreach (var roomId in candidateRoomIds)
+        {
+            if (!visitedRoomIds.Add(roomId))
+                continue;
+
+            if (!assignedDemandByRoom.TryGetValue(roomId, out var assignedDemandIndex))
+            {
+                assignedDemandByRoom[roomId] = demandIndex;
+                return true;
+            }
+
+            var assignedDemand = orderedDemands.First(item => item.Index == assignedDemandIndex).Demand;
+            if (TryAssignRoom(assignedDemandIndex, assignedDemand.CandidateRoomIds, orderedDemands, assignedDemandByRoom, visitedRoomIds))
+            {
+                assignedDemandByRoom[roomId] = demandIndex;
+                return true;
+            }
+        }
+
+        return false;
     }
 
     private bool IsBlockingFixedTimeOverlap(Course first, Course second)
@@ -1216,14 +1445,18 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         {
             var sections = g.OrderBy(c => c.Section).Select(CloneCourse).ToList();
 
+            NormalizeSchoolFixedFields(sections);
             PromoteMissingSharedValues(sections);
             var rep = sections[0];
             var fixedAny = sections.Any(c => c.IsFixed);
+            var schoolFixedPart = rep.IsSchoolFixed
+                ? $"  학교고정({SchoolFixedTimePolicy.ScopeDisplayName(rep.SchoolFixedTargetGrade)})"
+                : "";
             var secPart = sections.Count > 1
                 ? $"  ({string.Join("·", sections.Select(s => SectionLetter(s.Section)))}분반)"
                 : "";
             var fixedPart = fixedAny ? "  ★" : "";
-            var label = $"{g.Key}  {rep.Name}  {AcademicLevels.DisplayName(rep.Grade)}  {rep.HoursPerWeek}h{secPart}{fixedPart}";
+            var label = $"{g.Key}  {rep.Name}  {AcademicLevels.DisplayName(rep.Grade)}  {rep.HoursPerWeek}h{secPart}{fixedPart}{schoolFixedPart}";
             var item = new CourseGroupItem
             {
                 BaseId = g.Key,
@@ -1302,6 +1535,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         BlockStructure = new List<int>(src.BlockStructure),
         IsFixed = src.IsFixed,
         FixedSlots = new List<TimeSlot>(src.FixedSlots),
+        IsSchoolFixed = src.IsSchoolFixed,
+        SchoolFixedTargetGrade = src.SchoolFixedTargetGrade,
         CoteachProfs = new List<string>(src.CoteachProfs),
     };
 
@@ -1637,6 +1872,34 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         return true;
     }
 
+    public void HandleCourseSchoolFixedChanged(CourseGroupItem item)
+    {
+        if (item.Sections.Count == 0) return;
+        var rep = item.Sections[0];
+        foreach (var sec in item.Sections)
+        {
+            sec.IsSchoolFixed = rep.IsSchoolFixed;
+            sec.SchoolFixedTargetGrade = rep.SchoolFixedTargetGrade;
+            if (sec.IsSchoolFixed)
+                sec.IsFixed = true;
+        }
+        NormalizeSchoolFixedFields(item.Sections);
+        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, rep.IsFixed);
+    }
+
+    private static void NormalizeSchoolFixedFields(IEnumerable<Course> courses)
+    {
+        foreach (var course in courses.Where(course => course.IsSchoolFixed))
+        {
+            course.Grade = SchoolFixedTimePolicy.AllGrades;
+            course.ProfessorId = "";
+            course.FixedRooms.Clear();
+            course.UnavailableRooms.Clear();
+            course.CoteachProfs.Clear();
+            course.IsFixed = true;
+        }
+    }
+
     private static List<int> ParseBlockStructure(string text) =>
         text.Split('+', StringSplitOptions.RemoveEmptyEntries)
             .Select(part => int.Parse(part.Trim()))
@@ -1646,7 +1909,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     {
         foreach (var sec in item.Sections)
         {
-            sec.IsFixed = false;
+            sec.IsFixed = sec.IsSchoolFixed;
             sec.FixedSlots.Clear();
         }
     }

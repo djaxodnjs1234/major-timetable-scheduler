@@ -6,6 +6,32 @@ namespace TimetableScheduler.Tests.Solver;
 public class TimetableDiagnosticsTests
 {
     [Fact]
+    public void InputErrors_SchoolFixedCourse_IgnoresProfessorButRequiresFixedSlots()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "SF-01",
+                Name = "School",
+                Grade = 1,
+                HoursPerWeek = 1,
+                IsSchoolFixed = true,
+                SchoolFixedTargetGrade = SchoolFixedTimePolicy.AllGrades,
+                BlockStructure = new List<int> { 1 },
+            },
+        };
+
+        var diagnostics = TimetableDiagnostics.GetInputErrors(
+            courses,
+            Array.Empty<Professor>(),
+            Array.Empty<Room>());
+
+        Assert.DoesNotContain(diagnostics, diagnostic => diagnostic.Id == "IE-004");
+        Assert.Contains(diagnostics, diagnostic => diagnostic.Id == "IE-010");
+    }
+
+    [Fact]
     public void InputErrors_MissingRoomReferences_ReportIe021AndIe022()
     {
         var courses = new List<Course>
@@ -153,6 +179,94 @@ public class TimetableDiagnosticsTests
 
         Assert.Contains(diagnostics, diagnostic => diagnostic.Id == "GE-007");
         Assert.Contains(diagnostics, diagnostic => diagnostic.Id == "GE-008");
+    }
+
+    [Fact]
+    public void FixedTimeWithoutFixedRooms_WhenRoomCapacityIsInsufficient_ReportsSpecificDiagnostics()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "A-01",
+                Name = "A",
+                Grade = 1,
+                HoursPerWeek = 1,
+                ProfessorId = "P1",
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1) },
+                BlockStructure = new List<int> { 1 },
+            },
+            new()
+            {
+                Id = "B-01",
+                Name = "B",
+                Grade = 2,
+                HoursPerWeek = 1,
+                ProfessorId = "P2",
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1) },
+                BlockStructure = new List<int> { 1 },
+            },
+        };
+        var professors = new List<Professor>
+        {
+            new() { Id = "P1", Name = "P1" },
+            new() { Id = "P2", Name = "P2" },
+        };
+        var rooms = new List<Room> { new() { Id = "R1", Name = "Room" } };
+
+        var inputDiagnostics = TimetableDiagnostics.GetInputErrors(courses, professors, rooms);
+        var generationDiagnostics = TimetableDiagnostics.GetGenerationErrors(courses, professors, rooms);
+
+        Assert.Contains(inputDiagnostics, diagnostic => diagnostic.Id == "IE-014");
+        Assert.Contains(generationDiagnostics, diagnostic => diagnostic.Id == "GE-007");
+    }
+
+    [Fact]
+    public void FixedTimeWithoutFixedRooms_WhenAnotherRoomIsAvailable_DoesNotReportRoomConflict()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "A-01",
+                Name = "A",
+                Grade = 1,
+                HoursPerWeek = 1,
+                ProfessorId = "P1",
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1) },
+                BlockStructure = new List<int> { 1 },
+            },
+            new()
+            {
+                Id = "B-01",
+                Name = "B",
+                Grade = 2,
+                HoursPerWeek = 1,
+                ProfessorId = "P2",
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1) },
+                BlockStructure = new List<int> { 1 },
+            },
+        };
+        var professors = new List<Professor>
+        {
+            new() { Id = "P1", Name = "P1" },
+            new() { Id = "P2", Name = "P2" },
+        };
+        var rooms = new List<Room>
+        {
+            new() { Id = "R1", Name = "Room1" },
+            new() { Id = "R2", Name = "Room2" },
+        };
+
+        var inputDiagnostics = TimetableDiagnostics.GetInputErrors(courses, professors, rooms);
+        var generationDiagnostics = TimetableDiagnostics.GetGenerationErrors(courses, professors, rooms);
+
+        Assert.DoesNotContain(inputDiagnostics, diagnostic => diagnostic.Id == "IE-014");
+        Assert.DoesNotContain(generationDiagnostics, diagnostic => diagnostic.Id == "GE-007");
     }
 
     [Fact]

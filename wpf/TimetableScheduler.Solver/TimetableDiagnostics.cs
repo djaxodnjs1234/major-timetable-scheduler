@@ -56,14 +56,21 @@ public static class TimetableDiagnostics
     {
         var professorIds = professors.Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
         var roomIds = rooms.Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
+        var schedulableCourses = SchoolFixedTimePolicy.SchedulableCourses(courses);
         var allowGraduateDaytimeOverflow =
-            AcademicLevelTimePolicy.AllowsGraduateDaytimeOverflow(courses, crosses);
+            AcademicLevelTimePolicy.AllowsGraduateDaytimeOverflow(schedulableCourses, crosses);
 
         foreach (var course in courses)
         {
             var courseName = InputCourseLocation(course);
             if (string.IsNullOrWhiteSpace(course.Name))
                 Add(issues, "IE-001", $"{courseName}: 과목명이 비어 있습니다. 과목명을 입력하세요.");
+
+            if (course.IsSchoolFixed)
+            {
+                AddSchoolFixedShapeErrors(issues, course, "IE");
+                continue;
+            }
 
             if (string.IsNullOrWhiteSpace(course.ProfessorId))
                 Add(issues, "IE-004", $"{courseName} 담당 교수가 비어 있습니다. 담당 교수를 선택하세요.");
@@ -101,14 +108,14 @@ public static class TimetableDiagnostics
             if (string.IsNullOrWhiteSpace(room.Name))
                 Add(issues, "IE-003", $"{InputRoomLocation(room)}: 강의실명이 비어 있습니다. 강의실명을 입력하세요.");
 
-        if (rooms.Count == 0)
+        if (rooms.Count == 0 && schedulableCourses.Count > 0)
             Add(issues, "IE-027", "강의실 관리: 강의실이 하나도 없습니다. 시간표 생성을 위해 강의실을 하나 이상 추가하세요.");
 
-        AddFixedOverlapInputErrors(issues, courses, crosses);
-        AddRoomAndTimeCandidateInputErrors(issues, courses, professors, rooms, allowGraduateDaytimeOverflow);
-        AddSectionAdjacencyErrors(issues, courses, professors, "IE-041", inputLocation: true, allowGraduateDaytimeOverflow);
-        AddCrossInputErrors(issues, courses, crosses);
-        AddGradeSlotCapacityErrors(issues, courses, crosses, "IE-038", allowGraduateDaytimeOverflow);
+        AddFixedOverlapInputErrors(issues, schedulableCourses, professors, rooms, crosses);
+        AddRoomAndTimeCandidateInputErrors(issues, schedulableCourses, professors, rooms, allowGraduateDaytimeOverflow);
+        AddSectionAdjacencyErrors(issues, schedulableCourses, professors, "IE-041", inputLocation: true, allowGraduateDaytimeOverflow);
+        AddCrossInputErrors(issues, schedulableCourses, crosses);
+        AddGradeSlotCapacityErrors(issues, schedulableCourses, crosses, "IE-038", allowGraduateDaytimeOverflow);
     }
 
     private static void AddGenerationErrors(
@@ -120,9 +127,13 @@ public static class TimetableDiagnostics
         IReadOnlyList<RetakeScenario>? retakes,
         bool considerRetakeStudents)
     {
+        var schedulableCourses = SchoolFixedTimePolicy.SchedulableCourses(courses);
         var allowGraduateDaytimeOverflow =
-            AcademicLevelTimePolicy.AllowsGraduateDaytimeOverflow(courses, crosses);
-        foreach (var course in courses)
+            AcademicLevelTimePolicy.AllowsGraduateDaytimeOverflow(schedulableCourses, crosses);
+        foreach (var course in courses.Where(course => course.IsSchoolFixed))
+            AddSchoolFixedShapeErrors(issues, course, "GE");
+
+        foreach (var course in schedulableCourses)
         {
             var courseName = CourseLabel(course);
             if (AcademicLevelTimePolicy.IsGraduateOverMaxHours(course))
@@ -154,7 +165,7 @@ public static class TimetableDiagnostics
         }
 
         var professorMap = professors.ToDictionary(p => p.Id, StringComparer.Ordinal);
-        foreach (var course in courses)
+        foreach (var course in schedulableCourses)
         {
             foreach (var pid in DomainHelpers.CourseProfIds(course))
             {
@@ -169,14 +180,33 @@ public static class TimetableDiagnostics
             }
         }
 
-        AddFixedOverlapGenerationErrors(issues, courses, crosses);
-        AddTeamTeachingGenerationErrors(issues, courses, professors, rooms, allowGraduateDaytimeOverflow);
-        AddSectionAdjacencyErrors(issues, courses, professors, "GE-030", inputLocation: false, allowGraduateDaytimeOverflow);
-        AddCrossGenerationErrors(issues, courses, crosses);
-        AddGraduateThreeHourBlockCapacityErrors(issues, courses, crosses, allowGraduateDaytimeOverflow);
-        AddGradeSlotCapacityErrors(issues, courses, crosses, "GE-027", allowGraduateDaytimeOverflow);
-        AddTightGradePackingErrors(issues, courses, professors, crosses, allowGraduateDaytimeOverflow);
-        AddRetakeGenerationErrors(issues, courses, crosses, retakes, considerRetakeStudents);
+        AddFixedOverlapGenerationErrors(issues, schedulableCourses, professors, rooms, crosses);
+        AddTeamTeachingGenerationErrors(issues, schedulableCourses, professors, rooms, allowGraduateDaytimeOverflow);
+        AddSectionAdjacencyErrors(issues, schedulableCourses, professors, "GE-030", inputLocation: false, allowGraduateDaytimeOverflow);
+        AddCrossGenerationErrors(issues, schedulableCourses, crosses);
+        AddGraduateThreeHourBlockCapacityErrors(issues, schedulableCourses, crosses, allowGraduateDaytimeOverflow);
+        AddGradeSlotCapacityErrors(issues, schedulableCourses, crosses, "GE-027", allowGraduateDaytimeOverflow);
+        AddTightGradePackingErrors(issues, schedulableCourses, professors, crosses, allowGraduateDaytimeOverflow);
+        AddRetakeGenerationErrors(issues, schedulableCourses, crosses, retakes, considerRetakeStudents);
+    }
+
+    private static void AddSchoolFixedShapeErrors(
+        List<TimetableDiagnostic> issues,
+        Course course,
+        string prefix)
+    {
+        var courseName = prefix == "IE" ? InputCourseLocation(course) : CourseLabel(course);
+        if (!course.IsFixed || course.FixedSlots.Count == 0)
+            Add(issues, $"{prefix}-010", $"{courseName} 학교 고정 과목은 고정 시간이 필요합니다. 시간고정을 켜고 시간을 선택하세요.");
+
+        if (course.FixedSlots.Any(slot => slot.Period == Constants.LunchPeriod))
+            Add(issues, $"{prefix}-011", $"{courseName} 학교 고정 시간에 점심시간 5교시를 포함할 수 없습니다.");
+
+        if (course.FixedSlots.Count > 0 && course.FixedSlots.Count != course.HoursPerWeek)
+            Add(issues, $"{prefix}-012", $"{courseName} 학교 고정 시간 개수가 주당 수업시간과 맞지 않습니다.");
+
+        if (course.FixedSlots.Count > 0 && !FixedSlotsMatchBlocks(course))
+            Add(issues, $"{prefix}-013", $"{courseName} 학교 고정 시간이 블록구조와 맞지 않습니다.");
     }
 
     private static void AddCourseShapeErrors(
@@ -219,6 +249,8 @@ public static class TimetableDiagnostics
     private static void AddFixedOverlapInputErrors(
         List<TimetableDiagnostic> issues,
         IReadOnlyList<Course> courses,
+        IReadOnlyList<Professor> professors,
+        IReadOnlyList<Room> rooms,
         IReadOnlyList<CrossGroup>? crosses)
     {
         foreach (var (first, second) in CoursePairs(courses))
@@ -236,11 +268,21 @@ public static class TimetableDiagnostics
                 Add(issues, id, $"{InputCoursePair(first, second)} / {InputProfessorLocations(sharedProfessors)}: 공통 교수의 고정 시간이 겹칩니다({SlotLabels(overlaps)}). 시간고정을 수정하세요.");
             }
         }
+
+        foreach (var conflict in FixedRoomCapacityConflicts(courses, professors, rooms))
+        {
+            Add(
+                issues,
+                "IE-014",
+                $"{InputCourseList(conflict.Courses)}: 같은 고정 시간({SlotLabels(new[] { conflict.Slot })})에 배정 가능한 강의실이 부족합니다. 시간고정 또는 강의실 조건을 수정하세요.");
+        }
     }
 
     private static void AddFixedOverlapGenerationErrors(
         List<TimetableDiagnostic> issues,
         IReadOnlyList<Course> courses,
+        IReadOnlyList<Professor> professors,
+        IReadOnlyList<Room> rooms,
         IReadOnlyList<CrossGroup>? crosses)
     {
         foreach (var (first, second) in CoursePairs(courses))
@@ -261,6 +303,14 @@ public static class TimetableDiagnostics
 
             if (SharesGradeConstraint(first, second, crosses))
                 Add(issues, "GE-009", $"{CourseLabel(first)} 과목과 {CourseLabel(second)} 과목은 같은 학년에서 반드시 겹칩니다. 시간고정 또는 학년/분반 정보를 수정하세요.");
+        }
+
+        foreach (var conflict in FixedRoomCapacityConflicts(courses, professors, rooms))
+        {
+            Add(
+                issues,
+                "GE-007",
+                $"{CourseList(conflict.Courses)} 과목들이 같은 고정 시간({SlotLabels(new[] { conflict.Slot })})에 배정되어 있지만 사용할 수 있는 강의실이 부족합니다. 시간고정 또는 강의실 조건을 변경하세요.");
         }
     }
 
@@ -917,6 +967,108 @@ public static class TimetableDiagnostics
                 yield return slot;
     }
 
+    private sealed record FixedRoomDemand(Course Course, IReadOnlyList<string> CandidateRoomIds);
+
+    private sealed record FixedRoomCapacityConflict(TimeSlot Slot, IReadOnlyList<Course> Courses);
+
+    private static IEnumerable<FixedRoomCapacityConflict> FixedRoomCapacityConflicts(
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<Professor> professors,
+        IReadOnlyList<Room> rooms)
+    {
+        if (rooms.Count == 0) yield break;
+
+        var roomIds = rooms.Select(room => room.Id).ToHashSet(StringComparer.Ordinal);
+        var professorMap = professors.ToDictionary(professor => professor.Id, StringComparer.Ordinal);
+        var fixedCourses = courses
+            .Where(course => !course.IsSchoolFixed && course.IsFixed && course.FixedSlots.Count > 0)
+            .ToList();
+        var fixedSlots = fixedCourses
+            .SelectMany(course => course.FixedSlots)
+            .Distinct()
+            .OrderBy(slot => slot.Day)
+            .ThenBy(slot => slot.Period)
+            .ToList();
+
+        foreach (var slot in fixedSlots)
+        {
+            var slotCourses = fixedCourses
+                .Where(course => course.FixedSlots.Contains(slot))
+                .ToList();
+            if (slotCourses.Count < 2) continue;
+
+            var demands = new List<FixedRoomDemand>();
+            foreach (var course in slotCourses)
+            {
+                if (course.FixedRooms.Count > 0)
+                {
+                    foreach (var fixedRoomId in course.FixedRooms.Where(roomIds.Contains))
+                        demands.Add(new FixedRoomDemand(course, new[] { fixedRoomId }));
+                    continue;
+                }
+
+                professorMap.TryGetValue(course.ProfessorId, out var professor);
+                var candidateRoomIds = CandidateRooms(course, professor, rooms)
+                    .Select(room => room.Id)
+                    .Distinct(StringComparer.Ordinal)
+                    .ToList();
+                demands.Add(new FixedRoomDemand(course, candidateRoomIds));
+            }
+
+            if (demands.Count == 0) continue;
+            if (!CanAssignDistinctRooms(demands))
+                yield return new FixedRoomCapacityConflict(slot, slotCourses);
+        }
+    }
+
+    private static bool CanAssignDistinctRooms(IReadOnlyList<FixedRoomDemand> demands)
+    {
+        var assignedDemandByRoom = new Dictionary<string, int>(StringComparer.Ordinal);
+        var ordered = demands
+            .Select((demand, index) => (Demand: demand, Index: index))
+            .OrderBy(item => item.Demand.CandidateRoomIds.Count)
+            .ToList();
+
+        foreach (var item in ordered)
+        {
+            if (item.Demand.CandidateRoomIds.Count == 0)
+                return false;
+            if (!TryAssignRoom(item.Index, item.Demand.CandidateRoomIds, ordered, assignedDemandByRoom, new HashSet<string>(StringComparer.Ordinal)))
+                return false;
+        }
+
+        return true;
+    }
+
+    private static bool TryAssignRoom(
+        int demandIndex,
+        IReadOnlyList<string> candidateRoomIds,
+        IReadOnlyList<(FixedRoomDemand Demand, int Index)> orderedDemands,
+        Dictionary<string, int> assignedDemandByRoom,
+        HashSet<string> visitedRoomIds)
+    {
+        foreach (var roomId in candidateRoomIds)
+        {
+            if (!visitedRoomIds.Add(roomId))
+                continue;
+
+            if (!assignedDemandByRoom.TryGetValue(roomId, out var assignedDemandIndex))
+            {
+                assignedDemandByRoom[roomId] = demandIndex;
+                return true;
+            }
+
+            var assignedDemand = orderedDemands.First(item => item.Index == assignedDemandIndex).Demand;
+            if (TryAssignRoom(assignedDemandIndex, assignedDemand.CandidateRoomIds, orderedDemands, assignedDemandByRoom, visitedRoomIds))
+            {
+                assignedDemandByRoom[roomId] = demandIndex;
+                return true;
+            }
+        }
+
+        return false;
+    }
+
     private static IEnumerable<(Course First, Course Second)> CoursePairs(IReadOnlyList<Course> courses)
     {
         for (var i = 0; i < courses.Count; i++)
@@ -1131,6 +1283,9 @@ public static class TimetableDiagnostics
     private static string InputCoursePair(Course first, Course second) =>
         $"교과목 관리 > {CourseLabel(first)} / {CourseLabel(second)}";
 
+    private static string InputCourseList(IEnumerable<Course> courses) =>
+        $"교과목 관리 > {CourseList(courses)}";
+
     private static string InputProfessorLocation(Professor professor) =>
         $"교수 관리 > {ProfessorLabel(professor)}";
 
@@ -1162,6 +1317,9 @@ public static class TimetableDiagnostics
 
     private static string CourseLabel(Course course) =>
         string.IsNullOrWhiteSpace(course.Name) ? course.Id : $"{course.Name}({course.Id})";
+
+    private static string CourseList(IEnumerable<Course> courses) =>
+        string.Join(", ", courses.Select(CourseLabel));
 
     private static string ProfessorLabel(Professor professor) =>
         string.IsNullOrWhiteSpace(professor.Name) ? professor.Id : $"{professor.Name}({professor.Id})";

@@ -31,10 +31,12 @@ public class SolverService
             AssertSolverSnapshotEquivalent(schedulingSnapshot, snapshot);
             return await Task.Run(() =>
             {
+                var schedulableCourses = SchoolFixedTimePolicy.SchedulableCourses(snapshot.Courses);
+                var schoolFixedCourses = SchoolFixedTimePolicy.SchoolFixedCourses(snapshot.Courses);
                 return DiverseSolver.Solve(
-                    snapshot.Courses, snapshot.Professors, snapshot.Rooms,
+                    schedulableCourses, snapshot.Professors, snapshot.Rooms,
                     options, snapshot.CrossGroups, snapshot.RetakeScenarios,
-                    progress, cancellationToken);
+                    progress, cancellationToken, schoolFixedCourses);
             }, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -53,7 +55,8 @@ public class SolverService
         int topM = 10)
     {
         var s = workspace.SchedulingSnapshot();
-        return SolutionScoring.Rank(result.Solutions, s.Courses, s.Professors, topM);
+        var schedulableCourses = SchoolFixedTimePolicy.SchedulableCourses(s.Courses);
+        return SolutionScoring.Rank(result.Solutions, schedulableCourses, s.Professors, topM);
     }
 
     private static DiverseSolverResult Cancelled() =>
@@ -89,6 +92,8 @@ public class SolverService
             BlockStructure = source.BlockStructure.ToList(),
             IsFixed = source.IsFixed,
             FixedSlots = source.FixedSlots.ToList(),
+            IsSchoolFixed = source.IsSchoolFixed,
+            SchoolFixedTargetGrade = source.SchoolFixedTargetGrade,
             CoteachProfs = source.CoteachProfs.ToList(),
         };
 

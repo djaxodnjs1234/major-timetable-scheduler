@@ -201,6 +201,174 @@ public class DiverseSolverTests
         Assert.Contains(reports, r => r.Phase == "2");
     }
 
+    [Fact]
+    public void SchoolFixedGlobalSlot_BlocksNonFixedCourses()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "A-01",
+                Name = "A",
+                Grade = 1,
+                HoursPerWeek = 1,
+                ProfessorId = "P1",
+                BlockStructure = new List<int> { 1 },
+            },
+            new()
+            {
+                Id = "SF-01",
+                Name = "School",
+                Grade = 1,
+                HoursPerWeek = 1,
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1) },
+                BlockStructure = new List<int> { 1 },
+                IsSchoolFixed = true,
+                SchoolFixedTargetGrade = SchoolFixedTimePolicy.AllGrades,
+            },
+        };
+        var profs = new List<Professor>
+        {
+            new()
+            {
+                Id = "P1",
+                Name = "P1",
+                UnavailableSlots = Constants.ValidPeriods
+                    .SelectMany(period => Enumerable.Range(0, Constants.Days).Select(day => new TimeSlot(day, period)))
+                    .Where(slot => slot != new TimeSlot(0, 1) && slot != new TimeSlot(0, 2))
+                    .ToList(),
+            },
+        };
+        var rooms = new List<Room> { new() { Id = "R1", Name = "R1" } };
+
+        var result = DiverseSolver.Solve(courses, profs, rooms, new DiverseSolverOptions
+        {
+            TotalSolutions = 1,
+            TimeLimitSec = 10,
+            PerSolveTimeSec = 1,
+        });
+
+        Assert.True(result.Status is "OPTIMAL" or "FEASIBLE", result.Status);
+        var assignment = Assert.Single(Assert.Single(result.Solutions));
+        Assert.Equal("A-01", assignment.CourseId);
+        Assert.Equal(new TimeSlot(0, 2), new TimeSlot(assignment.Day, assignment.Period));
+    }
+
+    [Fact]
+    public void SchoolFixedTargetGrade_DoesNotBlockOtherGrades()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "G1-01",
+                Name = "G1",
+                Grade = 1,
+                HoursPerWeek = 1,
+                ProfessorId = "P1",
+                BlockStructure = new List<int> { 1 },
+            },
+            new()
+            {
+                Id = "G2-01",
+                Name = "G2",
+                Grade = 2,
+                HoursPerWeek = 1,
+                ProfessorId = "P2",
+                BlockStructure = new List<int> { 1 },
+            },
+            new()
+            {
+                Id = "SF-01",
+                Name = "School",
+                Grade = 1,
+                HoursPerWeek = 1,
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1) },
+                BlockStructure = new List<int> { 1 },
+                IsSchoolFixed = true,
+                SchoolFixedTargetGrade = 1,
+            },
+        };
+        var allSlots = Constants.ValidPeriods
+            .SelectMany(period => Enumerable.Range(0, Constants.Days).Select(day => new TimeSlot(day, period)))
+            .ToList();
+        var profs = new List<Professor>
+        {
+            new()
+            {
+                Id = "P1",
+                Name = "P1",
+                UnavailableSlots = allSlots.Where(slot => slot != new TimeSlot(0, 2)).ToList(),
+            },
+            new()
+            {
+                Id = "P2",
+                Name = "P2",
+                UnavailableSlots = allSlots.Where(slot => slot != new TimeSlot(0, 1)).ToList(),
+            },
+        };
+        var rooms = new List<Room> { new() { Id = "R1", Name = "R1" } };
+
+        var result = DiverseSolver.Solve(courses, profs, rooms, new DiverseSolverOptions
+        {
+            TotalSolutions = 1,
+            TimeLimitSec = 10,
+            PerSolveTimeSec = 1,
+        });
+
+        Assert.True(result.Status is "OPTIMAL" or "FEASIBLE", result.Status);
+        var solution = Assert.Single(result.Solutions);
+        Assert.Contains(solution, assignment => assignment.CourseId == "G1-01" && assignment.Day == 0 && assignment.Period == 2);
+        Assert.Contains(solution, assignment => assignment.CourseId == "G2-01" && assignment.Day == 0 && assignment.Period == 1);
+    }
+
+    [Fact]
+    public void SchoolFixedSlot_AllowsUserFixedCourseOverride()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "A-01",
+                Name = "A",
+                Grade = 1,
+                HoursPerWeek = 1,
+                ProfessorId = "P1",
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1) },
+                BlockStructure = new List<int> { 1 },
+            },
+            new()
+            {
+                Id = "SF-01",
+                Name = "School",
+                Grade = 1,
+                HoursPerWeek = 1,
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1) },
+                BlockStructure = new List<int> { 1 },
+                IsSchoolFixed = true,
+                SchoolFixedTargetGrade = SchoolFixedTimePolicy.AllGrades,
+            },
+        };
+        var profs = new List<Professor> { new() { Id = "P1", Name = "P1" } };
+        var rooms = new List<Room> { new() { Id = "R1", Name = "R1" } };
+
+        var result = DiverseSolver.Solve(courses, profs, rooms, new DiverseSolverOptions
+        {
+            TotalSolutions = 1,
+            TimeLimitSec = 10,
+            PerSolveTimeSec = 1,
+        });
+
+        Assert.True(result.Status is "OPTIMAL" or "FEASIBLE", result.Status);
+        var assignment = Assert.Single(Assert.Single(result.Solutions));
+        Assert.Equal("A-01", assignment.CourseId);
+        Assert.Equal(new TimeSlot(0, 1), new TimeSlot(assignment.Day, assignment.Period));
+    }
+
     private class SyncProgress<T> : IProgress<T>
     {
         private readonly Action<T> _action;

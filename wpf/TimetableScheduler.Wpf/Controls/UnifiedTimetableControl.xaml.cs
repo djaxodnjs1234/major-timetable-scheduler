@@ -460,12 +460,7 @@ public partial class UnifiedTimetableControl : UserControl
             Margin = new Thickness(5, 7, 5, 5),
         };
 
-        var sectionText = FormatSectionForCard(a.SectionLabel);
-        var nameText = string.IsNullOrWhiteSpace(sectionText)
-            ? a.CourseName
-            : $"{a.CourseName} - {sectionText}";
-        if (a.IsFixed)
-            nameText = $"★ {nameText}";
+        var nameText = a.TitleLabel;
 
         content.Children.Add(new TextBlock
         {

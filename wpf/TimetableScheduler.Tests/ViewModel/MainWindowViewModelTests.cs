@@ -313,6 +313,54 @@ public class MainWindowViewModelTests : IDisposable
     }
 
     [Fact]
+    public void SaveCopy_SchoolFixedOnlySnapshot_RemainsVisibleInSelectionPreview()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var workspace = _sp.GetRequiredService<WorkspaceService>();
+        var snapshot = new AppData(
+            new List<Course>
+            {
+                new()
+                {
+                    Id = "SF-01",
+                    Name = "학교행사",
+                    Grade = 0,
+                    Section = 0,
+                    HoursPerWeek = 1,
+                    CourseType = "",
+                    ProfessorId = "",
+                    IsFixed = true,
+                    FixedSlots = new List<TimeSlot> { new(0, 1) },
+                    BlockStructure = new List<int> { 1 },
+                    IsSchoolFixed = true,
+                    SchoolFixedTargetGrade = SchoolFixedTimePolicy.AllGrades,
+                },
+            },
+            new List<Professor>(),
+            new List<Room>(),
+            new List<CrossGroup>(),
+            new List<RetakeScenario>());
+        var original = workspace.SaveTimetable(
+            "school-fixed",
+            Array.Empty<SolutionAssignment>(),
+            snapshot: snapshot);
+
+        main.Selection.EditCommand.Execute(original);
+        Assert.Contains(main.Manual.Grid.Cells, cell => cell.Assignment.TitleLabel == "[학교고정] 학교행사");
+
+        main.Manual.SaveCopyCommand.Execute(null);
+
+        Assert.IsType<TimetableSelectionViewModel>(main.CurrentPage);
+        Assert.Equal(2, workspace.SavedTimetables.Count);
+        Assert.NotEqual(original.Id, main.Selection.SelectedTimetable?.Id);
+        var previewCells = main.Selection.Preview.Cells
+            .Where(cell => cell.Assignment.IsSchoolFixed && cell.Period == 1)
+            .ToList();
+        Assert.Equal(AcademicLevels.AllGrades.Count, previewCells.Count);
+        Assert.All(previewCells, cell => Assert.Equal("[학교고정] 학교행사", cell.Assignment.TitleLabel));
+    }
+
+    [Fact]
     public void ResultsEditSelected_LiveWorkspace_PreservesProfessorInfoInManualEdit()
     {
         var main = _sp.GetRequiredService<MainWindowViewModel>();

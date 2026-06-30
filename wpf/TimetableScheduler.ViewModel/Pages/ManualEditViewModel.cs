@@ -1654,6 +1654,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         BlockStructure = new List<int>(src.BlockStructure),
         IsFixed = src.IsFixed,
         FixedSlots = src.FixedSlots.ToList(),
+        IsSchoolFixed = src.IsSchoolFixed,
+        SchoolFixedTargetGrade = src.SchoolFixedTargetGrade,
         CoteachProfs = new List<string>(src.CoteachProfs),
     };
 

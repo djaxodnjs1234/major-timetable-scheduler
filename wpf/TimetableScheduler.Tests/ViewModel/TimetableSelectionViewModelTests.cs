@@ -191,6 +191,51 @@ public class TimetableSelectionViewModelTests : IDisposable
     }
 
     [Fact]
+    public void SavedPreview_SchoolFixedSnapshotWithBlankProfessor_ShowsDisplayBlock()
+    {
+        var workspace = new WorkspaceService(_repo);
+        var schoolFixed = new Course
+        {
+            Id = "SF-01",
+            Name = "학교행사",
+            Grade = 0,
+            Section = 0,
+            HoursPerWeek = 1,
+            CourseType = "",
+            ProfessorId = "",
+            IsFixed = true,
+            FixedSlots = new List<TimeSlot> { new(0, 1) },
+            BlockStructure = new List<int> { 1 },
+            IsSchoolFixed = true,
+            SchoolFixedTargetGrade = SchoolFixedTimePolicy.AllGrades,
+        };
+        var snapshot = new AppData(
+            new List<Course> { schoolFixed },
+            new List<Professor>(),
+            new List<Room>(),
+            new List<CrossGroup>(),
+            new List<RetakeScenario>());
+
+        workspace.SaveTimetable(
+            "school-fixed",
+            Array.Empty<SolutionAssignment>(),
+            snapshot: snapshot);
+
+        var vm = new TimetableSelectionViewModel(workspace);
+
+        var previewCells = vm.Preview.Cells
+            .Where(cell => cell.Period == 1 && cell.Assignment.IsSchoolFixed)
+            .ToList();
+        Assert.Equal(AcademicLevels.AllGrades.Count, previewCells.Count);
+        Assert.All(previewCells, cell =>
+        {
+            Assert.Equal("[학교고정] 학교행사", cell.Assignment.TitleLabel);
+            Assert.Equal("", cell.Assignment.ProfessorLine);
+            Assert.Equal("", cell.Assignment.RoomsLabel);
+        });
+    }
+
+    [Fact]
     public void FirstScreenExport_UsesSnapshot_AndShowsGradeHeadersOnUnifiedAndGradeSheets()
     {
         var workspace = new WorkspaceService(_repo);

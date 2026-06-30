@@ -126,8 +126,12 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         _lastProfessors = professors;
         _lastRooms = rooms;
 
-        var courseMap = BuildAssignmentCourseMap(assignment, courses);
-        var multiSectionBaseIds = courses
+        var display = BuildSchoolFixedDisplayAssignments(assignment, courses, ExpandAllGrades);
+        var displayAssignments = display.Assignments;
+        var displayCourses = display.Courses;
+
+        var courseMap = BuildAssignmentCourseMap(displayAssignments, displayCourses);
+        var multiSectionBaseIds = displayCourses
             .GroupBy(course => DomainHelpers.BaseId(course.Id), StringComparer.Ordinal)
             .Where(group => group.Count() > 1)
             .Select(group => group.Key)
@@ -139,9 +143,9 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         // CourseId because some imported/saved sessions can contain duplicate Course.Id.
         var roomsBySlot = new Dictionary<(string CourseKey, int Day, int Period), HashSet<string>>();
         var assignmentIdsBySlot = new Dictionary<(string CourseKey, int Day, int Period), HashSet<string>>();
-        foreach (var a in assignment)
+        foreach (var a in displayAssignments)
         {
-            var courseKey = BuildAssignmentCourseKey(a, courses);
+            var courseKey = BuildAssignmentCourseKey(a, displayCourses);
             if (!courseMap.ContainsKey(courseKey)) continue;
             var key = (courseKey, a.Day, a.Period);
             if (!roomsBySlot.TryGetValue(key, out var set))
@@ -224,6 +228,108 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
 
         Rebuilt?.Invoke(this, EventArgs.Empty);
     }
+
+    private static (IReadOnlyList<SolutionAssignment> Assignments, IReadOnlyList<Course> Courses)
+        BuildSchoolFixedDisplayAssignments(
+            IReadOnlyList<SolutionAssignment> assignments,
+            IReadOnlyList<Course> courses,
+            bool expandAllGrades)
+    {
+        var schoolFixedCourses = courses
+            .Where(course => course.IsSchoolFixed && course.IsFixed && course.FixedSlots.Count > 0)
+            .ToList();
+        if (schoolFixedCourses.Count == 0)
+            return (assignments, courses);
+
+        var displayAssignments = assignments.ToList();
+        var displayCourses = courses
+            .Where(course => !course.IsSchoolFixed)
+            .Select(CloneDisplayCourse)
+            .ToList();
+        var normalCourseMap = courses
+            .Where(course => !course.IsSchoolFixed)
+            .GroupBy(course => course.Id, StringComparer.Ordinal)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
+        var visibleGradesByDay = Enumerable.Range(0, Constants.Days)
+            .ToDictionary(day => day, _ => new HashSet<int>());
+
+        foreach (var assignment in assignments)
+            if (normalCourseMap.TryGetValue(assignment.CourseId, out var course))
+                visibleGradesByDay[assignment.Day].Add(course.Grade);
+
+        foreach (var course in schoolFixedCourses.Where(course => course.SchoolFixedTargetGrade != SchoolFixedTimePolicy.AllGrades))
+            foreach (var slot in course.FixedSlots)
+                if (AcademicLevels.AllGrades.Contains(course.SchoolFixedTargetGrade))
+                    visibleGradesByDay[slot.Day].Add(course.SchoolFixedTargetGrade);
+
+        if (expandAllGrades)
+            foreach (var grades in visibleGradesByDay.Values)
+                foreach (var grade in AcademicLevels.AllGrades)
+                    grades.Add(grade);
+
+        var addedCourseIds = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var course in schoolFixedCourses)
+        {
+            foreach (var slot in course.FixedSlots)
+            {
+                var grades = course.SchoolFixedTargetGrade == SchoolFixedTimePolicy.AllGrades
+                    ? visibleGradesByDay[slot.Day].OrderBy(grade => grade).ToList()
+                    : new List<int> { course.SchoolFixedTargetGrade };
+                if (grades.Count == 0)
+                    grades = AcademicLevels.AllGrades.ToList();
+
+                foreach (var grade in grades.Where(grade => AcademicLevels.AllGrades.Contains(grade)))
+                {
+                    var displayCourseId = SchoolFixedDisplayCourseId(course.Id, grade);
+                    if (addedCourseIds.Add(displayCourseId))
+                    {
+                        var clone = CloneDisplayCourse(course);
+                        clone.Id = displayCourseId;
+                        clone.Grade = grade;
+                        clone.Section = 0;
+                        clone.CourseType = "";
+                        clone.ProfessorId = "";
+                        clone.CoteachProfs.Clear();
+                        clone.FixedRooms.Clear();
+                        clone.UnavailableRooms.Clear();
+                        displayCourses.Add(clone);
+                    }
+
+                    displayAssignments.Add(new SolutionAssignment(
+                        displayCourseId,
+                        slot.Day,
+                        slot.Period,
+                        "",
+                        $"school-fixed\u001f{course.Id}\u001f{grade}"));
+                }
+            }
+        }
+
+        return (displayAssignments, displayCourses);
+    }
+
+    private static string SchoolFixedDisplayCourseId(string courseId, int grade) =>
+        $"{courseId}__school_fixed__{grade}";
+
+    private static Course CloneDisplayCourse(Course course) => new()
+    {
+        Id = course.Id,
+        Name = course.Name,
+        Grade = course.Grade,
+        HoursPerWeek = course.HoursPerWeek,
+        CourseType = course.CourseType,
+        ProfessorId = course.ProfessorId,
+        Section = course.Section,
+        Department = course.Department,
+        FixedRooms = course.FixedRooms.ToList(),
+        UnavailableRooms = course.UnavailableRooms.ToList(),
+        BlockStructure = course.BlockStructure.ToList(),
+        IsFixed = course.IsFixed,
+        FixedSlots = course.FixedSlots.ToList(),
+        IsSchoolFixed = course.IsSchoolFixed,
+        SchoolFixedTargetGrade = course.SchoolFixedTargetGrade,
+        CoteachProfs = course.CoteachProfs.ToList(),
+    };
 
     private static Dictionary<string, Course> BuildAssignmentCourseMap(
         IReadOnlyList<SolutionAssignment> assignments,

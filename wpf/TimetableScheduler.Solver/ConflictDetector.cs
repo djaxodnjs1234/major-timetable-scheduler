@@ -108,7 +108,7 @@ public static class ConflictDetector
         }
 
         // HC-13: fixed courses must stay on their exact fixed slots.
-        foreach (var c in courses.Where(c => c.IsFixed))
+        foreach (var c in courses.Where(c => c.IsFixed && !c.IsSchoolFixed))
         {
             var actual = assignment
                 .Where(a => ReferenceEquals(ResolveCourseForAssignment(a, courses), c))

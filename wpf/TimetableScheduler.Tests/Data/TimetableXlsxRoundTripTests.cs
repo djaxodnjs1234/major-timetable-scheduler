@@ -56,6 +56,54 @@ public class TimetableXlsxRoundTripTests
     }
 
     [Fact]
+    public void ExcelExport_RendersSchoolFixedCoursesFromSnapshot()
+    {
+        var text = ExportAndReadVisibleText(
+            new List<TimetableAssignmentRow> { new("C1", 0, 1, "R1") },
+            new List<Course>
+            {
+                new() { Id = "C1", Name = "Normal", Grade = 2, Section = 1 },
+                new()
+                {
+                    Id = "SF-01",
+                    Name = "School Fixed",
+                    Grade = 1,
+                    HoursPerWeek = 1,
+                    ProfessorId = "P1",
+                    FixedRooms = new List<string> { "R2" },
+                    IsFixed = true,
+                    FixedSlots = new List<TimeSlot> { new(0, 2) },
+                    IsSchoolFixed = true,
+                    SchoolFixedTargetGrade = SchoolFixedTimePolicy.AllGrades,
+                },
+                new()
+                {
+                    Id = "SF-G3",
+                    Name = "Grade Fixed",
+                    Grade = 3,
+                    HoursPerWeek = 1,
+                    ProfessorId = "P2",
+                    FixedRooms = new List<string> { "R3" },
+                    IsFixed = true,
+                    FixedSlots = new List<TimeSlot> { new(0, 3) },
+                    IsSchoolFixed = true,
+                    SchoolFixedTargetGrade = 3,
+                },
+            },
+            rooms: new List<Room>
+            {
+                new() { Id = "R1", Name = "Room 1" },
+                new() { Id = "R2", Name = "School Room" },
+                new() { Id = "R3", Name = "Grade Room" },
+            });
+
+        Assert.Contains("[학교고정] School Fixed", text);
+        Assert.Contains("[학년고정] Grade Fixed", text);
+        Assert.DoesNotContain("School Room", text);
+        Assert.DoesNotContain("Grade Room", text);
+    }
+
+    [Fact]
     public void ExcelExport_MultipleRoomIds_AreRenderedAsRoomNames()
     {
         var text = ExportAndReadVisibleText(

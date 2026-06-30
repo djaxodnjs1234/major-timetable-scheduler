@@ -31,6 +31,7 @@ internal static class SavedTimetableSnapshotResolver
     }
 
     private static bool IsValidCourse(Course course) =>
-        !string.IsNullOrWhiteSpace(course.ProfessorId)
-        && !string.IsNullOrWhiteSpace(course.CourseType);
+        course.IsSchoolFixed
+        || (!string.IsNullOrWhiteSpace(course.ProfessorId)
+            && !string.IsNullOrWhiteSpace(course.CourseType));
 }

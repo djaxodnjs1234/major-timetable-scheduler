@@ -26,7 +26,8 @@ public static class ModelBuilder
         IReadOnlyList<Professor> professors,
         IReadOnlyList<Room> rooms,
         IReadOnlyList<CrossGroup>? crosses = null,
-        IReadOnlyList<RetakeScenario>? retakes = null)
+        IReadOnlyList<RetakeScenario>? retakes = null,
+        IReadOnlyList<Course>? schoolFixedCourses = null)
     {
         ValidateCrossGroups(courses, crosses);
         var model = new CpModel();
@@ -65,6 +66,7 @@ public static class ModelBuilder
         BasicHcs.AddHc11_GradeNoOverlap(model, y, courses, crosses);
         BasicHcs.AddHc12_Lunch(model, x, courses, rooms);
         BasicHcs.AddHc13_Fixed(model, y, courses);
+        BasicHcs.AddHc24_SchoolFixedTimeBlocks(model, y, courses, schoolFixedCourses ?? Array.Empty<Course>());
         BasicHcs.AddHc23_AcademicLevelTimeBands(model, x, y, courses, rooms, crosses);
         BlockHcs.AddHc14_FixedRooms(model, x, courses, rooms);
         BlockHcs.AddHc14_UnavailableRooms(model, x, courses, rooms);
