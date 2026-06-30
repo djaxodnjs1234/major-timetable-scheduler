@@ -39,14 +39,8 @@
                 <Border DockPanel.Dock="Top" Background="#F5F5F5" Padding="12,10"
                         BorderBrush="#CCC" BorderThickness="0,0,0,1">
                     <StackPanel>
-                        <StackPanel Orientation="Horizontal">
-                            <TextBlock Text="저장된 시간표" FontWeight="Bold"
-                                       VerticalAlignment="Center" Margin="0,0,8,0" />
-                            <Button Content="📄 Excel 내보내기"
-                                    Click="OnExportXlsxClick"
-                                    IsEnabled="{Binding HasSelection}"
-                                    Padding="6,3" FontSize="11" />
-                        </StackPanel>
+                        <TextBlock Text="저장된 시간표" FontWeight="Bold"
+                                   VerticalAlignment="Center" Margin="0,0,8,0" />
                         <Button Content="+ 새 시간표 만들기"
                                 Command="{Binding CreateNewCommand}"
                                 Style="{StaticResource PrimaryButton}"

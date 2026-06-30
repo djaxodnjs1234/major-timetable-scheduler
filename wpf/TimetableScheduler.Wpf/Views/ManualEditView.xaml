@@ -29,6 +29,7 @@
         <Style x:Key="ManualEditComboBoxItemStyle" TargetType="{x:Type ComboBoxItem}">
             <Setter Property="HorizontalContentAlignment" Value="Left" />
             <Setter Property="VerticalContentAlignment" Value="Center" />
+            <Setter Property="IsEnabled" Value="{Binding IsSelectable}" />
         </Style>
 
         <Style TargetType="{x:Type ComboBox}">
@@ -117,7 +118,7 @@
                                    Visibility="{Binding Text, ElementName=SaveNameTextBox, Converter={StaticResource StringNullOrWhiteSpaceToVisibility}}" />
                         </Grid>
 
-                        <Button Content="저장"
+                        <Button Content="{Binding SaveButtonText}"
                             Command="{Binding SaveTimetableCommand}"
                             Height="34"
                             Padding="12,0" Margin="6,0,0,0"
@@ -129,8 +130,14 @@
                                 </Style>
                             </Button.Style>
                         </Button>
-                        <Button Content="복사본 저장"
+                        <Button Content="다른 이름으로 저장"
                             Command="{Binding SaveCopyCommand}"
+                            Height="34"
+                            Padding="12,0" Margin="6,0,0,0"
+                            VerticalAlignment="Center"
+                            Visibility="{Binding IsEditingSavedTimetable, Converter={StaticResource BoolToVisibility}}" />
+                        <Button Content="Excel 내보내기"
+                            Click="OnExportXlsxClick"
                             Height="34"
                             Padding="12,0" Margin="6,0,0,0"
                             VerticalAlignment="Center" />
@@ -356,6 +363,11 @@
                                             <TextBlock Text="강의실 변경"
                                                    Style="{StaticResource InspectorSectionTitleText}" />
 
+                                            <CheckBox Content="강의실 추가 정보 표시"
+                                                      IsChecked="{Binding ShowRoomAdditionalInfo, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      FontSize="12"
+                                                      Margin="0,0,0,8" />
+
                                             <TextBlock Text="{Binding SelectedRoomsText}"
                                                    FontSize="13"
                                                    TextWrapping="Wrap"
@@ -420,6 +432,18 @@
                                                    TextWrapping="Wrap"
                                                    Margin="0,8,0,0"
                                                    Visibility="{Binding HasRoomChangeStatusMessage, Converter={StaticResource BoolToVisibility}}" />
+
+                                            <Border Background="White"
+                                                    BorderBrush="#E1E1E1"
+                                                    BorderThickness="1"
+                                                    CornerRadius="2"
+                                                    Padding="8,6"
+                                                    Margin="0,8,0,0"
+                                                    Visibility="{Binding HasSelectedRoomAdditionalInfo, Converter={StaticResource BoolToVisibility}}">
+                                                <TextBlock Text="{Binding SelectedRoomAdditionalInfo}"
+                                                           FontSize="12"
+                                                           TextWrapping="Wrap" />
+                                            </Border>
                                         </StackPanel>
                                     </Border>
                                 </StackPanel>
@@ -471,30 +495,114 @@
                                            TextWrapping="Wrap"
                                            Visibility="{Binding Conflicts.Count, Converter={StaticResource BoolToVisibility}, ConverterParameter=Zero}" />
 
-                                    <ItemsControl ItemsSource="{Binding Conflicts}">
-                                        <ItemsControl.ItemTemplate>
+                                    <ScrollViewer MaxHeight="336"
+                                                  VerticalScrollBarVisibility="Auto"
+                                                  HorizontalScrollBarVisibility="Disabled">
+                                        <ItemsControl ItemsSource="{Binding Conflicts}">
+                                            <ItemsControl.ItemTemplate>
                                             <DataTemplate DataType="{x:Type vm:ConflictDisplayItem}">
-                                                <Border Background="White"
-                                                    BorderBrush="#BA1A1A"
-                                                    BorderThickness="4,1,1,1"
-                                                    CornerRadius="2"
-                                                    Padding="12,8"
-                                                    Margin="0,0,0,6">
-                                                    <StackPanel>
-                                                        <TextBlock Text="{Binding DisplayTitle}"
-                                                               FontWeight="Bold"
-                                                               Foreground="#BA1A1A"
-                                                               FontSize="11"
-                                                               TextWrapping="Wrap" />
-                                                        <TextBlock Text="{Binding DisplayDescription}"
-                                                               FontSize="11"
-                                                               TextWrapping="Wrap"
-                                                               Margin="0,2,0,0" />
-                                                    </StackPanel>
-                                                </Border>
+                                                <Button Command="{Binding DataContext.FocusConflictCommand, RelativeSource={RelativeSource AncestorType={x:Type UserControl}}}"
+                                                        CommandParameter="{Binding}"
+                                                        MinHeight="78"
+                                                        Padding="0"
+                                                        Margin="0,0,0,6"
+                                                        HorizontalContentAlignment="Stretch"
+                                                        Background="Transparent"
+                                                        BorderThickness="0"
+                                                        Cursor="Hand">
+                                                    <Border Background="White"
+                                                            BorderThickness="4,1,1,1"
+                                                            CornerRadius="2"
+                                                            Padding="12,8">
+                                                        <Border.Style>
+                                                            <Style TargetType="{x:Type Border}">
+                                                                <Setter Property="BorderBrush" Value="#BA1A1A" />
+                                                                <Setter Property="Background" Value="#FFF8F8" />
+                                                                <Style.Triggers>
+                                                                    <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                                                                        <Setter Property="BorderBrush" Value="#B7791F" />
+                                                                        <Setter Property="Background" Value="#FFF8E1" />
+                                                                    </DataTrigger>
+                                                                </Style.Triggers>
+                                                            </Style>
+                                                        </Border.Style>
+                                                        <StackPanel>
+                                                            <TextBlock Text="{Binding DisplayTitle}"
+                                                                       FontWeight="Bold"
+                                                                       FontSize="11"
+                                                                       TextWrapping="Wrap">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="{x:Type TextBlock}">
+                                                                        <Setter Property="Foreground" Value="#BA1A1A" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                                                                                <Setter Property="Foreground" Value="#B7791F" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                            <ItemsControl ItemsSource="{Binding Lines}" Margin="0,4,0,0">
+                                                                <ItemsControl.ItemTemplate>
+                                                                    <DataTemplate>
+                                                                        <Grid>
+                                                                            <Grid.ColumnDefinitions>
+                                                                                <ColumnDefinition Width="Auto" />
+                                                                                <ColumnDefinition Width="*" />
+                                                                            </Grid.ColumnDefinitions>
+                                                                            <TextBlock Text="{Binding Label}"
+                                                                                       Grid.Column="0"
+                                                                                       FontSize="11"
+                                                                                       FontWeight="SemiBold"
+                                                                                       Margin="0,1,6,0"
+                                                                                       VerticalAlignment="Top">
+                                                                                <TextBlock.Style>
+                                                                                    <Style TargetType="{x:Type TextBlock}">
+                                                                                        <Setter Property="Foreground" Value="#BA1A1A" />
+                                                                                        <Style.Triggers>
+                                                                                            <DataTrigger Binding="{Binding DataContext.Severity, RelativeSource={RelativeSource AncestorType={x:Type Button}}}" Value="Warning">
+                                                                                                <Setter Property="Foreground" Value="#B7791F" />
+                                                                                            </DataTrigger>
+                                                                                        </Style.Triggers>
+                                                                                    </Style>
+                                                                                </TextBlock.Style>
+                                                                            </TextBlock>
+                                                                            <TextBlock Text="{Binding Text}"
+                                                                                       Grid.Column="1"
+                                                                                       FontSize="11"
+                                                                                       Foreground="{Binding Grade, Converter={StaticResource GradeToBrush}}"
+                                                                                       FontWeight="SemiBold"
+                                                                                       TextWrapping="Wrap"
+                                                                                       Margin="0,1,0,0"
+                                                                                       Visibility="{Binding IsCourse, Converter={StaticResource BoolToVisibility}}" />
+                                                                            <TextBlock Text="{Binding Text}"
+                                                                                       Grid.Column="1"
+                                                                                       FontSize="11"
+                                                                                       TextWrapping="Wrap"
+                                                                                       Margin="0,1,0,0"
+                                                                                       Visibility="{Binding IsCourse, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
+                                                                                <TextBlock.Style>
+                                                                                    <Style TargetType="{x:Type TextBlock}">
+                                                                                        <Setter Property="Foreground" Value="#BA1A1A" />
+                                                                                        <Style.Triggers>
+                                                                                            <DataTrigger Binding="{Binding DataContext.Severity, RelativeSource={RelativeSource AncestorType={x:Type Button}}}" Value="Warning">
+                                                                                                <Setter Property="Foreground" Value="#B7791F" />
+                                                                                            </DataTrigger>
+                                                                                        </Style.Triggers>
+                                                                                    </Style>
+                                                                                </TextBlock.Style>
+                                                                            </TextBlock>
+                                                                        </Grid>
+                                                                    </DataTemplate>
+                                                                </ItemsControl.ItemTemplate>
+                                                            </ItemsControl>
+                                                        </StackPanel>
+                                                    </Border>
+                                                </Button>
                                             </DataTemplate>
-                                        </ItemsControl.ItemTemplate>
-                                    </ItemsControl>
+                                            </ItemsControl.ItemTemplate>
+                                        </ItemsControl>
+                                    </ScrollViewer>
                                 </Grid>
                             </Border>
                         </Expander>

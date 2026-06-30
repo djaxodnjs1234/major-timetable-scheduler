@@ -87,7 +87,6 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         SelectedPreviewTabIndex = 0;
         OnPropertyChanged(nameof(HasSelection));
         OnPropertyChanged(nameof(HasNoSelection));
-        ExportXlsxCommand.NotifyCanExecuteChanged();
 
         if (value == null)
         {
@@ -154,25 +153,4 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         if (SelectedTimetable?.Id == record.Id)
             SelectedTimetable = SavedTimetables.FirstOrDefault();
     }
-
-    [RelayCommand(CanExecute = nameof(CanExport))]
-    private void ExportXlsx(string path)
-    {
-        if (SelectedTimetable == null) return;
-        var snapshot = SavedTimetableSnapshotResolver.Resolve(SelectedTimetable.SnapshotJson);
-        IReadOnlyList<Course> courses = snapshot.Courses.Count > 0 ? snapshot.Courses : _workspace.ExpandedCourses;
-        IReadOnlyList<Professor> professors = snapshot.Professors.Count > 0 ? snapshot.Professors : _workspace.Professors;
-        IReadOnlyList<Room> rooms = snapshot.Rooms.Count > 0 ? snapshot.Rooms : _workspace.Rooms;
-
-        FormattedTimetableExporter.Export(
-            SelectedTimetable.Name,
-            SelectedTimetable.Assignments,
-            courses,
-            professors,
-            path,
-            rooms,
-            expandAllGrades: true);
-    }
-
-    private bool CanExport() => SelectedTimetable != null;
 }
