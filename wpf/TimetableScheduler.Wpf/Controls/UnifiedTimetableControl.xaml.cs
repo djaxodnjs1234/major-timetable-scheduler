@@ -1,5 +1,6 @@
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Media;
 using System.Windows.Threading;
 using TimetableScheduler.Domain;
@@ -82,12 +83,16 @@ public partial class UnifiedTimetableControl : UserControl
         }
     }
 
+    private sealed record CellDragData(CellClickedEventArgs Source, int GrabbedPeriodOffset);
+
     public event EventHandler<CellClickedEventArgs>? CellClicked;
     public event EventHandler<CellClickedEventArgs>? CrossAddRequested;
     public event EventHandler<CellClickedEventArgs>? SwapRequested;
     public event EventHandler<CellDropMoveEventArgs>? CrossDropRequested;
     public event EventHandler<CellDropMoveEventArgs>? SwapDropRequested;
     public event EventHandler<CellDropMoveEventArgs>? DropMoveRequested;
+    public event EventHandler<CellClickedEventArgs>? DragMovePreviewStarted;
+    public event EventHandler? DragMovePreviewEnded;
 
     public static readonly DependencyProperty PeriodRowMinHeightProperty =
         DependencyProperty.Register(
@@ -153,9 +158,12 @@ public partial class UnifiedTimetableControl : UserControl
     private Point? _dragStartPoint;
     private CellClickedEventArgs? _dragSource;
     private bool _suppressNextClick;
-    private Border? _dragHoverBorder;
-    private CellClickedEventArgs? _dragHoverTarget;
-    private HoverBadgeKind _dragHoverBadgeKind;
+    private Border? _dragSourceBorder;
+    private double _dragSourceOriginalOpacity = 1.0;
+    private Point _dragClickOffset;
+    private int _grabbedPeriodOffset;
+    private DragPreviewAdorner? _dragPreviewAdorner;
+    private AdornerLayer? _dragPreviewLayer;
     private Border? _activeBadgeBorder;
     private CellClickedEventArgs? _activeBadgeTarget;
     private HoverBadgeKind _activeBadgeKind;
@@ -348,6 +356,14 @@ public partial class UnifiedTimetableControl : UserControl
                             if (match.Assignment.RowSpan > 1)
                                 Grid.SetRowSpan(border, match.Assignment.RowSpan);
                             RootGrid.Children.Add(border);
+                            if (!isSelected
+                                && vm.EditStates.TryGetValue(new UnifiedCellKey(dg.Day, p, g, k), out var moveState)
+                                && moveState.State is ManualMoveCellState.Movable
+                                    or ManualMoveCellState.Warning
+                                    or ManualMoveCellState.Blocked)
+                            {
+                                AddMoveStateOverlay(row, targetCol, match.Assignment.RowSpan, moveState);
+                            }
                             if (isSelected)
                                 AddSelectedOverlay(row, targetCol, match.Assignment.RowSpan);
                             for (int dr = 1; dr < match.Assignment.RowSpan; dr++)
@@ -378,6 +394,34 @@ public partial class UnifiedTimetableControl : UserControl
         if (rowSpan > 1)
             Grid.SetRowSpan(overlay, rowSpan);
         Panel.SetZIndex(overlay, 50);
+        RootGrid.Children.Add(overlay);
+    }
+
+    private void AddMoveStateOverlay(int row, int column, int rowSpan, EditCellState state)
+    {
+        var background = state.State switch
+        {
+            ManualMoveCellState.Movable => MoveAllowedBg,
+            ManualMoveCellState.Warning => MoveWarningBg,
+            ManualMoveCellState.Blocked => MoveBlockedBg,
+            _ => Brushes.Transparent,
+        };
+        var overlay = new Border
+        {
+            BorderBrush = state.State == ManualMoveCellState.Blocked ? MoveBlockedBorder : Brushes.Transparent,
+            BorderThickness = state.State == ManualMoveCellState.Blocked ? new Thickness(2) : new Thickness(0),
+            Background = background,
+            Opacity = 0.62,
+            CornerRadius = new CornerRadius(5),
+            Margin = new Thickness(2),
+            IsHitTestVisible = false,
+            ToolTip = NullIfBlank(state.Reason),
+        };
+        Grid.SetRow(overlay, row);
+        Grid.SetColumn(overlay, column);
+        if (rowSpan > 1)
+            Grid.SetRowSpan(overlay, rowSpan);
+        Panel.SetZIndex(overlay, 45);
         RootGrid.Children.Add(overlay);
     }
 
@@ -698,6 +742,15 @@ public partial class UnifiedTimetableControl : UserControl
     {
         _dragStartPoint = e.GetPosition(this);
         _dragSource = TryBuildCurrentArgs(sender, allowEmpty: false);
+        if (sender is Border border)
+        {
+            _dragClickOffset = e.GetPosition(border);
+            var rowSpan = Math.Max(1, _dragSource?.Assignment?.RowSpan ?? 1);
+            var periodHeight = border.ActualHeight / rowSpan;
+            _grabbedPeriodOffset = periodHeight > 0
+                ? Math.Clamp((int)(_dragClickOffset.Y / periodHeight), 0, rowSpan - 1)
+                : 0;
+        }
     }
 
     private void OnDragSourceMouseMove(object sender, System.Windows.Input.MouseEventArgs e)
@@ -711,48 +764,72 @@ public partial class UnifiedTimetableControl : UserControl
             return;
 
         var current = e.GetPosition(this);
-        if (Math.Abs(current.X - start.X) < SystemParameters.MinimumHorizontalDragDistance
-            && Math.Abs(current.Y - start.Y) < SystemParameters.MinimumVerticalDragDistance)
+        var horizontalThreshold = Math.Max(2.0, SystemParameters.MinimumHorizontalDragDistance * 0.65);
+        var verticalThreshold = Math.Max(2.0, SystemParameters.MinimumVerticalDragDistance * 0.65);
+        if (Math.Abs(current.X - start.X) < horizontalThreshold
+            && Math.Abs(current.Y - start.Y) < verticalThreshold)
             return;
 
-        var data = new DataObject(DragDataFormat, _dragSource);
-        DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
-        ClearDragState();
+        if (sender is Border border)
+            BeginDragVisuals(border, current);
+        try
+        {
+            DragMovePreviewStarted?.Invoke(this, _dragSource);
+            var data = new DataObject(DragDataFormat, new CellDragData(_dragSource, _grabbedPeriodOffset));
+            _suppressNextClick = true;
+            DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
+        }
+        finally
+        {
+            DragMovePreviewEnded?.Invoke(this, EventArgs.Empty);
+            ClearDragState();
+            Dispatcher.BeginInvoke(
+                () => _suppressNextClick = false,
+                DispatcherPriority.Background);
+        }
     }
 
     private void OnCellDragOver(object sender, DragEventArgs e)
     {
         e.Effects = DragDropEffects.None;
+        var cursorPosition = e.GetPosition(this);
+        UpdateDragPreview(cursorPosition);
+        AutoScrollDuringDrag(e);
         if (EnableDragDropMove
-            && e.Data.GetDataPresent(DragDataFormat)
-            && e.Data.GetData(DragDataFormat) is CellClickedEventArgs source
+            && TryGetDragData(e.Data, out var source, out var grabbedPeriodOffset)
             && IsCurrentCellArgs(source)
-            && TryBuildCurrentArgs(sender, allowEmpty: true) is { } target)
+            && TryBuildCurrentArgs(sender, allowEmpty: true) is { } rawTarget)
         {
+            var target = AdjustMoveTarget(rawTarget, grabbedPeriodOffset);
             var moveArgs = new CellDropMoveEventArgs(source, target);
-            var canDrop = DropMoveEvaluator?.Invoke(moveArgs) ?? true;
-            var crossState = source.Assignment != null && target.Assignment != null && !IsSameCellArgs(source, target)
-                ? CrossDropHoverEvaluator?.Invoke(moveArgs) ?? CrossHoverState.Hidden()
+            var canDrop = rawTarget.Assignment == null
+                && (DropMoveEvaluator?.Invoke(moveArgs) ?? true);
+            var rawDropArgs = new CellDropMoveEventArgs(source, rawTarget);
+            var crossState = source.Assignment != null && rawTarget.Assignment != null && !IsSameCellArgs(source, rawTarget)
+                ? CrossDropHoverEvaluator?.Invoke(rawDropArgs) ?? CrossHoverState.Hidden()
                 : CrossHoverState.Hidden();
-            var swapState = source.Assignment != null && target.Assignment != null && !IsSameCellArgs(source, target)
-                ? SwapDropHoverEvaluator?.Invoke(moveArgs) ?? SwapHoverState.Hidden()
+            var swapState = source.Assignment != null && rawTarget.Assignment != null && !IsSameCellArgs(source, rawTarget)
+                ? SwapDropHoverEvaluator?.Invoke(rawDropArgs) ?? SwapHoverState.Hidden()
                 : SwapHoverState.Hidden();
 
             if (sender is Border border
                 && source.Assignment != null
-                && target.Assignment != null)
+                && rawTarget.Assignment != null)
             {
-                if (IsSameCellArgs(source, target))
+                if (IsSameCellArgs(source, rawTarget))
                 {
                     ClearActiveBadge();
                 }
                 else
-                    RefreshDragHoverBadges(border, target, crossState, swapState);
+                    RefreshDragHoverBadges(border, rawTarget, crossState, swapState);
             }
             else
             {
                 ClearActiveBadge();
             }
+
+            if (canDrop && TryGetMoveTargetTopLeft(target, out var targetTopLeft))
+                UpdateDragPreview(cursorPosition, targetTopLeft);
 
             e.Effects = canDrop || crossState.CanCreate || swapState.CanSwap
                 ? DragDropEffects.Move
@@ -765,15 +842,57 @@ public partial class UnifiedTimetableControl : UserControl
         e.Handled = true;
     }
 
+    private static CellClickedEventArgs AdjustMoveTarget(CellClickedEventArgs hoverTarget, int grabbedPeriodOffset) =>
+        new(
+            hoverTarget.Day,
+            hoverTarget.Period - grabbedPeriodOffset,
+            hoverTarget.Grade,
+            hoverTarget.SubColumnIdx,
+            null);
+
+    private bool TryGetMoveTargetTopLeft(CellClickedEventArgs target, out Point topLeft)
+    {
+        topLeft = default;
+        var border = RootGrid.Children
+            .OfType<Border>()
+            .FirstOrDefault(candidate =>
+                candidate.Tag is ValueTuple<int, int, int, int, CellAssignment?> tag
+                && tag.Item1 == target.Day
+                && tag.Item2 == target.Period
+                && tag.Item3 == target.Grade
+                && tag.Item4 == target.SubColumnIdx
+                && tag.Item5 == null);
+        if (border == null)
+            return false;
+
+        topLeft = border.TranslatePoint(new Point(0, 0), this);
+        return true;
+    }
+
+    private static bool TryGetDragData(IDataObject dataObject, out CellClickedEventArgs source, out int grabbedPeriodOffset)
+    {
+        source = null!;
+        grabbedPeriodOffset = 0;
+        if (!dataObject.GetDataPresent(DragDataFormat)
+            || dataObject.GetData(DragDataFormat) is not CellDragData dragData)
+            return false;
+
+        source = dragData.Source;
+        grabbedPeriodOffset = dragData.GrabbedPeriodOffset;
+        return true;
+    }
+
     private void OnCellDrop(object sender, DragEventArgs e)
     {
         try
         {
             if (EnableDragDropMove
-                && e.Data.GetDataPresent(DragDataFormat)
-                && e.Data.GetData(DragDataFormat) is CellClickedEventArgs source
+                && TryGetDragData(e.Data, out var source, out var grabbedPeriodOffset)
                 && IsCurrentCellArgs(source)
-                && TryBuildCurrentArgs(sender, allowEmpty: true) is { } target)
+                && TryBuildCurrentArgs(sender, allowEmpty: true) is { } rawTarget
+                && rawTarget.Assignment == null
+                && AdjustMoveTarget(rawTarget, grabbedPeriodOffset) is { } target
+                && (DropMoveEvaluator?.Invoke(new CellDropMoveEventArgs(source, target)) ?? true))
             {
                 DropMoveRequested?.Invoke(this, new CellDropMoveEventArgs(source, target));
                 _suppressNextClick = true;
@@ -867,8 +986,76 @@ public partial class UnifiedTimetableControl : UserControl
     private void ClearDragState()
     {
         ClearActiveBadge();
+        RestoreDragVisuals();
         _dragStartPoint = null;
         _dragSource = null;
+        _grabbedPeriodOffset = 0;
+    }
+
+    private void BeginDragVisuals(Border sourceBorder, Point currentPosition)
+    {
+        _dragSourceBorder = sourceBorder;
+        _dragSourceOriginalOpacity = sourceBorder.Opacity;
+        sourceBorder.Opacity = 0.45;
+
+        _dragPreviewLayer = AdornerLayer.GetAdornerLayer(this);
+        if (_dragPreviewLayer == null)
+            return;
+
+        _dragPreviewAdorner = new DragPreviewAdorner(this, sourceBorder, sourceBorder.ActualWidth, sourceBorder.ActualHeight, _dragClickOffset);
+        _dragPreviewLayer.Add(_dragPreviewAdorner);
+        UpdateDragPreview(currentPosition);
+    }
+
+    private void UpdateDragPreview(Point position, Point? snappedTopLeft = null)
+    {
+        _dragPreviewAdorner?.Update(position, snappedTopLeft);
+    }
+
+    private void RestoreDragVisuals()
+    {
+        if (_dragSourceBorder != null)
+            _dragSourceBorder.Opacity = _dragSourceOriginalOpacity;
+        if (_dragPreviewAdorner != null && _dragPreviewLayer != null)
+            _dragPreviewLayer.Remove(_dragPreviewAdorner);
+
+        _dragSourceBorder = null;
+        _dragSourceOriginalOpacity = 1.0;
+        _dragPreviewAdorner = null;
+        _dragPreviewLayer = null;
+    }
+
+    private void AutoScrollDuringDrag(DragEventArgs e)
+    {
+        var viewer = FindVisualChild<ScrollViewer>(this);
+        if (viewer == null) return;
+
+        var p = e.GetPosition(viewer);
+        const double edge = 32.0;
+        const double step = 18.0;
+        if (p.Y < edge)
+            viewer.ScrollToVerticalOffset(Math.Max(0, viewer.VerticalOffset - step));
+        else if (p.Y > viewer.ViewportHeight - edge)
+            viewer.ScrollToVerticalOffset(viewer.VerticalOffset + step);
+
+        if (p.X < edge)
+            viewer.ScrollToHorizontalOffset(Math.Max(0, viewer.HorizontalOffset - step));
+        else if (p.X > viewer.ViewportWidth - edge)
+            viewer.ScrollToHorizontalOffset(viewer.HorizontalOffset + step);
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject root) where T : DependencyObject
+    {
+        for (var i = 0; i < VisualTreeHelper.GetChildrenCount(root); i++)
+        {
+            var child = VisualTreeHelper.GetChild(root, i);
+            if (child is T match)
+                return match;
+            var descendant = FindVisualChild<T>(child);
+            if (descendant != null)
+                return descendant;
+        }
+        return null;
     }
 
     private void OnCellClicked(object sender, System.Windows.Input.MouseButtonEventArgs e)
@@ -1018,12 +1205,6 @@ public partial class UnifiedTimetableControl : UserControl
         _activeBadgeTarget = args;
         _activeBadgeKind = kind;
         _activeBadgeIsDrag = isDrag;
-        if (isDrag)
-        {
-            _dragHoverBorder = border;
-            _dragHoverTarget = args;
-            _dragHoverBadgeKind = kind;
-        }
 
         if (!crossState.CanCreate)
         {
@@ -1080,9 +1261,6 @@ public partial class UnifiedTimetableControl : UserControl
         _activeBadgeTarget = null;
         _activeBadgeKind = HoverBadgeKind.None;
         _activeBadgeIsDrag = false;
-        _dragHoverBorder = null;
-        _dragHoverTarget = null;
-        _dragHoverBadgeKind = HoverBadgeKind.None;
     }
 
     private static void ClearCrossSwapBadges(Border border)
@@ -1217,8 +1395,7 @@ public partial class UnifiedTimetableControl : UserControl
         if (!EnableDragDropMove
             || _dragSource?.Assignment == null
             || !IsCurrentCellArgs(_dragSource)
-            || !e.Data.GetDataPresent(DragDataFormat)
-            || e.Data.GetData(DragDataFormat) is not CellClickedEventArgs dragSource
+            || !TryGetDragData(e.Data, out var dragSource, out _)
             || dragSource.Assignment == null
             || !IsCurrentCellArgs(dragSource)
             || !IsSameCellArgs(dragSource, _dragSource))
@@ -1267,4 +1444,48 @@ public partial class UnifiedTimetableControl : UserControl
         0 => "월", 1 => "화", 2 => "수", 3 => "목", 4 => "금",
         _ => "?",
     };
+}
+
+internal sealed class DragPreviewAdorner : Adorner
+{
+    private readonly VisualBrush _brush;
+    private readonly double _width;
+    private readonly double _height;
+    private readonly Point _clickOffset;
+    private Point _position;
+    private Point? _snappedTopLeft;
+
+    public DragPreviewAdorner(UIElement adornedElement, Visual source, double width, double height, Point clickOffset)
+        : base(adornedElement)
+    {
+        _brush = new VisualBrush(source)
+        {
+            Opacity = 0.65,
+            Stretch = Stretch.Fill,
+        };
+        _width = width;
+        _height = height;
+        _clickOffset = clickOffset;
+        IsHitTestVisible = false;
+    }
+
+    public void Update(Point cursorPosition, Point? snappedTopLeft = null)
+    {
+        _position = cursorPosition;
+        _snappedTopLeft = snappedTopLeft;
+        InvalidateVisual();
+    }
+
+    protected override void OnRender(DrawingContext drawingContext)
+    {
+        var topLeft = _snappedTopLeft ?? new Point(
+            _position.X - _clickOffset.X,
+            _position.Y - _clickOffset.Y);
+        var rect = new Rect(
+            topLeft.X,
+            topLeft.Y,
+            _width,
+            _height);
+        drawingContext.DrawRectangle(_brush, null, rect);
+    }
 }
