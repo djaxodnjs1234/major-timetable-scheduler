@@ -5480,6 +5480,52 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
+    public void HandleCellClick_GraduateCourseToDaytime_MovesAndSaves()
+    {
+        _ws.AddCourse(new Course
+        {
+            Id = "G-01",
+            Name = "Graduate Seminar",
+            Grade = AcademicLevels.GraduateGrade,
+            HoursPerWeek = 1,
+            CourseType = "Major",
+            ProfessorId = "P1",
+            Section = 1,
+            BlockStructure = new List<int> { 1 },
+        });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("G-01", 0, Constants.FirstNightPeriod, "R1")));
+        var source = Assert.Single(vm.Grid.Cells.Where(c => c.Assignment.CourseId == "G-01"));
+
+        Assert.True(vm.CanDropMove(
+            source.Day,
+            source.Period,
+            source.Grade,
+            source.SubColumnIdx,
+            source.Assignment,
+            1,
+            1,
+            AcademicLevels.GraduateGrade,
+            0));
+
+        vm.HandleCellClick(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+        vm.HandleCellClick(1, 1, AcademicLevels.GraduateGrade, 0, null);
+
+        Assert.Empty(_dialog.Calls);
+        Assert.DoesNotContain(vm.Conflicts, c => c.Type == ConflictType.AcademicLevelTimeBandViolation);
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "G-01");
+
+        vm.SaveName = "graduate-daytime-manual";
+        vm.SaveTimetableCommand.Execute(null);
+
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "graduate-daytime-manual"));
+        var row = Assert.Single(saved.Assignments.Where(a => a.CourseId == "G-01"));
+        Assert.Equal(1, row.Day);
+        Assert.Equal(1, row.Period);
+    }
+
+    [Fact]
     public void HandleCellClick_LunchTarget_ForceMovesAfterConfirmation()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
@@ -7946,7 +7992,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void SaveSnapshot_UpdatesCourseFixedRoomsFromEditedAssignments()
+    public void SaveSnapshot_PreservesCourseFixedRoomsWhenAssignmentsUseDifferentRoom()
     {
         var vm = LoadManualEditWithRoomSnapshot(
             new[] { CourseForSnapshot("X-01", section: 1, fixedRooms: new[] { "R1" }) },
@@ -7956,23 +8002,49 @@ public class ManualEditViewModelTests : IDisposable
                 new TimetableAssignmentRow("X-01", 0, 2, "R2"),
             });
 
-        vm.SaveName = "course-room-updated";
+        vm.SaveName = "course-room-preserved";
         vm.SaveTimetableCommand.Execute(null);
-        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "course-room-updated"));
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "course-room-preserved"));
         var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(saved.SnapshotJson!)!;
 
-        Assert.Equal(new[] { "R2" }, snapshot.Courses.Single(c => c.Id == "X-01").FixedRooms);
+        Assert.All(saved.Assignments.Where(a => a.CourseId == "X-01"), row => Assert.Equal("R2", row.RoomId));
+        Assert.Equal(new[] { "R1" }, snapshot.Courses.Single(c => c.Id == "X-01").FixedRooms);
     }
 
     [Fact]
-    public void SaveSnapshot_UpdatesScreenTwoCourseDetailRoomAfterImmediateSync()
+    public void SaveSnapshot_DoesNotInferFixedRoomsForAutomaticRoomCourses()
+    {
+        var vm = LoadManualEditWithRoomSnapshot(
+            new[] { CourseForSnapshot("X-01", section: 1, fixedRooms: Array.Empty<string>()) },
+            new[]
+            {
+                new TimetableAssignmentRow("X-01", 0, 1, "R2"),
+                new TimetableAssignmentRow("X-01", 0, 2, "R2"),
+            });
+
+        vm.SaveName = "automatic-room-preserved";
+        vm.SaveTimetableCommand.Execute(null);
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "automatic-room-preserved"));
+        var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(saved.SnapshotJson!)!;
+
+        Assert.All(saved.Assignments.Where(a => a.CourseId == "X-01"), row => Assert.Equal("R2", row.RoomId));
+        Assert.Empty(snapshot.Courses.Single(c => c.Id == "X-01").FixedRooms);
+    }
+
+    [Fact]
+    public void SaveSnapshot_PreservesScreenTwoCourseDetailFixedRoomAfterImmediateSync()
     {
         var main = _sp.GetRequiredService<MainWindowViewModel>();
         var workspace = _sp.GetRequiredService<WorkspaceService>();
+        var rooms = new List<Room>
+        {
+            new() { Id = "R1", Name = "Original Fixed Room" },
+            new() { Id = "R2", Name = "Edited Assignment Room" },
+        };
         var snapshot = new AppData(
             new List<Course> { CourseForSnapshot("X-01", section: 1, fixedRooms: new[] { "R1" }) },
             _ws.Professors.ToList(),
-            SnapshotRooms(),
+            rooms,
             _ws.CrossGroups.ToList(),
             _ws.RetakeScenarios.ToList());
         var record = workspace.SaveTimetable(
@@ -7992,15 +8064,17 @@ public class ManualEditViewModelTests : IDisposable
         main.Manual.ApplyRoomChangeCommand.Execute(null);
         main.Manual.SaveTimetableCommand.Execute(null);
 
-        Assert.Contains(main.Input.CourseGroups, group => group.HeaderFixedRooms == "강의실2");
+        Assert.Contains(main.Input.CourseGroups, group => group.HeaderFixedRooms == "Original Fixed Room");
+        Assert.DoesNotContain(main.Input.CourseGroups, group => group.HeaderFixedRooms == "Edited Assignment Room");
         var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "screen-two-room-detail"));
         var reloaded = _sp.GetRequiredService<DataInputViewModel>();
         reloaded.LoadForExistingTimetable(saved);
-        Assert.Contains(reloaded.CourseGroups, group => group.HeaderFixedRooms == "강의실2");
+        Assert.Contains(reloaded.CourseGroups, group => group.HeaderFixedRooms == "Original Fixed Room");
+        Assert.DoesNotContain(reloaded.CourseGroups, group => group.HeaderFixedRooms == "Edited Assignment Room");
     }
 
     [Fact]
-    public void SaveSnapshot_DoesNotUpdateOtherSectionWithSameCourseId()
+    public void SaveSnapshot_PreservesEachSectionFixedRoomsWithSameCourseId()
     {
         var section1Id = AssignmentId("X-01", 1, "P1", "테스트", 0, 0, 1, "R2");
         var section2Id = AssignmentId("X-01", 2, "P1", "테스트", 1, 0, 1, "R1");
@@ -8008,7 +8082,7 @@ public class ManualEditViewModelTests : IDisposable
             new[]
             {
                 CourseForSnapshot("X-01", section: 1, fixedRooms: new[] { "R1" }),
-                CourseForSnapshot("X-01", section: 2, fixedRooms: new[] { "R1" }),
+                CourseForSnapshot("X-01", section: 2, fixedRooms: new[] { "R3" }),
             },
             new[]
             {
@@ -8023,87 +8097,8 @@ public class ManualEditViewModelTests : IDisposable
         var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(
             Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "section-independent-room")).SnapshotJson!)!;
 
-        Assert.Equal(new[] { "R2" }, snapshot.Courses.Single(c => c.Id == "X-01" && c.Section == 1).FixedRooms);
-        Assert.Equal(new[] { "R1" }, snapshot.Courses.Single(c => c.Id == "X-01" && c.Section == 2).FixedRooms);
-    }
-
-    [Fact]
-    public void SaveSnapshot_UsesMostFrequentRoomWhenCourseUsesDifferentRoomsAtDifferentTimes()
-    {
-        var vm = LoadManualEditWithRoomSnapshot(
-            new[] { CourseForSnapshot("X-01", section: 1, fixedRooms: new[] { "R1" }) },
-            new[]
-            {
-                new TimetableAssignmentRow("X-01", 0, 1, "R2"),
-                new TimetableAssignmentRow("X-01", 0, 2, "R2"),
-                new TimetableAssignmentRow("X-01", 1, 1, "R3"),
-            });
-
-        vm.SaveName = "representative-most-used-room";
-        vm.SaveTimetableCommand.Execute(null);
-        var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(
-            Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "representative-most-used-room")).SnapshotJson!)!;
-
-        Assert.Equal(new[] { "R2" }, snapshot.Courses.Single(c => c.Id == "X-01").FixedRooms);
-    }
-
-    [Fact]
-    public void SaveSnapshot_UsesEarliestRoomWhenRepresentativeRoomCountsTie()
-    {
-        var vm = LoadManualEditWithRoomSnapshot(
-            new[] { CourseForSnapshot("X-01", section: 1, fixedRooms: new[] { "R1" }) },
-            new[]
-            {
-                new TimetableAssignmentRow("X-01", 0, 1, "R3"),
-                new TimetableAssignmentRow("X-01", 1, 1, "R2"),
-            });
-
-        vm.SaveName = "representative-earliest-room";
-        vm.SaveTimetableCommand.Execute(null);
-        var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(
-            Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "representative-earliest-room")).SnapshotJson!)!;
-
-        Assert.Equal(new[] { "R3" }, snapshot.Courses.Single(c => c.Id == "X-01").FixedRooms);
-    }
-
-    [Fact]
-    public void SaveSnapshot_StoresSimultaneousMultiRoomCombination()
-    {
-        var vm = LoadManualEditWithRoomSnapshot(
-            new[] { CourseForSnapshot("X-01", section: 1, fixedRooms: new[] { "R1" }) },
-            new[]
-            {
-                new TimetableAssignmentRow("X-01", 0, 1, "R2", "multi-1"),
-                new TimetableAssignmentRow("X-01", 0, 1, "R3", "multi-1"),
-                new TimetableAssignmentRow("X-01", 0, 2, "R2", "multi-2"),
-                new TimetableAssignmentRow("X-01", 0, 2, "R3", "multi-2"),
-            });
-
-        vm.SaveName = "simultaneous-multi-room";
-        vm.SaveTimetableCommand.Execute(null);
-        var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(
-            Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "simultaneous-multi-room")).SnapshotJson!)!;
-
-        Assert.Equal(new[] { "R2", "R3" }, snapshot.Courses.Single(c => c.Id == "X-01").FixedRooms);
-    }
-
-    [Fact]
-    public void SaveSnapshot_DoesNotTreatTwoHourSequentialRowsAsMultiRoom()
-    {
-        var vm = LoadManualEditWithRoomSnapshot(
-            new[] { CourseForSnapshot("X-01", section: 1, fixedRooms: new[] { "R1" }) },
-            new[]
-            {
-                new TimetableAssignmentRow("X-01", 0, 1, "R2"),
-                new TimetableAssignmentRow("X-01", 0, 2, "R3"),
-            });
-
-        vm.SaveName = "sequential-not-multi-room";
-        vm.SaveTimetableCommand.Execute(null);
-        var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(
-            Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "sequential-not-multi-room")).SnapshotJson!)!;
-
-        Assert.Equal(new[] { "R2" }, snapshot.Courses.Single(c => c.Id == "X-01").FixedRooms);
+        Assert.Equal(new[] { "R1" }, snapshot.Courses.Single(c => c.Id == "X-01" && c.Section == 1).FixedRooms);
+        Assert.Equal(new[] { "R3" }, snapshot.Courses.Single(c => c.Id == "X-01" && c.Section == 2).FixedRooms);
     }
 
     [Fact]

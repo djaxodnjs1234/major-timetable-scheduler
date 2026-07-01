@@ -1811,7 +1811,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             knownRoomIds.Add(roomId);
         }
 
-        var courses = BuildSaveSnapshotCourses(rooms);
+        var courses = BuildSaveSnapshotCourses();
         return _sessionData with { Courses = courses, Rooms = rooms };
     }
 
@@ -1833,120 +1833,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         return normalizedRoomId;
     }
 
-    private List<Course> BuildSaveSnapshotCourses(IReadOnlyList<Room> snapshotRooms)
-    {
-        var courses = _sessionData?.Courses.Select(CloneCourse).ToList() ?? new List<Course>();
-        if (courses.Count == 0) return courses;
-
-        var roomOrder = snapshotRooms
-            .Select((room, index) => (Id: NormalizeRoomId(room.Id), Index: index))
-            .Where(x => !string.IsNullOrWhiteSpace(x.Id))
-            .GroupBy(x => x.Id, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.First().Index, StringComparer.Ordinal);
-        if (roomOrder.Count == 0) return courses;
-
-        var courseByKey = courses
-            .GroupBy(c => CourseSectionKey(c.Id, c.Section), StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
-        var rowsByCourse = new Dictionary<string, List<SolutionAssignment>>(StringComparer.Ordinal);
-        foreach (var assignment in _working)
-        {
-            var course = ResolveCourseForAssignment(assignment);
-            if (course == null) continue;
-
-            var key = CourseSectionKey(course.Id, course.Section);
-            if (!courseByKey.ContainsKey(key)) continue;
-            if (!rowsByCourse.TryGetValue(key, out var rows))
-                rowsByCourse[key] = rows = new List<SolutionAssignment>();
-            rows.Add(assignment);
-        }
-
-        foreach (var (key, rows) in rowsByCourse)
-        {
-            var roomIds = DetermineSnapshotCourseRoomIds(rows, roomOrder);
-            if (roomIds.Count == 0) continue;
-            courseByKey[key].FixedRooms = roomIds.ToList();
-        }
-
-        return courses;
-    }
-
-    private static IReadOnlyList<string> DetermineSnapshotCourseRoomIds(
-        IReadOnlyList<SolutionAssignment> rows,
-        IReadOnlyDictionary<string, int> roomOrder)
-    {
-        var validRows = rows
-            .Select((row, index) => (
-                Row: row,
-                Index: index,
-                RoomId: NormalizeRoomId(row.RoomId)))
-            .Where(x => !string.IsNullOrWhiteSpace(x.RoomId) && roomOrder.ContainsKey(x.RoomId))
-            .ToList();
-        if (validRows.Count == 0) return Array.Empty<string>();
-
-        var slotCombos = validRows
-            .GroupBy(x => (x.Row.Day, x.Row.Period))
-            .Select(g =>
-            {
-                var roomIds = g
-                    .Select(x => x.RoomId)
-                    .Distinct(StringComparer.Ordinal)
-                    .OrderBy(id => roomOrder[id])
-                    .ToList();
-                return new
-                {
-                    RoomIds = roomIds,
-                    Key = string.Join("\u001f", roomIds),
-                    FirstDay = g.Key.Day,
-                    FirstPeriod = g.Key.Period,
-                };
-            })
-            .ToList();
-
-        var multiRoomCombos = slotCombos
-            .Where(slot => slot.RoomIds.Count > 1)
-            .GroupBy(slot => slot.Key, StringComparer.Ordinal)
-            .Select(g => new
-            {
-                RoomIds = g.First().RoomIds,
-                Count = g.Count(),
-                FirstDay = g.Min(x => x.FirstDay),
-                FirstPeriod = g.Where(x => x.FirstDay == g.Min(y => y.FirstDay)).Min(x => x.FirstPeriod),
-            })
-            .OrderByDescending(x => x.Count)
-            .ThenBy(x => x.FirstDay)
-            .ThenBy(x => x.FirstPeriod)
-            .ToList();
-        if (multiRoomCombos.Count > 0)
-            return multiRoomCombos[0].RoomIds;
-
-        var firstUse = validRows
-            .GroupBy(x => x.RoomId, StringComparer.Ordinal)
-            .ToDictionary(
-                g => g.Key,
-                g => g.OrderBy(x => x.Row.Day).ThenBy(x => x.Row.Period).ThenBy(x => x.Index).First(),
-                StringComparer.Ordinal);
-
-        var representative = validRows
-            .GroupBy(x => x.RoomId, StringComparer.Ordinal)
-            .Select(g => new
-            {
-                RoomId = g.Key,
-                Count = g.Count(),
-                First = firstUse[g.Key],
-                RoomOrder = roomOrder[g.Key],
-            })
-            .OrderByDescending(x => x.Count)
-            .ThenBy(x => x.First.Row.Day)
-            .ThenBy(x => x.First.Row.Period)
-            .ThenBy(x => x.RoomOrder)
-            .First();
-
-        return new[] { representative.RoomId };
-    }
-
-    private static string CourseSectionKey(string courseId, int section) =>
-        string.Join("\u001f", courseId, section.ToString(System.Globalization.CultureInfo.InvariantCulture));
+    private List<Course> BuildSaveSnapshotCourses() =>
+        _sessionData?.Courses.Select(CloneCourse).ToList() ?? new List<Course>();
 
     private static Course CloneCourse(Course src) => new()
     {
@@ -2421,10 +2309,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return Block("수업 블록이 시간표 범위를 벗어납니다.");
         if (targetPeriods.Contains(Constants.LunchPeriod))
             return Block("점심시간에는 수업을 배정할 수 없습니다.");
-        var allowedPeriods = AcademicLevelTimePolicy.AllowedPeriods(
-            course.Grade,
-            AllowGraduateDaytimeOverflow);
-        if (targetPeriods.Any(period => !allowedPeriods.Contains(period)))
+        if (targetPeriods.Any(period => !IsAllowedManualEditPeriod(course, period)))
             return Block(AcademicLevelTimeBandBlockedReason);
         if (!allowCrossDisplayColumn && IsCrossDisplayOnlyColumn(targetDay, targetPeriod, targetGrade, targetSubColumnIdx))
             return Block(CrossDisplayColumnBlockedReason);
@@ -3043,6 +2928,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         DetectAllConflicts(_working, strictManualCrossValidation)
             .Where(c => !IsAllowedExistingManualCrossSectionConflict(c, _working))
             .Where(c => !IsIgnoredManualEditConflict(c))
+            .Where(c => !IsAllowedManualGraduateDaytimeConflict(c))
             .Select(ClassifyManualEditConflict)
             .ToList();
 
@@ -3058,6 +2944,20 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private static bool IsIgnoredManualRoomChangeConflict(ConflictItem conflict) =>
         conflict.Type == ConflictType.FixedRoomViolation;
+
+    private bool IsAllowedManualGraduateDaytimeConflict(ConflictItem conflict)
+    {
+        if (conflict.Type != ConflictType.AcademicLevelTimeBandViolation)
+            return false;
+
+        return conflict.Assignments is { Count: > 0 }
+            && conflict.Assignments.All(assignment =>
+        {
+            var course = ResolveCourseForAssignment(assignment);
+            return course?.Grade == AcademicLevels.GraduateGrade
+                && Constants.DaytimePeriods.Contains(assignment.Period);
+        });
+    }
 
     private ConflictDisplayItem BuildConflictDisplayItem(ConflictItem conflict)
     {
@@ -3728,10 +3628,24 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         bool strictManualCrossValidation = false) =>
         DetectAllConflicts(assignment, strictManualCrossValidation)
             .Where(c => c.Type is not ConflictType.FixedRoomViolation and not ConflictType.ProfUnavailableRoomViolation)
+            .Where(c => !IsAllowedManualGraduateDaytimeConflict(c))
             .ToList();
 
     private bool AllowGraduateDaytimeOverflow =>
         AcademicLevelTimePolicy.AllowsGraduateDaytimeOverflow(SessionCourses, SessionCrossGroups);
+
+    private bool IsAllowedManualEditPeriod(Course course, int period)
+    {
+        if (course.Grade == AcademicLevels.GraduateGrade
+            && Constants.DaytimePeriods.Contains(period))
+        {
+            return true;
+        }
+
+        return AcademicLevelTimePolicy
+            .AllowedPeriods(course.Grade, AllowGraduateDaytimeOverflow)
+            .Contains(period);
+    }
 
     private void ClearSelectionCore()
     {
