@@ -954,6 +954,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private bool useSc03 = true;
 
     [ObservableProperty]
+    private bool useSc04 = true;
+
+    [ObservableProperty]
     private string statusMessage = "";
 
     [ObservableProperty]
@@ -1035,7 +1038,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public ManualEditHandoff? BuildEditHandoff()
     {
         if (_editBaseAssignments == null) return null;
-        var solution = new RankedSolution(_editBaseAssignments, new SolutionScore(0, 0, 0, 0));
+        var solution = new RankedSolution(_editBaseAssignments, new SolutionScore(0, 0, 0, 0, 0));
         return new ManualEditHandoff(solution, _editBaseManualCrossLinks, _editBaseId, _editBaseName);
     }
 
@@ -1116,7 +1119,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                     record.Assignments
                         .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
                         .ToList(),
-                    new SolutionScore(0, 0, 0, 0)),
+                    new SolutionScore(0, 0, 0, 0, 0)),
                 (record.ManualCrossLinks ?? Array.Empty<SavedManualCrossLinkRow>()).ToList(),
                 record.Id,
                 record.Name)));
@@ -2037,6 +2040,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 UseSc01 = UseSc01,
                 UseSc02 = UseSc02,
                 UseSc03 = UseSc03,
+                UseSc04 = UseSc04,
             };
             var result = await _solver.SolveAsync(_workspace, options, progress, cts.Token);
             var ranked = _solver.Rank(_workspace, result, topM: 10);

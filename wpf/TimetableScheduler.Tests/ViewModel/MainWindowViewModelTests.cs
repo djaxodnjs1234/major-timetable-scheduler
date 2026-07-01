@@ -384,7 +384,7 @@ public class MainWindowViewModelTests : IDisposable
         {
             new RankedSolution(
                 new[] { new SolutionAssignment("C-01", 0, 1, "R1") },
-                new SolutionScore(0, 0, 0, 0)),
+                new SolutionScore(0, 0, 0, 0, 0)),
         });
 
         main.Results.EditSelectedCommand.Execute(null);
@@ -425,7 +425,7 @@ public class MainWindowViewModelTests : IDisposable
         {
             new RankedSolution(
                 new[] { new SolutionAssignment("C-01", 0, 1, "R1") },
-                new SolutionScore(0, 0, 0, 0)),
+                new SolutionScore(0, 0, 0, 0, 0)),
         }, snapshot);
 
         main.Results.EditSelectedCommand.Execute(null);
@@ -457,7 +457,7 @@ public class MainWindowViewModelTests : IDisposable
         {
             new RankedSolution(
                 new[] { new SolutionAssignment("C-01", 0, 1, "R1") },
-                new SolutionScore(0, 0, 0, 0)),
+                new SolutionScore(0, 0, 0, 0, 0)),
         }, main.Input.CurrentSnapshot());
 
         var beforeGroup = main.Input.CourseGroups.Single();

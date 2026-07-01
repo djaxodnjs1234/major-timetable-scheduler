@@ -1013,6 +1013,13 @@
                                                        ToolTip="같은 과목의 여러 수업 블록이&#x0a;너무 붙지 않게 배치합니다." />
                                         </StackPanel>
                                     </CheckBox>
+                                    <CheckBox IsChecked="{Binding UseSc04}" Margin="0,4">
+                                        <StackPanel Orientation="Horizontal">
+                                            <TextBlock Text="교수별 1교시 수업 2회 이내 선호" />
+                                            <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
+                                                       ToolTip="고정 교과목을 제외하고 교수별 1교시 수업이 주 2회를 넘지 않도록 줄입니다." />
+                                        </StackPanel>
+                                    </CheckBox>
                                 </StackPanel>
                             </Border>
                                 </StackPanel>
