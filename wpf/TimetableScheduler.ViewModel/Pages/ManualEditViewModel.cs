@@ -243,6 +243,28 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private void EditConstraints() => ConstraintEditRequested?.Invoke(this, EventArgs.Empty);
 
     [RelayCommand]
+    private void ValidateAll()
+    {
+        var conflicts = GetManualEditVisibleConflicts(strictManualCrossValidation: true)
+            .Select(c => c with { Description = BuildUserConflictDescription(c) })
+            .ToList();
+        var errorCount = conflicts.Count(c => c.Severity == ConflictSeverity.Error);
+        var warningCount = conflicts.Count(c => c.Severity == ConflictSeverity.Warning);
+        var message = errorCount > 0
+            ? "저장할 수 없는 제약조건 위반이 있습니다."
+            : warningCount > 0
+                ? "주의가 필요한 항목이 있습니다."
+                : "전체 제약조건을 충족합니다.";
+
+        _dialog.ShowValidationResult("전체 검증", message, conflicts);
+        StatusMessage = errorCount > 0
+            ? $"전체 검증: Error {errorCount}건, Warning {warningCount}건"
+            : warningCount > 0
+                ? $"전체 검증: Warning {warningCount}건"
+                : "전체 검증: 전체 제약조건을 충족합니다.";
+    }
+
+    [RelayCommand]
     private void FocusConflict(ConflictDisplayItem? item)
     {
         if (item == null)
@@ -1536,6 +1558,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         return DetectNewRoomChangeConflicts(candidate)
             .Where(c => c.Severity == ConflictSeverity.Error)
+            .Where(c => !IsIgnoredManualRoomChangeConflict(c))
             .ToList();
     }
 
@@ -1962,9 +1985,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private bool ValidateBeforeSave(string blockTitle = "저장 차단")
     {
         RefreshConflicts(strictManualCrossValidation: true);
-        var blockingConflicts = DetectAllConflicts(_working, strictManualCrossValidation: true)
+        var blockingConflicts = GetManualEditVisibleConflicts(strictManualCrossValidation: true)
             .Where(conflict => conflict.Severity == ConflictSeverity.Error)
-            .Where(conflict => !IsIgnoredManualGeneralMoveDisplayConflict(conflict))
             .Select(BuildConflictDisplayItem)
             .ToList();
         var errorCount = blockingConflicts.Count;
@@ -3012,15 +3034,30 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private void RefreshConflicts(bool strictManualCrossValidation = false)
     {
         Conflicts.Clear();
-        foreach (var c in DetectConflicts(_working, strictManualCrossValidation)
-            .Where(c => !IsAllowedExistingManualCrossSectionConflict(c, _working))
-            .Where(c => !IsIgnoredManualGeneralMoveDisplayConflict(c))
+        foreach (var c in GetManualEditVisibleConflicts(strictManualCrossValidation)
             .Where(IsConflictRelevantForCurrentSelection))
             Conflicts.Add(BuildConflictDisplayItem(c));
     }
 
-    private static bool IsIgnoredManualGeneralMoveDisplayConflict(ConflictItem conflict) =>
-        conflict.Type == ConflictType.BlockStartViolation;
+    private IReadOnlyList<ConflictItem> GetManualEditVisibleConflicts(bool strictManualCrossValidation = false) =>
+        DetectAllConflicts(_working, strictManualCrossValidation)
+            .Where(c => !IsAllowedExistingManualCrossSectionConflict(c, _working))
+            .Where(c => !IsIgnoredManualEditConflict(c))
+            .Select(ClassifyManualEditConflict)
+            .ToList();
+
+    private static bool IsIgnoredManualEditConflict(ConflictItem conflict) =>
+        conflict.Type is ConflictType.BlockStartViolation
+            or ConflictType.FixedTimeViolation
+            or ConflictType.FixedRoomViolation;
+
+    private static ConflictItem ClassifyManualEditConflict(ConflictItem conflict) =>
+        conflict.Type == ConflictType.ProfUnavailable
+            ? conflict with { Severity = ConflictSeverity.Warning }
+            : conflict;
+
+    private static bool IsIgnoredManualRoomChangeConflict(ConflictItem conflict) =>
+        conflict.Type == ConflictType.FixedRoomViolation;
 
     private ConflictDisplayItem BuildConflictDisplayItem(ConflictItem conflict)
     {

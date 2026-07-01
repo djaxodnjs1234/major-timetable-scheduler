@@ -21,7 +21,7 @@ public partial class UnifiedTimetableControl : UserControl
     private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xF7, 0xF7, 0xF7));
     private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
     private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xEC, 0xEF, 0xF3));
-    private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0xCB, 0xD5, 0xE1));
+    private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8));
     private static readonly Brush CourseBlockBorder = new SolidColorBrush(Color.FromRgb(0xD8, 0xD8, 0xD8));
     private static readonly Brush CourseTitleText = new SolidColorBrush(Color.FromRgb(0x11, 0x18, 0x27));
     private static readonly Brush CourseMetaText = new SolidColorBrush(Color.FromRgb(0x4B, 0x55, 0x63));
@@ -688,7 +688,7 @@ public partial class UnifiedTimetableControl : UserControl
         var border = new Border
         {
             BorderBrush = DayBoundaryBorder,
-            BorderThickness = new Thickness(1, 0, 0, 0),
+            BorderThickness = new Thickness(1.75, 0, 0, 0),
             Background = Brushes.Transparent,
             IsHitTestVisible = false,
         };

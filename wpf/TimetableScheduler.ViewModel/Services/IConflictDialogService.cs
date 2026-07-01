@@ -16,6 +16,8 @@ public interface IConflictDialogService
 
     void ShowBlockingConflicts(string title, IReadOnlyList<ConflictItem> conflicts) { }
 
+    void ShowValidationResult(string title, string message, IReadOnlyList<ConflictItem> conflicts) { }
+
     bool ConfirmDiscardChanges() => true;
 }
 
@@ -30,6 +32,8 @@ public sealed class NullConflictDialogService : IConflictDialogService
     public bool ConfirmDespiteConflicts(IReadOnlyList<ConflictItem> _) => true;
 
     public void ShowBlockingConflicts(string title, IReadOnlyList<ConflictItem> conflicts) { }
+
+    public void ShowValidationResult(string title, string message, IReadOnlyList<ConflictItem> conflicts) { }
 
     public bool ConfirmDiscardChanges() => true;
 }

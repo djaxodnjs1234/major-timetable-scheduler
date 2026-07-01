@@ -156,6 +156,9 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
     }
 
     public void ShowBlockingConflicts(string title, IReadOnlyList<ConflictItem> conflicts)
+        => ShowValidationResult(title, "제약조건 위반 Error가 남아 있습니다.", conflicts);
+
+    public void ShowValidationResult(string title, string message, IReadOnlyList<ConflictItem> conflicts)
     {
         var dialog = new Window
         {
@@ -177,16 +180,19 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
 
         var header = new TextBlock
         {
-            Text = "제약조건 위반 Error가 남아 있습니다.",
+            Text = message,
             Margin = new Thickness(0, 0, 0, 10),
             TextWrapping = TextWrapping.Wrap,
         };
         Grid.SetRow(header, 0);
         layout.Children.Add(header);
 
-        var conflictList = BuildConflictList(conflicts, null);
-        Grid.SetRow(conflictList, 1);
-        layout.Children.Add(conflictList);
+        if (conflicts.Count > 0)
+        {
+            var conflictList = BuildConflictList(conflicts, null);
+            Grid.SetRow(conflictList, 1);
+            layout.Children.Add(conflictList);
+        }
 
         var ok = new Button
         {
