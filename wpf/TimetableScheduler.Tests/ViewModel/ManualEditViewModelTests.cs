@@ -5494,17 +5494,47 @@ public class ManualEditViewModelTests : IDisposable
         vm.StageSelectedBlockCommand.Execute(null);
 
         Assert.Single(vm.StagedBlocks);
-        Assert.NotNull(vm.SelectedStagedBlock);
+        Assert.Null(vm.SelectedStagedBlock);
+        Assert.Null(vm.SelectedAssignment);
+        Assert.Null(vm.SelectedDay);
+        Assert.Null(vm.SelectedPeriod);
+        Assert.Null(vm.Grid.SelectedCell);
+        Assert.Empty(vm.Grid.EditStates);
         Assert.Empty(vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"));
         Assert.Empty(WorkingAssignments(vm));
 
+        vm.SelectedStagedBlock = Assert.Single(vm.StagedBlocks);
         vm.HandleCellClick(1, 1, 2, 0, null);
 
         Assert.Empty(vm.StagedBlocks);
+        Assert.Null(vm.SelectedStagedBlock);
+        Assert.Null(vm.SelectedAssignment);
+        Assert.Null(vm.SelectedDay);
+        Assert.Null(vm.SelectedPeriod);
+        Assert.Null(vm.Grid.SelectedCell);
+        Assert.Empty(vm.Grid.EditStates);
         var placed = Assert.Single(vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"));
         Assert.Equal((1, 1, 2), (placed.Day, placed.Period, placed.Assignment.RowSpan));
         Assert.Equal(new[] { 1, 2 }, WorkingAssignments(vm).Select(a => a.Period).Distinct().OrderBy(p => p));
         Assert.Equal(new[] { "R1", "R2" }, WorkingAssignments(vm).Select(a => a.RoomId).Distinct().OrderBy(r => r));
+    }
+
+    [Fact]
+    public void StageSelectedBlock_ClickDifferentGradeClearsSelectionWithoutPlacing()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        var source = Assert.Single(vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"));
+
+        vm.SelectCell(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+        vm.StageSelectedBlockCommand.Execute(null);
+
+        vm.HandleCellClick(1, 1, source.Grade + 1, 0, null);
+
+        Assert.Single(vm.StagedBlocks);
+        Assert.Null(vm.SelectedStagedBlock);
+        Assert.Empty(vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"));
+        Assert.Empty(WorkingAssignments(vm));
     }
 
     [Fact]

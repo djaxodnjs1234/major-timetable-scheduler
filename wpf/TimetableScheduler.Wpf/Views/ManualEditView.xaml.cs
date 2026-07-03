@@ -4,6 +4,7 @@ using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -19,6 +20,8 @@ namespace TimetableScheduler.Wpf.Views;
 
 public partial class ManualEditView : UserControl
 {
+    private const int StagedBlocksPerRow = 4;
+
     private enum ExportUnsavedChoice
     {
         SaveThenExport,
@@ -51,6 +54,8 @@ public partial class ManualEditView : UserControl
         GridControl.DropMoveRequested += OnDropMoveRequested;
         GridControl.DragMovePreviewStarted += OnDragMovePreviewStarted;
         GridControl.DragMovePreviewEnded += OnDragMovePreviewEnded;
+        AllowDrop = true;
+        AddHandler(DragDrop.DragOverEvent, new DragEventHandler(OnManualEditDragOverForPreview), true);
         DataContextChanged += OnDataContextChanged;
         Loaded += (_, _) => Focus();
     }
@@ -60,6 +65,10 @@ public partial class ManualEditView : UserControl
     private ManualEditViewModel.StagedBlockItem? _stagedDragItem;
     private Point _stagedDragClickOffset;
     private bool _suppressNextStagedClick;
+    private FrameworkElement? _stagedDragSourceCard;
+    private double _stagedDragSourceOriginalOpacity = 1.0;
+    private DragPreviewAdorner? _stagedDragPreviewAdorner;
+    private AdornerLayer? _stagedDragPreviewLayer;
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
@@ -100,15 +109,25 @@ public partial class ManualEditView : UserControl
         if (DataContext is not ManualEditViewModel vm)
             return;
 
+        Grid? currentRow = null;
+        var currentColumn = 0;
         foreach (var item in vm.StagedBlocks)
         {
+            if (currentRow == null || currentColumn >= StagedBlocksPerRow)
+            {
+                currentRow = CreateStagedBlockRow();
+                StagedBlocksHost.Children.Add(currentRow);
+                currentColumn = 0;
+            }
+
             var card = UnifiedTimetableControl.MakeChipBorder(
                 item.Assignment,
                 GradeToBrushConverter.BrushFor(item.Grade),
                 crossLabel: null);
             card.Tag = item;
             card.Height = Math.Max(GridControl.PeriodRowMinHeight, GridControl.PeriodRowMinHeight * Math.Max(1, item.RowSpan));
-            card.Margin = new Thickness(0, 0, 0, 8);
+            card.Margin = new Thickness(0, 0, 6, 6);
+            card.HorizontalAlignment = HorizontalAlignment.Stretch;
             card.Cursor = Cursors.Hand;
             var isSelected = string.Equals(vm.SelectedStagedBlock?.Id, item.Id, StringComparison.Ordinal);
             card.BorderBrush = isSelected
@@ -120,8 +139,23 @@ public partial class ManualEditView : UserControl
             card.PreviewMouseLeftButtonDown += OnStagedCardMouseDown;
             card.MouseMove += OnStagedCardMouseMove;
             card.PreviewMouseLeftButtonUp += OnStagedCardMouseUp;
-            StagedBlocksHost.Children.Add(card);
+            Grid.SetColumn(card, currentColumn);
+            currentRow.Children.Add(card);
+            currentColumn++;
         }
+    }
+
+    private static Grid CreateStagedBlockRow()
+    {
+        var row = new Grid
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Margin = new Thickness(0, 0, 0, 2),
+        };
+        for (var i = 0; i < StagedBlocksPerRow; i++)
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        return row;
     }
 
     private void OnStagedCardMouseDown(object sender, MouseButtonEventArgs e)
@@ -151,7 +185,6 @@ public partial class ManualEditView : UserControl
             && Math.Abs(current.Y - start.Y) < verticalThreshold)
             return;
 
-        vm.SelectedStagedBlock = _stagedDragItem;
         var rowSpan = Math.Max(1, _stagedDragItem.RowSpan);
         var periodHeight = card.ActualHeight / rowSpan;
         var grabbedPeriodOffset = periodHeight > 0
@@ -166,6 +199,8 @@ public partial class ManualEditView : UserControl
 
         try
         {
+            BeginStagedDragVisuals(card, current);
+            vm.SelectedStagedBlock = _stagedDragItem;
             _suppressNextStagedClick = true;
             DragDrop.DoDragDrop(
                 card,
@@ -176,6 +211,7 @@ public partial class ManualEditView : UserControl
         {
             _stagedDragStartPoint = null;
             _stagedDragItem = null;
+            RestoreStagedDragVisuals();
             Dispatcher.BeginInvoke(
                 () => _suppressNextStagedClick = false,
                 DispatcherPriority.Background);
@@ -202,6 +238,51 @@ public partial class ManualEditView : UserControl
 
         _stagedDragStartPoint = null;
         _stagedDragItem = null;
+    }
+
+    private void BeginStagedDragVisuals(FrameworkElement sourceCard, Point currentPosition)
+    {
+        RestoreStagedDragVisuals();
+        _stagedDragSourceCard = sourceCard;
+        _stagedDragSourceOriginalOpacity = sourceCard.Opacity;
+        sourceCard.Opacity = 0.45;
+
+        _stagedDragPreviewLayer = AdornerLayer.GetAdornerLayer(this);
+        if (_stagedDragPreviewLayer == null)
+            return;
+
+        _stagedDragPreviewAdorner = new DragPreviewAdorner(
+            this,
+            sourceCard,
+            sourceCard.ActualWidth,
+            sourceCard.ActualHeight,
+            _stagedDragClickOffset);
+        _stagedDragPreviewLayer.Add(_stagedDragPreviewAdorner);
+        UpdateStagedDragPreview(currentPosition);
+    }
+
+    private void OnManualEditDragOverForPreview(object sender, DragEventArgs e)
+    {
+        if (_stagedDragPreviewAdorner != null)
+            UpdateStagedDragPreview(e.GetPosition(this));
+    }
+
+    private void UpdateStagedDragPreview(Point position)
+    {
+        _stagedDragPreviewAdorner?.Update(position);
+    }
+
+    private void RestoreStagedDragVisuals()
+    {
+        if (_stagedDragSourceCard != null)
+            _stagedDragSourceCard.Opacity = _stagedDragSourceOriginalOpacity;
+        if (_stagedDragPreviewAdorner != null && _stagedDragPreviewLayer != null)
+            _stagedDragPreviewLayer.Remove(_stagedDragPreviewAdorner);
+
+        _stagedDragSourceCard = null;
+        _stagedDragSourceOriginalOpacity = 1.0;
+        _stagedDragPreviewAdorner = null;
+        _stagedDragPreviewLayer = null;
     }
 
     private void OnStagingEmptyMouseDown(object sender, MouseButtonEventArgs e)

@@ -266,11 +266,11 @@
 
             <!-- Right: Inspector + Conflicts -->
             <Border Grid.Column="2" BorderBrush="#CCC" BorderThickness="1,0,0,0" Background="White" Padding="10,8">
-                <Grid>
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="2*" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
 
                     <ScrollViewer Grid.Row="0"
                                   VerticalScrollBarVisibility="Auto"
@@ -681,7 +681,8 @@
                                 <ScrollViewer VerticalScrollBarVisibility="Auto"
                                               HorizontalScrollBarVisibility="Disabled"
                                               Visibility="{Binding HasStagedBlocks, Converter={StaticResource BoolToVisibility}}">
-                                    <StackPanel x:Name="StagedBlocksHost" />
+                                    <StackPanel x:Name="StagedBlocksHost"
+                                                HorizontalAlignment="Stretch" />
                                 </ScrollViewer>
                             </Grid>
 

@@ -930,6 +930,12 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         if (SelectedStagedBlock != null)
         {
+            if (grade != SelectedStagedBlock.Grade)
+            {
+                ClearStagedBlockSelection();
+                return;
+            }
+
             if (assignment == null)
                 TryPlaceSelectedStagedBlock(day, period, grade, subColumnIdx);
             else
@@ -1768,12 +1774,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         ClearSelectionCore();
         StagedBlocks.Add(staged);
         NotifyStagedBlocksChanged();
-        SelectedStagedBlock = staged;
         Rerender();
-        UpdateStagedPlacementPreview();
         PushUndoSnapshot(snapshot);
 
-        StatusMessage = $"{staged.Title} 블럭을 보관함으로 뺐습니다. 넣을 빈 칸을 클릭하세요.";
+        StatusMessage = $"{staged.Title} 블럭을 보관함으로 뺐습니다. 보관함에서 다시 선택하거나 드래그하세요.";
     }
 
     [RelayCommand]
@@ -2419,14 +2423,6 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         MarkUserEditedAfterLoad();
         Rerender();
         PushUndoSnapshot(snapshot);
-
-        var placedCell = Grid.Cells.FirstOrDefault(c =>
-            c.Day == targetDay
-            && c.Period == targetPeriod
-            && c.Grade == targetGrade
-            && IsSameManualCrossAssignmentIdentity(c.Assignment, item.Assignment));
-        if (placedCell != null)
-            SelectCell(placedCell.Day, placedCell.Period, placedCell.Grade, placedCell.SubColumnIdx, placedCell.Assignment);
 
         StatusMessage = $"{item.Title} 블럭을 {DayName(targetDay)} {FormatPeriodRange(targetPeriod, targetPeriod + item.RowSpan - 1)}에 넣었습니다.";
         return true;
