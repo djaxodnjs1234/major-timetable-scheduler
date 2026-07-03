@@ -111,6 +111,22 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         string SearchText,
         bool IsSelectable);
 
+    public sealed record StagedBlockItem(
+        string Id,
+        CellAssignment Assignment,
+        int SourceDay,
+        int SourcePeriod,
+        IReadOnlyList<SolutionAssignment> Assignments,
+        string Title,
+        string Subtitle,
+        string Detail)
+    {
+        public string AssignmentId => Assignment.AssignmentId;
+        public string CourseId => Assignment.CourseId;
+        public int Grade => Assignment.Grade;
+        public int RowSpan => Assignment.RowSpan;
+    }
+
     private static ManualCrossAssignmentKey BuildManualCrossAssignmentKey(
         CellAssignment assignment,
         int day,
@@ -191,8 +207,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private sealed class ManualEditSnapshot
     {
         public List<SolutionAssignment> Assignments { get; init; } = new();
+        public List<StagedBlockItem> StagedBlocks { get; init; } = new();
         public List<ManualCrossLink> CrossLinks { get; init; } = new();
         public string? SelectedAssignmentId { get; init; }
+        public string? SelectedStagedBlockId { get; init; }
         public int? SelectedDay { get; init; }
         public int? SelectedPeriod { get; init; }
         public int? SelectedGrade { get; init; }
@@ -245,6 +263,14 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     [RelayCommand]
     private void ValidateAll()
     {
+        if (StagedBlocks.Count > 0)
+        {
+            var stagedMessage = $"보관함에 빠져 있는 블럭 {StagedBlocks.Count}개를 시간표에 다시 넣어야 합니다.";
+            _dialog.ShowValidationResult("전체 검증", stagedMessage, Array.Empty<ConflictItem>());
+            StatusMessage = $"전체 검증 Error 1건: {stagedMessage}";
+            return;
+        }
+
         var conflicts = GetManualEditVisibleConflicts(strictManualCrossValidation: true)
             .Select(c => c with { Description = BuildUserConflictDescription(c) })
             .ToList();
@@ -301,6 +327,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     public ObservableCollection<NamedGridViewModel> ProfessorViews { get; } = new();
 
     public ObservableCollection<ConflictDisplayItem> Conflicts { get; } = new();
+    public ObservableCollection<StagedBlockItem> StagedBlocks { get; } = new();
     public IReadOnlyList<ManualCrossLink> WorkingCrossLinks => _workingCrossLinks;
     public IReadOnlyList<string> IgnoredSavedCrossLinkReasons => _ignoredSavedCrossLinkReasons;
     public int LastSavedCrossLinkCount => _lastSavedCrossLinkCount;
@@ -345,10 +372,19 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ApplyRoomChangeCommand))]
     [NotifyCanExecuteChangedFor(nameof(ClearSelectionCommand))]
+    [NotifyCanExecuteChangedFor(nameof(StageSelectedBlockCommand))]
     private CellAssignment? selectedAssignment;
 
     public bool HasSelection => SelectedAssignment != null;
     public bool HasNoSelection => !HasSelection;
+
+    [ObservableProperty]
+    private StagedBlockItem? selectedStagedBlock;
+
+    public bool HasStagedBlocks => StagedBlocks.Count > 0;
+    public bool HasNoStagedBlocks => !HasStagedBlocks;
+    public int StagedBlockCount => StagedBlocks.Count;
+    public bool HasSelectedStagedBlock => SelectedStagedBlock != null;
 
     [ObservableProperty]
     private int? selectedDay;
@@ -583,6 +619,15 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         OnPropertyChanged(nameof(HasNoSelection));
         NotifySelectionDetailChanged();
         ApplyRoomChangeCommand.NotifyCanExecuteChanged();
+        StageSelectedBlockCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnSelectedStagedBlockChanged(StagedBlockItem? value)
+    {
+        OnPropertyChanged(nameof(HasSelectedStagedBlock));
+        if (value != null && SelectedAssignment != null)
+            ClearGridSelectionForStagedPlacement();
+        UpdateStagedPlacementPreview();
     }
 
     partial void OnNewRoomIdChanged(string value)
@@ -706,6 +751,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .Select(g => new CrossGroup { Id = g.Id, BaseIds = g.BaseIds.ToList() })
             .ToList();
         _workingCrossLinks.Clear();
+        StagedBlocks.Clear();
+        SelectedStagedBlock = null;
+        NotifyStagedBlocksChanged();
         _undoStack.Clear();
         _redoStack.Clear();
         NotifyUndoRedoCanExecuteChanged();
@@ -855,6 +903,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             _workingCrossGroups = SessionCrossGroups
                 .Select(g => new CrossGroup { Id = g.Id, BaseIds = g.BaseIds.ToList() })
                 .ToList();
+            StagedBlocks.Clear();
+            SelectedStagedBlock = null;
+            NotifyStagedBlocksChanged();
             _undoStack.Clear();
             _redoStack.Clear();
             NotifyUndoRedoCanExecuteChanged();
@@ -877,6 +928,18 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     public void HandleCellClick(int day, int period, int grade, int subColumnIdx, CellAssignment? assignment)
     {
+        if (SelectedStagedBlock != null)
+        {
+            if (assignment == null)
+                TryPlaceSelectedStagedBlock(day, period, grade, subColumnIdx);
+            else
+            {
+                SelectedStagedBlock = null;
+                SelectCell(day, period, grade, subColumnIdx, assignment);
+            }
+            return;
+        }
+
         if (SelectedAssignment != null)
         {
             if (assignment != null
@@ -1133,6 +1196,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         CellAssignment? source)
     {
         if (source == null) return;
+        SelectedStagedBlock = null;
         SelectedDay = sourceDay;
         SelectedPeriod = sourcePeriod;
         SelectedAssignment = source;
@@ -1142,6 +1206,12 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     public void EndDragMovePreview()
     {
+        if (SelectedStagedBlock != null)
+        {
+            UpdateStagedPlacementPreview();
+            return;
+        }
+
         if (SelectedAssignment != null && SelectedDay is int day && SelectedPeriod is int period)
         {
             Grid.SetEditState(_selectedGridCell, BuildMoveStates(SelectedAssignment, day, period));
@@ -1257,6 +1327,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     public void SelectCell(int day, int period, int grade, int subColumnIdx, CellAssignment? assignment)
     {
         RoomChangeStatusMessage = "";
+        if (assignment != null && SelectedStagedBlock != null)
+            SelectedStagedBlock = null;
         SelectedDay = day;
         SelectedPeriod = period;
         SelectedAssignment = assignment;
@@ -1662,6 +1734,56 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         StatusMessage = "선택이 해제되었습니다.";
     }
 
+    [RelayCommand(CanExecute = nameof(CanStageSelectedBlock))]
+    private void StageSelectedBlock()
+    {
+        if (SelectedAssignment == null || SelectedDay is not int day || SelectedPeriod is not int period)
+        {
+            StatusMessage = "보관할 블럭을 선택하세요.";
+            return;
+        }
+
+        if (SelectedAssignment.IsSchoolFixed)
+        {
+            StatusMessage = "학교 고정 블럭은 보관함으로 뺄 수 없습니다.";
+            return;
+        }
+
+        if (!TryGetMovingAssignments(SelectedAssignment, day, period, out var rows, out var reason))
+        {
+            StatusMessage = reason;
+            return;
+        }
+
+        var snapshot = CaptureSnapshot();
+        var staged = BuildStagedBlockItem(SelectedAssignment, day, period, rows);
+        var key = BuildManualCrossAssignmentKey(SelectedAssignment, day, period);
+
+        _working = _working
+            .Where(a => !IsSameMovingAssignment(a, SelectedAssignment, day, period))
+            .ToList();
+        _workingCrossLinks.RemoveAll(link => link.Contains(key));
+        MarkUserEditedAfterLoad();
+
+        ClearSelectionCore();
+        StagedBlocks.Add(staged);
+        NotifyStagedBlocksChanged();
+        SelectedStagedBlock = staged;
+        Rerender();
+        UpdateStagedPlacementPreview();
+        PushUndoSnapshot(snapshot);
+
+        StatusMessage = $"{staged.Title} 블럭을 보관함으로 뺐습니다. 넣을 빈 칸을 클릭하세요.";
+    }
+
+    [RelayCommand]
+    private void ClearStagedBlockSelection()
+    {
+        SelectedStagedBlock = null;
+        Grid.ClearEditState();
+        StatusMessage = "보관함 선택을 해제했습니다.";
+    }
+
     [RelayCommand(CanExecute = nameof(CanUndo))]
     private void UndoLastMove()
     {
@@ -1872,6 +1994,14 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private bool ValidateBeforeSave(string blockTitle = "저장 차단")
     {
+        if (StagedBlocks.Count > 0)
+        {
+            var message = $"보관함에 빠져 있는 블럭 {StagedBlocks.Count}개를 시간표에 다시 넣어야 저장할 수 있습니다.";
+            _dialog.ShowValidationResult(blockTitle, message, Array.Empty<ConflictItem>());
+            StatusMessage = $"{blockTitle}: {message}";
+            return false;
+        }
+
         RefreshConflicts(strictManualCrossValidation: true);
         var blockingConflicts = GetManualEditVisibleConflicts(strictManualCrossValidation: true)
             .Where(conflict => conflict.Severity == ConflictSeverity.Error)
@@ -2192,6 +2322,244 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             }
         }
         return states;
+    }
+
+    private IReadOnlyDictionary<UnifiedCellKey, EditCellState> BuildStagedPlacementStates(StagedBlockItem item)
+    {
+        var states = new Dictionary<UnifiedCellKey, EditCellState>();
+        var assignment = item.Assignment;
+        foreach (var dayGroup in Grid.DayGroups)
+        {
+            foreach (var gradeColumn in dayGroup.Grades)
+            {
+                if (gradeColumn.Grade is not int grade) continue;
+                for (int subColumnIdx = 0; subColumnIdx < gradeColumn.Width; subColumnIdx++)
+                {
+                    foreach (var p in Constants.Periods)
+                    {
+                        if (grade != assignment.Grade)
+                            continue;
+                        if (IsCrossDisplayOnlyColumn(dayGroup.Day, p, grade, subColumnIdx))
+                            continue;
+
+                        var targetPeriods = GetOccupiedPeriods(p, assignment.RowSpan);
+                        if (GetBlockingAssignments(
+                                assignment,
+                                item.SourceDay,
+                                item.SourcePeriod,
+                                dayGroup.Day,
+                                targetPeriods,
+                                grade,
+                                subColumnIdx,
+                                allowManualCrossOverlap: false).Count > 0)
+                            continue;
+
+                        var validation = ValidateGeneralStagedPlacement(
+                            item,
+                            dayGroup.Day,
+                            p,
+                            grade,
+                            subColumnIdx);
+                        if (validation.BlockingReasons.Count > 0)
+                        {
+                            states[new UnifiedCellKey(dayGroup.Day, p, grade, subColumnIdx)] =
+                                new EditCellState(ManualMoveCellState.Blocked, validation.BlockingReasons[0]);
+                            continue;
+                        }
+
+                        var warning = validation.Warnings.FirstOrDefault();
+                        var state = warning == null
+                            ? new EditCellState(ManualMoveCellState.Movable, "넣기 가능")
+                            : new EditCellState(ManualMoveCellState.Warning, ToUserReason(warning));
+                        foreach (var occupiedPeriod in targetPeriods.Where(Constants.Periods.Contains))
+                        {
+                            states[new UnifiedCellKey(dayGroup.Day, occupiedPeriod, grade, subColumnIdx)] = state;
+                        }
+                    }
+                }
+            }
+        }
+
+        return states;
+    }
+
+    private bool TryPlaceSelectedStagedBlock(int targetDay, int targetPeriod, int targetGrade, int targetSubColumnIdx)
+    {
+        var item = SelectedStagedBlock;
+        if (item == null)
+            return false;
+
+        var validation = ValidateGeneralStagedPlacement(item, targetDay, targetPeriod, targetGrade, targetSubColumnIdx);
+        if (validation.BlockingReasons.Count > 0)
+        {
+            StatusMessage = validation.BlockingReasons[0];
+            return false;
+        }
+
+        if (validation.Warnings.Count > 0
+            && !_dialog.ConfirmDespiteConflicts(
+                validation.Warnings.Select(BuildUserConflictItem).ToList(),
+                BuildConflictSelectionContext(item.Assignment, targetDay, targetPeriod)))
+        {
+            StatusMessage = "블럭 넣기를 취소했습니다.";
+            return false;
+        }
+
+        if (!TryBuildPlacedCandidate(item, targetDay, targetPeriod, out var candidate, out var reason))
+        {
+            StatusMessage = reason;
+            return false;
+        }
+
+        var snapshot = CaptureSnapshot();
+        _working = candidate;
+        StagedBlocks.Remove(item);
+        NotifyStagedBlocksChanged();
+        SelectedStagedBlock = null;
+        MarkUserEditedAfterLoad();
+        Rerender();
+        PushUndoSnapshot(snapshot);
+
+        var placedCell = Grid.Cells.FirstOrDefault(c =>
+            c.Day == targetDay
+            && c.Period == targetPeriod
+            && c.Grade == targetGrade
+            && IsSameManualCrossAssignmentIdentity(c.Assignment, item.Assignment));
+        if (placedCell != null)
+            SelectCell(placedCell.Day, placedCell.Period, placedCell.Grade, placedCell.SubColumnIdx, placedCell.Assignment);
+
+        StatusMessage = $"{item.Title} 블럭을 {DayName(targetDay)} {FormatPeriodRange(targetPeriod, targetPeriod + item.RowSpan - 1)}에 넣었습니다.";
+        return true;
+    }
+
+    public bool CanPlaceSelectedStagedBlock(int targetDay, int targetPeriod, int targetGrade, int targetSubColumnIdx) =>
+        SelectedStagedBlock != null
+        && ValidateGeneralStagedPlacement(
+            SelectedStagedBlock,
+            targetDay,
+            targetPeriod,
+            targetGrade,
+            targetSubColumnIdx).BlockingReasons.Count == 0;
+
+    public bool HandleStagedBlockDrop(int targetDay, int targetPeriod, int targetGrade, int targetSubColumnIdx) =>
+        TryPlaceSelectedStagedBlock(targetDay, targetPeriod, targetGrade, targetSubColumnIdx);
+
+    private ManualMoveValidationResult ValidateGeneralStagedPlacement(
+        StagedBlockItem item,
+        int targetDay,
+        int targetPeriod,
+        int targetGrade,
+        int targetSubColumnIdx)
+    {
+        var assignment = item.Assignment;
+        ManualMoveValidationResult Block(string reason) =>
+            new(new[] { reason }, Array.Empty<ConflictItem>());
+
+        if (targetGrade != assignment.Grade)
+            return Block("보관한 블럭은 같은 학년 칸에만 넣을 수 있습니다.");
+
+        var course = ResolveCourseForCellAssignment(assignment);
+        if (course == null)
+            return Block("수업 정보를 확인할 수 없습니다.");
+
+        var targetPeriods = GetOccupiedPeriods(targetPeriod, assignment.RowSpan);
+        if (targetPeriods.Any(p => !Constants.Periods.Contains(p)))
+            return Block("수업 블럭이 시간표 범위를 벗어납니다.");
+        if (targetPeriods.Contains(Constants.LunchPeriod))
+            return Block("점심시간에는 수업을 배정할 수 없습니다.");
+        if (targetPeriods.Any(period => !IsAllowedManualEditPeriod(course, period)))
+            return Block(AcademicLevelTimeBandBlockedReason);
+        if (IsCrossDisplayOnlyColumn(targetDay, targetPeriod, targetGrade, targetSubColumnIdx))
+            return Block(CrossDisplayColumnBlockedReason);
+
+        var softWarnings = targetPeriods
+            .Select(period => GetSoftWarning(targetDay, period))
+            .Where(warning => !string.IsNullOrWhiteSpace(warning))
+            .Distinct(StringComparer.Ordinal)
+            .Select(warning => new ConflictItem(
+                ConflictType.GradeConflict,
+                ConflictSeverity.Warning,
+                warning!,
+                targetDay,
+                targetPeriod))
+            .ToList();
+
+        if (WouldCreatePatternAroundTarget(assignment, targetDay, targetPeriod, targetGrade))
+            return Block(OneHourAboveTwoHourBlockedReason);
+
+        var blockingAssignments = GetBlockingAssignments(
+            assignment,
+            item.SourceDay,
+            item.SourcePeriod,
+            targetDay,
+            targetPeriods,
+            targetGrade,
+            targetSubColumnIdx,
+            allowManualCrossOverlap: false);
+        if (blockingAssignments.Count > 0)
+        {
+            var blockingCourses = blockingAssignments
+                .Select(a => ResolveCourseForAssignment(a))
+                .Where(c => c != null)
+                .Cast<Course>()
+                .ToList();
+            if (blockingCourses.Any(c => c.IsFixed))
+                return Block("고정 수업이 있는 시간으로는 넣을 수 없습니다.");
+
+            return Block(BlockRangeOverlapBlockedReason);
+        }
+
+        if (!TryBuildPlacedCandidate(item, targetDay, targetPeriod, out var candidate, out var candidateReason))
+            return Block(candidateReason);
+        if (WouldCreateOneHourAboveMultiHourPattern(candidate, new[] { assignment.CourseId }))
+            return Block(OneHourAboveTwoHourBlockedReason);
+
+        var baselineKeys = ConflictKeys(DetectConflicts(_working));
+        var classifiedConflicts = DetectConflicts(candidate)
+            .Where(c => !baselineKeys.Contains(KeyOf(c)))
+            .Where(c => c.Type is not ConflictType.FixedTimeViolation
+                and not ConflictType.BlockStartViolation
+                and not ConflictType.ProfRoomInconsistent)
+            .ToList();
+
+        var warnings = softWarnings
+            .Concat(classifiedConflicts
+                .Where(IsGeneralMoveWarningConflict)
+                .Select(c => c with { Severity = ConflictSeverity.Warning }))
+            .ToList();
+        var blockingReasons = classifiedConflicts
+            .Where(c => !IsGeneralMoveWarningConflict(c))
+            .Select(ToUserReason)
+            .ToList();
+        return new(blockingReasons, warnings);
+    }
+
+    private bool TryBuildPlacedCandidate(
+        StagedBlockItem item,
+        int targetDay,
+        int targetPeriod,
+        out List<SolutionAssignment> candidate,
+        out string reason)
+    {
+        candidate = _working.ToList();
+        reason = "";
+        if (item.Assignments.Count == 0)
+        {
+            reason = "보관한 블럭의 배치 정보를 찾을 수 없습니다.";
+            return false;
+        }
+
+        foreach (var row in item.Assignments)
+        {
+            candidate.Add(new SolutionAssignment(
+                row.CourseId,
+                targetDay,
+                targetPeriod + (row.Period - item.SourcePeriod),
+                row.RoomId,
+                row.AssignmentId));
+        }
+
+        return true;
     }
 
     private ManualMoveValidationResult ValidateGeneralManualMove(
@@ -2916,6 +3284,83 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         OnPropertyChanged(nameof(HasUnsavedChanges));
     }
 
+    private StagedBlockItem BuildStagedBlockItem(
+        CellAssignment assignment,
+        int sourceDay,
+        int sourcePeriod,
+        IReadOnlyList<SolutionAssignment> rows)
+    {
+        var clonedRows = CloneAssignments(rows);
+        var rooms = assignment.Rooms.Count == 0
+            ? "-"
+            : string.Join(", ", assignment.Rooms.Select(RoomDisplayName));
+        var sourceRange = FormatConflictTimeLabel(sourceDay, sourcePeriod, sourcePeriod + assignment.RowSpan - 1);
+        var subtitle = $"{AcademicLevels.DisplayName(assignment.Grade)} / {sourceRange}";
+        var detail = $"{assignment.RowSpan}시간 / {rooms}";
+        return new StagedBlockItem(
+            Guid.NewGuid().ToString("N"),
+            CloneCellAssignment(assignment),
+            sourceDay,
+            sourcePeriod,
+            clonedRows,
+            CourseSectionDisplayName(assignment),
+            subtitle,
+            detail);
+    }
+
+    private static List<SolutionAssignment> CloneAssignments(IEnumerable<SolutionAssignment> rows) =>
+        rows.Select(a => new SolutionAssignment(a.CourseId, a.Day, a.Period, a.RoomId, a.AssignmentId)).ToList();
+
+    private static CellAssignment CloneCellAssignment(CellAssignment assignment) =>
+        assignment with
+        {
+            Rooms = assignment.Rooms.ToList(),
+            CoteachProfIds = assignment.CoteachProfIds.ToList(),
+            CoteachProfDisplayNames = assignment.CoteachProfDisplayNames.ToList(),
+            RoomDisplayNames = assignment.RoomDisplayNames.ToList(),
+        };
+
+    private static StagedBlockItem CloneStagedBlock(StagedBlockItem item) =>
+        item with
+        {
+            Assignment = CloneCellAssignment(item.Assignment),
+            Assignments = CloneAssignments(item.Assignments),
+        };
+
+    private void NotifyStagedBlocksChanged()
+    {
+        OnPropertyChanged(nameof(HasStagedBlocks));
+        OnPropertyChanged(nameof(HasNoStagedBlocks));
+        OnPropertyChanged(nameof(StagedBlockCount));
+        OnPropertyChanged(nameof(HasUnsavedChanges));
+    }
+
+    private void UpdateStagedPlacementPreview()
+    {
+        if (SelectedStagedBlock == null)
+        {
+            if (SelectedAssignment == null)
+                Grid.ClearEditState();
+            return;
+        }
+
+        Grid.SetEditState(null, BuildStagedPlacementStates(SelectedStagedBlock));
+    }
+
+    private void ClearGridSelectionForStagedPlacement()
+    {
+        SelectedAssignment = null;
+        SelectedDay = null;
+        SelectedPeriod = null;
+        _selectedGridCell = null;
+        NewRoomId = "";
+        SelectedOldRoomId = "";
+        SelectedReplacementRoomId = "";
+        OnPropertyChanged(nameof(SelectedSlotDisplayText));
+        NotifySelectionDetailChanged();
+        RefreshConflicts();
+    }
+
     private void RefreshConflicts(bool strictManualCrossValidation = false)
     {
         Conflicts.Clear();
@@ -3507,6 +3952,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             : $"{startPeriod}~{endPeriod}교시";
         return $"{DayName(day)} {periodLabel}";
     }
+
+    private static string FormatPeriodRange(int startPeriod, int endPeriod) =>
+        startPeriod == endPeriod ? $"{startPeriod}교시" : $"{startPeriod}~{endPeriod}교시";
 
     private static bool IsDisplayableSlot(int day, int period) =>
         day is >= 0 and <= 4 && period > 0;
@@ -4271,6 +4719,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         Assignments = _working
             .Select(a => new SolutionAssignment(a.CourseId, a.Day, a.Period, a.RoomId, a.AssignmentId))
             .ToList(),
+        StagedBlocks = StagedBlocks
+            .Select(CloneStagedBlock)
+            .ToList(),
         CrossLinks = _workingCrossLinks
             .Select(l => new ManualCrossLink(
                 l.CourseIdA,
@@ -4284,6 +4735,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 l.TargetKey))
             .ToList(),
         SelectedAssignmentId = SelectedAssignment?.AssignmentId,
+        SelectedStagedBlockId = SelectedStagedBlock?.Id,
         SelectedDay = SelectedDay,
         SelectedPeriod = SelectedPeriod,
         SelectedGrade = _selectedGridCell?.Grade,
@@ -4302,6 +4754,15 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (!leftAssignments.SequenceEqual(rightAssignments, StringComparer.Ordinal))
             return false;
 
+        var leftStagedBlocks = left.StagedBlocks
+            .Select(StagedBlockContentKey)
+            .OrderBy(x => x, StringComparer.Ordinal);
+        var rightStagedBlocks = right.StagedBlocks
+            .Select(StagedBlockContentKey)
+            .OrderBy(x => x, StringComparer.Ordinal);
+        if (!leftStagedBlocks.SequenceEqual(rightStagedBlocks, StringComparer.Ordinal))
+            return false;
+
         var leftCrossLinks = left.CrossLinks
             .Select(CrossLinkContentKey)
             .OrderBy(x => x, StringComparer.Ordinal);
@@ -4313,6 +4774,16 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
         return left.ShowRoomAdditionalInfo == right.ShowRoomAdditionalInfo;
     }
+
+    private static string StagedBlockContentKey(StagedBlockItem item) =>
+        string.Join(
+            "\u001f",
+            item.Id,
+            item.SourceDay,
+            item.SourcePeriod,
+            string.Join("\u001e", item.Assignments
+                .Select(a => string.Join("\u001d", a.CourseId, a.Day, a.Period, a.RoomId, a.AssignmentId))
+                .OrderBy(x => x, StringComparer.Ordinal)));
 
     private static string CrossLinkContentKey(ManualCrossLink link) =>
         string.Join(
@@ -4341,10 +4812,16 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         _working = snapshot.Assignments
             .Select(a => new SolutionAssignment(a.CourseId, a.Day, a.Period, a.RoomId, a.AssignmentId))
             .ToList();
+        StagedBlocks.Clear();
+        foreach (var item in snapshot.StagedBlocks.Select(CloneStagedBlock))
+            StagedBlocks.Add(item);
+        NotifyStagedBlocksChanged();
         RestoreCrossLinks(snapshot.CrossLinks);
         ShowRoomAdditionalInfo = snapshot.ShowRoomAdditionalInfo;
         Rerender();
         RestoreSelectionFromSnapshot(snapshot);
+        SelectedStagedBlock = StagedBlocks.FirstOrDefault(item =>
+            string.Equals(item.Id, snapshot.SelectedStagedBlockId, StringComparison.Ordinal));
     }
 
     private void RestoreBaselineForDiscard()
@@ -4354,12 +4831,19 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         _working = _resetBaselineSnapshot.Assignments
             .Select(a => new SolutionAssignment(a.CourseId, a.Day, a.Period, a.RoomId, a.AssignmentId))
             .ToList();
+        StagedBlocks.Clear();
+        foreach (var item in _resetBaselineSnapshot.StagedBlocks.Select(CloneStagedBlock))
+            StagedBlocks.Add(item);
+        SelectedStagedBlock = StagedBlocks.FirstOrDefault(item =>
+            string.Equals(item.Id, _resetBaselineSnapshot.SelectedStagedBlockId, StringComparison.Ordinal));
+        NotifyStagedBlocksChanged();
         RestoreCrossLinks(_resetBaselineSnapshot.CrossLinks);
         ShowRoomAdditionalInfo = _resetBaselineSnapshot.ShowRoomAdditionalInfo;
         new ManualEditUserSettings { ShowRoomAdditionalInfo = ShowRoomAdditionalInfo }.Save();
         _redoStack.Clear();
         Rerender();
         ClearSelectionCore();
+        UpdateStagedPlacementPreview();
         NotifyUndoRedoCanExecuteChanged();
         OnPropertyChanged(nameof(HasUnsavedChanges));
     }
@@ -5076,6 +5560,12 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private bool CanApplyRoomChange() => CanApplyInspectorChanges;
 
     private bool CanClearSelection() => SelectedAssignment != null;
+
+    private bool CanStageSelectedBlock() =>
+        SelectedAssignment != null
+        && SelectedDay != null
+        && SelectedPeriod != null
+        && !SelectedAssignment.IsSchoolFixed;
 
     private bool CanUndo() => _undoStack.Count > 0;
 
