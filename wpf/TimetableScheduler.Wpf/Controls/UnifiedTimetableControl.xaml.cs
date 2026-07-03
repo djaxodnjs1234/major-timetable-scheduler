@@ -11,7 +11,7 @@ namespace TimetableScheduler.Wpf.Controls;
 
 public partial class UnifiedTimetableControl : UserControl
 {
-    private const string DragDataFormat = "TimetableScheduler.UnifiedCellDrag";
+    internal const string DragDataFormat = "TimetableScheduler.UnifiedCellDrag";
     internal const int MaxCardTitleLinesPerBlock = 2;
     internal const int MaxCardProfessorLinesPerBlock = 2;
     internal const int MaxCardRoomLinesPerBlock = 1;
@@ -83,7 +83,7 @@ public partial class UnifiedTimetableControl : UserControl
         }
     }
 
-    private sealed record CellDragData(CellClickedEventArgs Source, int GrabbedPeriodOffset);
+    private sealed record CellDragData(CellClickedEventArgs Source, int GrabbedPeriodOffset, bool IsExternal);
 
     public event EventHandler<CellClickedEventArgs>? CellClicked;
     public event EventHandler<CellClickedEventArgs>? CrossAddRequested;
@@ -93,6 +93,24 @@ public partial class UnifiedTimetableControl : UserControl
     public event EventHandler<CellDropMoveEventArgs>? DropMoveRequested;
     public event EventHandler<CellClickedEventArgs>? DragMovePreviewStarted;
     public event EventHandler? DragMovePreviewEnded;
+
+    internal static IDataObject CreateExternalAssignmentDragData(
+        CellClickedEventArgs source,
+        int grabbedPeriodOffset) =>
+        new DataObject(DragDataFormat, new CellDragData(source, grabbedPeriodOffset, IsExternal: true));
+
+    internal static bool TryGetCellDragData(
+        IDataObject dataObject,
+        out CellClickedEventArgs source,
+        out int grabbedPeriodOffset) =>
+        TryGetDragData(dataObject, out source, out grabbedPeriodOffset, out _);
+
+    internal static bool TryGetCellDragData(
+        IDataObject dataObject,
+        out CellClickedEventArgs source,
+        out int grabbedPeriodOffset,
+        out bool isExternal) =>
+        TryGetDragData(dataObject, out source, out grabbedPeriodOffset, out isExternal);
 
     public static readonly DependencyProperty PeriodRowMinHeightProperty =
         DependencyProperty.Register(
@@ -770,7 +788,7 @@ public partial class UnifiedTimetableControl : UserControl
         try
         {
             DragMovePreviewStarted?.Invoke(this, _dragSource);
-            var data = new DataObject(DragDataFormat, new CellDragData(_dragSource, _grabbedPeriodOffset));
+            var data = new DataObject(DragDataFormat, new CellDragData(_dragSource, _grabbedPeriodOffset, IsExternal: false));
             _suppressNextClick = true;
             DragDrop.DoDragDrop(this, data, DragDropEffects.Move);
         }
@@ -791,8 +809,8 @@ public partial class UnifiedTimetableControl : UserControl
         UpdateDragPreview(cursorPosition);
         AutoScrollDuringDrag(e);
         if (EnableDragDropMove
-            && TryGetDragData(e.Data, out var source, out var grabbedPeriodOffset)
-            && IsCurrentCellArgs(source)
+            && TryGetDragData(e.Data, out var source, out var grabbedPeriodOffset, out var isExternal)
+            && (isExternal || IsCurrentCellArgs(source))
             && TryBuildCurrentArgs(sender, allowEmpty: true) is { } rawTarget)
         {
             var target = AdjustMoveTarget(rawTarget, grabbedPeriodOffset);
@@ -800,14 +818,15 @@ public partial class UnifiedTimetableControl : UserControl
             var canDrop = rawTarget.Assignment == null
                 && (DropMoveEvaluator?.Invoke(moveArgs) ?? true);
             var rawDropArgs = new CellDropMoveEventArgs(source, rawTarget);
-            var crossState = source.Assignment != null && rawTarget.Assignment != null && !IsSameCellArgs(source, rawTarget)
+            var crossState = !isExternal && source.Assignment != null && rawTarget.Assignment != null && !IsSameCellArgs(source, rawTarget)
                 ? CrossDropHoverEvaluator?.Invoke(rawDropArgs) ?? CrossHoverState.Hidden()
                 : CrossHoverState.Hidden();
-            var swapState = source.Assignment != null && rawTarget.Assignment != null && !IsSameCellArgs(source, rawTarget)
+            var swapState = !isExternal && source.Assignment != null && rawTarget.Assignment != null && !IsSameCellArgs(source, rawTarget)
                 ? SwapDropHoverEvaluator?.Invoke(rawDropArgs) ?? SwapHoverState.Hidden()
                 : SwapHoverState.Hidden();
 
             if (sender is Border border
+                && !isExternal
                 && source.Assignment != null
                 && rawTarget.Assignment != null)
             {
@@ -864,16 +883,25 @@ public partial class UnifiedTimetableControl : UserControl
         return true;
     }
 
-    private static bool TryGetDragData(IDataObject dataObject, out CellClickedEventArgs source, out int grabbedPeriodOffset)
+    private static bool TryGetDragData(IDataObject dataObject, out CellClickedEventArgs source, out int grabbedPeriodOffset) =>
+        TryGetDragData(dataObject, out source, out grabbedPeriodOffset, out _);
+
+    private static bool TryGetDragData(
+        IDataObject dataObject,
+        out CellClickedEventArgs source,
+        out int grabbedPeriodOffset,
+        out bool isExternal)
     {
         source = null!;
         grabbedPeriodOffset = 0;
+        isExternal = false;
         if (!dataObject.GetDataPresent(DragDataFormat)
             || dataObject.GetData(DragDataFormat) is not CellDragData dragData)
             return false;
 
         source = dragData.Source;
         grabbedPeriodOffset = dragData.GrabbedPeriodOffset;
+        isExternal = dragData.IsExternal;
         return true;
     }
 
@@ -882,8 +910,8 @@ public partial class UnifiedTimetableControl : UserControl
         try
         {
             if (EnableDragDropMove
-                && TryGetDragData(e.Data, out var source, out var grabbedPeriodOffset)
-                && IsCurrentCellArgs(source)
+                && TryGetDragData(e.Data, out var source, out var grabbedPeriodOffset, out var isExternal)
+                && (isExternal || IsCurrentCellArgs(source))
                 && TryBuildCurrentArgs(sender, allowEmpty: true) is { } rawTarget
                 && rawTarget.Assignment == null
                 && AdjustMoveTarget(rawTarget, grabbedPeriodOffset) is { } target

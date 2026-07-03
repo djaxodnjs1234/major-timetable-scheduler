@@ -379,6 +379,68 @@ public class HcCoverageTests
     }
 
     [Fact]
+    public void HC22_AutoCourseBlocks_MustUseOneSharedRoom()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "A-01",
+                Name = "A",
+                Grade = 1,
+                HoursPerWeek = 3,
+                ProfessorId = "P1",
+                BlockStructure = new List<int> { 1, 2 },
+            },
+        };
+        var profs = new List<Professor> { new() { Id = "P1", Name = "P1" } };
+        var rooms = new List<Room>
+        {
+            new() { Id = "R1", Name = "R1" },
+            new() { Id = "R2", Name = "R2" },
+        };
+
+        var build = ModelBuilder.Build(courses, profs, rooms);
+        build.Model.Add(build.X[("A-01", 0, 1, "R1")] == 1);
+        build.Model.Add(build.X[("A-01", 1, 3, "R2")] == 1);
+        build.Model.Add(build.X[("A-01", 1, 4, "R2")] == 1);
+
+        var solver = new CpSolver();
+        Assert.Equal(CpSolverStatus.Infeasible, solver.Solve(build.Model));
+    }
+
+    [Fact]
+    public void HC22_AutoFixedTimeCourseSlots_MustUseOneSharedRoom()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "A-01",
+                Name = "A",
+                Grade = 1,
+                HoursPerWeek = 2,
+                ProfessorId = "P1",
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, 1), new(2, 3) },
+            },
+        };
+        var profs = new List<Professor> { new() { Id = "P1", Name = "P1" } };
+        var rooms = new List<Room>
+        {
+            new() { Id = "R1", Name = "R1" },
+            new() { Id = "R2", Name = "R2" },
+        };
+
+        var build = ModelBuilder.Build(courses, profs, rooms);
+        build.Model.Add(build.X[("A-01", 0, 1, "R1")] == 1);
+        build.Model.Add(build.X[("A-01", 2, 3, "R2")] == 1);
+
+        var solver = new CpSolver();
+        Assert.Equal(CpSolverStatus.Infeasible, solver.Solve(build.Model));
+    }
+
+    [Fact]
     public void HC15_ThreeHourBlocks_DoNotRequireSameDayAdjacency()
     {
         var courses = new List<Course>

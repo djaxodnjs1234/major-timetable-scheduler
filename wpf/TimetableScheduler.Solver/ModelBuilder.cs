@@ -76,7 +76,7 @@ public static class ModelBuilder
         BlockHcs.AddHc19_Len2StartPeriods(model, startVarsByBlock, courses, crosses);
         BlockHcs.AddHc20_BlockDaysDistinct(model, dayVarsByCourse);
         BlockHcs.AddHc21_ProfRoomEligibility(model, x, courses, rooms, profMap);
-        BlockHcs.AddHc22_SectionRoomConsistent(model, x, courses, rooms);
+        BlockHcs.AddHc22_AutoCourseRoomConsistent(model, x, courses, rooms);
 
         return new BuildResult
         {
