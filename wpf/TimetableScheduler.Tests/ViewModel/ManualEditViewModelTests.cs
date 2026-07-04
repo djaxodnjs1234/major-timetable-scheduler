@@ -5480,6 +5480,103 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
+    public void StageSelectedBlock_MultiRoomBlock_RemovesCompleteBlockAndPlaceRestoresRows()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 1, "R2"),
+            new SolutionAssignment("X-01", 0, 2, "R1"),
+            new SolutionAssignment("X-01", 0, 2, "R2")));
+        var source = Assert.Single(vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"));
+
+        vm.SelectCell(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+        vm.StageSelectedBlockCommand.Execute(null);
+
+        Assert.Single(vm.StagedBlocks);
+        Assert.Null(vm.SelectedStagedBlock);
+        Assert.Null(vm.SelectedAssignment);
+        Assert.Null(vm.SelectedDay);
+        Assert.Null(vm.SelectedPeriod);
+        Assert.Null(vm.Grid.SelectedCell);
+        Assert.Empty(vm.Grid.EditStates);
+        Assert.Empty(vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"));
+        Assert.Empty(WorkingAssignments(vm));
+
+        vm.SelectedStagedBlock = Assert.Single(vm.StagedBlocks);
+        vm.HandleCellClick(1, 1, 2, 0, null);
+
+        Assert.Empty(vm.StagedBlocks);
+        Assert.Null(vm.SelectedStagedBlock);
+        Assert.Null(vm.SelectedAssignment);
+        Assert.Null(vm.SelectedDay);
+        Assert.Null(vm.SelectedPeriod);
+        Assert.Null(vm.Grid.SelectedCell);
+        Assert.Empty(vm.Grid.EditStates);
+        var placed = Assert.Single(vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"));
+        Assert.Equal((1, 1, 2), (placed.Day, placed.Period, placed.Assignment.RowSpan));
+        Assert.Equal(new[] { 1, 2 }, WorkingAssignments(vm).Select(a => a.Period).Distinct().OrderBy(p => p));
+        Assert.Equal(new[] { "R1", "R2" }, WorkingAssignments(vm).Select(a => a.RoomId).Distinct().OrderBy(r => r));
+    }
+
+    [Fact]
+    public void StageSelectedBlock_ClickDifferentGradeClearsSelectionWithoutPlacing()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        var source = Assert.Single(vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"));
+
+        vm.SelectCell(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+        vm.StageSelectedBlockCommand.Execute(null);
+
+        vm.HandleCellClick(1, 1, source.Grade + 1, 0, null);
+
+        Assert.Single(vm.StagedBlocks);
+        Assert.Null(vm.SelectedStagedBlock);
+        Assert.Empty(vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"));
+        Assert.Empty(WorkingAssignments(vm));
+    }
+
+    [Fact]
+    public void StageSelectedBlock_UndoRedo_RestoresStagedState()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 2, "R1")));
+        var source = Assert.Single(vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"));
+
+        vm.SelectCell(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+        vm.StageSelectedBlockCommand.Execute(null);
+
+        vm.UndoCommand.Execute(null);
+
+        Assert.Empty(vm.StagedBlocks);
+        Assert.Contains(vm.Grid.Cells, c => c.Assignment.CourseId == "X-01" && c.Day == 0 && c.Period == 1);
+
+        vm.RedoCommand.Execute(null);
+
+        Assert.Single(vm.StagedBlocks);
+        Assert.Empty(vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"));
+    }
+
+    [Fact]
+    public void SaveTimetable_WithStagedBlock_IsBlocked()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 0, 1, "R1")));
+        var source = Assert.Single(vm.Grid.Cells.Where(c => c.Assignment.CourseId == "X-01"));
+        vm.SelectCell(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+        vm.StageSelectedBlockCommand.Execute(null);
+
+        vm.SaveName = "staged-block-save-blocked";
+        vm.SaveTimetableCommand.Execute(null);
+
+        Assert.Empty(_ws.SavedTimetables.Where(t => t.Name == "staged-block-save-blocked"));
+        Assert.Single(vm.StagedBlocks);
+    }
+
+    [Fact]
     public void HandleCellClick_GraduateCourseToDaytime_MovesAndSaves()
     {
         _ws.AddCourse(new Course

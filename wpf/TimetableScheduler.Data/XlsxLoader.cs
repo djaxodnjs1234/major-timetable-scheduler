@@ -94,6 +94,7 @@ public static class XlsxLoader
             var professorName = RequiredCell(row, headerMap, "담당교수");
             var department = RequiredCell(row, headerMap, "수강학과");
             var scheduleText = RequiredCell(row, headerMap, "강의시간(강의실)");
+            var enrollment = OptionalPositiveInt(row, headerMap, "수강 인원", row.RowNumber());
 
             if (!AcademicLevels.TryParse(gradeRaw, out var grade) || !AcademicLevels.AllGrades.Contains(grade))
                 Fail($"Invalid grade at row {row.RowNumber()}: {gradeRaw}");
@@ -145,6 +146,7 @@ public static class XlsxLoader
                     HoursPerWeek = hours,
                     CourseType = courseType,
                     ProfessorId = professorName,
+                    ExpectedEnrollment = enrollment,
                     Section = explicitSection,
                     Department = department,
                     FixedRooms = fixedRoom != null ? new List<string> { fixedRoom } : new List<string>(),
@@ -168,6 +170,7 @@ public static class XlsxLoader
                         HoursPerWeek = hours,
                         CourseType = courseType,
                         ProfessorId = professorName,
+                        ExpectedEnrollment = enrollment,
                         Section = 1,
                         Department = department,
                         FixedRooms = fixedRoom != null ? new List<string> { fixedRoom } : new List<string>(),
@@ -295,6 +298,17 @@ public static class XlsxLoader
         if (string.IsNullOrWhiteSpace(value))
             Fail($"Missing required cell '{header}' at row {row.RowNumber()}");
         return value;
+    }
+
+    private static int? OptionalPositiveInt(IXLRow row, HeaderMap headerMap, string header, int rowNumber)
+    {
+        if (!headerMap.Columns.TryGetValue(NormalizeHeader(header), out var column))
+            return null;
+        var value = row.Cell(column).GetString().Trim();
+        if (string.IsNullOrWhiteSpace(value))
+            return null;
+        var parsed = ParseRequiredInt(value, header, rowNumber);
+        return parsed > 0 ? parsed : null;
     }
 
     private static int ParseRequiredInt(string raw, string header, int rowNumber)

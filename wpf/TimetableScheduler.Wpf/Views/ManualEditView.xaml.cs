@@ -1,7 +1,10 @@
 using System.Diagnostics;
+using System.Collections.Specialized;
+using System.ComponentModel;
 using System.Runtime.CompilerServices;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Documents;
 using System.Windows.Input;
 using System.Windows.Media;
 using System.Windows.Threading;
@@ -9,6 +12,7 @@ using Microsoft.Win32;
 using TimetableScheduler.ViewModel.Grid;
 using TimetableScheduler.ViewModel.Pages;
 using TimetableScheduler.Wpf.Controls;
+using TimetableScheduler.Wpf.Converters;
 
 [assembly: InternalsVisibleTo("TimetableScheduler.Wpf.Tests")]
 
@@ -16,6 +20,8 @@ namespace TimetableScheduler.Wpf.Views;
 
 public partial class ManualEditView : UserControl
 {
+    private const int StagedBlocksPerRow = 4;
+
     private enum ExportUnsavedChoice
     {
         SaveThenExport,
@@ -48,20 +54,296 @@ public partial class ManualEditView : UserControl
         GridControl.DropMoveRequested += OnDropMoveRequested;
         GridControl.DragMovePreviewStarted += OnDragMovePreviewStarted;
         GridControl.DragMovePreviewEnded += OnDragMovePreviewEnded;
+        AllowDrop = true;
+        AddHandler(DragDrop.DragOverEvent, new DragEventHandler(OnManualEditDragOverForPreview), true);
         DataContextChanged += OnDataContextChanged;
         Loaded += (_, _) => Focus();
     }
 
     private ManualEditViewModel? _subscribedViewModel;
+    private Point? _stagedDragStartPoint;
+    private ManualEditViewModel.StagedBlockItem? _stagedDragItem;
+    private Point _stagedDragClickOffset;
+    private bool _suppressNextStagedClick;
+    private FrameworkElement? _stagedDragSourceCard;
+    private double _stagedDragSourceOriginalOpacity = 1.0;
+    private DragPreviewAdorner? _stagedDragPreviewAdorner;
+    private AdornerLayer? _stagedDragPreviewLayer;
 
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (_subscribedViewModel != null)
+        {
             _subscribedViewModel.ConflictFocusRequested -= OnConflictFocusRequested;
+            _subscribedViewModel.StagedBlocks.CollectionChanged -= OnStagedBlocksChanged;
+            ((INotifyPropertyChanged)_subscribedViewModel).PropertyChanged -= OnManualEditPropertyChanged;
+        }
 
         _subscribedViewModel = e.NewValue as ManualEditViewModel;
         if (_subscribedViewModel != null)
+        {
             _subscribedViewModel.ConflictFocusRequested += OnConflictFocusRequested;
+            _subscribedViewModel.StagedBlocks.CollectionChanged += OnStagedBlocksChanged;
+            ((INotifyPropertyChanged)_subscribedViewModel).PropertyChanged += OnManualEditPropertyChanged;
+        }
+
+        RebuildStagedBlockCards();
+    }
+
+    private void OnStagedBlocksChanged(object? sender, NotifyCollectionChangedEventArgs e) =>
+        Dispatcher.BeginInvoke(new Action(RebuildStagedBlockCards), DispatcherPriority.Background);
+
+    private void OnManualEditPropertyChanged(object? sender, PropertyChangedEventArgs e)
+    {
+        if (e.PropertyName is nameof(ManualEditViewModel.SelectedStagedBlock)
+            or nameof(ManualEditViewModel.HasStagedBlocks)
+            or nameof(ManualEditViewModel.StagedBlockCount))
+        {
+            Dispatcher.BeginInvoke(new Action(RebuildStagedBlockCards), DispatcherPriority.Background);
+        }
+    }
+
+    private void RebuildStagedBlockCards()
+    {
+        StagedBlocksHost.Children.Clear();
+        if (DataContext is not ManualEditViewModel vm)
+            return;
+
+        Grid? currentRow = null;
+        var currentColumn = 0;
+        foreach (var item in vm.StagedBlocks)
+        {
+            if (currentRow == null || currentColumn >= StagedBlocksPerRow)
+            {
+                currentRow = CreateStagedBlockRow();
+                StagedBlocksHost.Children.Add(currentRow);
+                currentColumn = 0;
+            }
+
+            var card = UnifiedTimetableControl.MakeChipBorder(
+                item.Assignment,
+                GradeToBrushConverter.BrushFor(item.Grade),
+                crossLabel: null);
+            card.Tag = item;
+            card.Height = Math.Max(GridControl.PeriodRowMinHeight, GridControl.PeriodRowMinHeight * Math.Max(1, item.RowSpan));
+            card.Margin = new Thickness(0, 0, 6, 6);
+            card.HorizontalAlignment = HorizontalAlignment.Stretch;
+            card.Cursor = Cursors.Hand;
+            var isSelected = string.Equals(vm.SelectedStagedBlock?.Id, item.Id, StringComparison.Ordinal);
+            card.BorderBrush = isSelected
+                ? new SolidColorBrush(Color.FromRgb(0x00, 0x5F, 0xB8))
+                : Brushes.Transparent;
+            card.BorderThickness = isSelected
+                ? new Thickness(2)
+                : new Thickness(0);
+            card.PreviewMouseLeftButtonDown += OnStagedCardMouseDown;
+            card.MouseMove += OnStagedCardMouseMove;
+            card.PreviewMouseLeftButtonUp += OnStagedCardMouseUp;
+            Grid.SetColumn(card, currentColumn);
+            currentRow.Children.Add(card);
+            currentColumn++;
+        }
+    }
+
+    private static Grid CreateStagedBlockRow()
+    {
+        var row = new Grid
+        {
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            Margin = new Thickness(0, 0, 0, 2),
+        };
+        for (var i = 0; i < StagedBlocksPerRow; i++)
+            row.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+
+        return row;
+    }
+
+    private void OnStagedCardMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (sender is not FrameworkElement { Tag: ManualEditViewModel.StagedBlockItem item })
+            return;
+
+        _stagedDragStartPoint = e.GetPosition(this);
+        _stagedDragItem = item;
+        _stagedDragClickOffset = e.GetPosition((IInputElement)sender);
+        e.Handled = true;
+    }
+
+    private void OnStagedCardMouseMove(object sender, MouseEventArgs e)
+    {
+        if (DataContext is not ManualEditViewModel vm
+            || sender is not FrameworkElement card
+            || e.LeftButton != MouseButtonState.Pressed
+            || _stagedDragStartPoint is not Point start
+            || _stagedDragItem == null)
+            return;
+
+        var current = e.GetPosition(this);
+        var horizontalThreshold = Math.Max(2.0, SystemParameters.MinimumHorizontalDragDistance * 0.65);
+        var verticalThreshold = Math.Max(2.0, SystemParameters.MinimumVerticalDragDistance * 0.65);
+        if (Math.Abs(current.X - start.X) < horizontalThreshold
+            && Math.Abs(current.Y - start.Y) < verticalThreshold)
+            return;
+
+        var rowSpan = Math.Max(1, _stagedDragItem.RowSpan);
+        var periodHeight = card.ActualHeight / rowSpan;
+        var grabbedPeriodOffset = periodHeight > 0
+            ? Math.Clamp((int)(_stagedDragClickOffset.Y / periodHeight), 0, rowSpan - 1)
+            : 0;
+        var source = new UnifiedTimetableControl.CellClickedEventArgs(
+            _stagedDragItem.SourceDay,
+            _stagedDragItem.SourcePeriod,
+            _stagedDragItem.Grade,
+            0,
+            _stagedDragItem.Assignment);
+
+        try
+        {
+            BeginStagedDragVisuals(card, current);
+            vm.SelectedStagedBlock = _stagedDragItem;
+            _suppressNextStagedClick = true;
+            DragDrop.DoDragDrop(
+                card,
+                UnifiedTimetableControl.CreateExternalAssignmentDragData(source, grabbedPeriodOffset),
+                DragDropEffects.Move);
+        }
+        finally
+        {
+            _stagedDragStartPoint = null;
+            _stagedDragItem = null;
+            RestoreStagedDragVisuals();
+            Dispatcher.BeginInvoke(
+                () => _suppressNextStagedClick = false,
+                DispatcherPriority.Background);
+        }
+    }
+
+    private void OnStagedCardMouseUp(object sender, MouseButtonEventArgs e)
+    {
+        if (_suppressNextStagedClick)
+        {
+            e.Handled = true;
+            return;
+        }
+
+        if (DataContext is ManualEditViewModel vm
+            && sender is FrameworkElement { Tag: ManualEditViewModel.StagedBlockItem item })
+        {
+            if (string.Equals(vm.SelectedStagedBlock?.Id, item.Id, StringComparison.Ordinal))
+                vm.ClearStagedBlockSelectionCommand.Execute(null);
+            else
+                vm.SelectedStagedBlock = item;
+            e.Handled = true;
+        }
+
+        _stagedDragStartPoint = null;
+        _stagedDragItem = null;
+    }
+
+    private void BeginStagedDragVisuals(FrameworkElement sourceCard, Point currentPosition)
+    {
+        RestoreStagedDragVisuals();
+        _stagedDragSourceCard = sourceCard;
+        _stagedDragSourceOriginalOpacity = sourceCard.Opacity;
+        sourceCard.Opacity = 0.45;
+
+        _stagedDragPreviewLayer = AdornerLayer.GetAdornerLayer(this);
+        if (_stagedDragPreviewLayer == null)
+            return;
+
+        _stagedDragPreviewAdorner = new DragPreviewAdorner(
+            this,
+            sourceCard,
+            sourceCard.ActualWidth,
+            sourceCard.ActualHeight,
+            _stagedDragClickOffset);
+        _stagedDragPreviewLayer.Add(_stagedDragPreviewAdorner);
+        UpdateStagedDragPreview(currentPosition);
+    }
+
+    private void OnManualEditDragOverForPreview(object sender, DragEventArgs e)
+    {
+        if (_stagedDragPreviewAdorner != null)
+            UpdateStagedDragPreview(e.GetPosition(this));
+    }
+
+    private void UpdateStagedDragPreview(Point position)
+    {
+        _stagedDragPreviewAdorner?.Update(position);
+    }
+
+    private void RestoreStagedDragVisuals()
+    {
+        if (_stagedDragSourceCard != null)
+            _stagedDragSourceCard.Opacity = _stagedDragSourceOriginalOpacity;
+        if (_stagedDragPreviewAdorner != null && _stagedDragPreviewLayer != null)
+            _stagedDragPreviewLayer.Remove(_stagedDragPreviewAdorner);
+
+        _stagedDragSourceCard = null;
+        _stagedDragSourceOriginalOpacity = 1.0;
+        _stagedDragPreviewAdorner = null;
+        _stagedDragPreviewLayer = null;
+    }
+
+    private void OnStagingEmptyMouseDown(object sender, MouseButtonEventArgs e)
+    {
+        if (IsWithinStagedCard(e.OriginalSource as DependencyObject)
+            || FindAncestor<Button>(e.OriginalSource as DependencyObject) != null)
+            return;
+
+        if (DataContext is ManualEditViewModel vm)
+            vm.ClearStagedBlockSelectionCommand.Execute(null);
+    }
+
+    private void OnStagingDragOver(object sender, DragEventArgs e)
+    {
+        e.Effects = CanDropTimetableBlockIntoStaging(e)
+            ? DragDropEffects.Move
+            : DragDropEffects.None;
+        e.Handled = true;
+    }
+
+    private void OnStagingDrop(object sender, DragEventArgs e)
+    {
+        if (DataContext is ManualEditViewModel vm
+            && CanDropTimetableBlockIntoStaging(e)
+            && UnifiedTimetableControl.TryGetCellDragData(e.Data, out var source, out _, out _)
+            && source.Assignment != null)
+        {
+            vm.SelectCell(source.Day, source.Period, source.Grade, source.SubColumnIdx, source.Assignment);
+            if (vm.StageSelectedBlockCommand.CanExecute(null))
+                vm.StageSelectedBlockCommand.Execute(null);
+            e.Handled = true;
+        }
+    }
+
+    private static bool CanDropTimetableBlockIntoStaging(DragEventArgs e) =>
+        UnifiedTimetableControl.TryGetCellDragData(e.Data, out var source, out _, out var isExternal)
+        && !isExternal
+        && source.Assignment != null;
+
+    private static bool IsWithinStagedCard(DependencyObject? source)
+    {
+        while (source != null)
+        {
+            if (source is FrameworkElement { Tag: ManualEditViewModel.StagedBlockItem })
+                return true;
+            source = VisualTreeHelper.GetParent(source);
+        }
+
+        return false;
+    }
+
+    private static T? FindAncestor<T>(DependencyObject? source) where T : DependencyObject
+    {
+        while (source != null)
+        {
+            if (source is T match)
+                return match;
+            source = VisualTreeHelper.GetParent(source);
+        }
+
+        return null;
     }
 
     private void OnConflictFocusRequested(object? sender, ConflictFocusRequestedEventArgs e)
@@ -316,6 +598,16 @@ public partial class ManualEditView : UserControl
     private bool EvaluateDropMove(UnifiedTimetableControl.CellDropMoveEventArgs e)
     {
         if (DataContext is ManualEditViewModel vm)
+        {
+            if (vm.SelectedStagedBlock != null)
+            {
+                return vm.CanPlaceSelectedStagedBlock(
+                    e.Target.Day,
+                    e.Target.Period,
+                    e.Target.Grade,
+                    e.Target.SubColumnIdx);
+            }
+
             return vm.CanDropMove(
                 e.Source.Day,
                 e.Source.Period,
@@ -326,6 +618,7 @@ public partial class ManualEditView : UserControl
                 e.Target.Period,
                 e.Target.Grade,
                 e.Target.SubColumnIdx);
+        }
         return false;
     }
 
@@ -376,6 +669,17 @@ public partial class ManualEditView : UserControl
     private void OnDropMoveRequested(object? sender, UnifiedTimetableControl.CellDropMoveEventArgs e)
     {
         if (DataContext is ManualEditViewModel vm)
+        {
+            if (vm.SelectedStagedBlock != null)
+            {
+                vm.HandleStagedBlockDrop(
+                    e.Target.Day,
+                    e.Target.Period,
+                    e.Target.Grade,
+                    e.Target.SubColumnIdx);
+                return;
+            }
+
             vm.HandleDropMove(
                 e.Source.Day,
                 e.Source.Period,
@@ -386,6 +690,7 @@ public partial class ManualEditView : UserControl
                 e.Target.Period,
                 e.Target.Grade,
                 e.Target.SubColumnIdx);
+        }
     }
 
     private void OnDragMovePreviewStarted(object? sender, UnifiedTimetableControl.CellClickedEventArgs e)

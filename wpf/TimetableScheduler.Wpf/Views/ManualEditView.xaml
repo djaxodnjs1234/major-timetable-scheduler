@@ -266,9 +266,17 @@
 
             <!-- Right: Inspector + Conflicts -->
             <Border Grid.Column="2" BorderBrush="#CCC" BorderThickness="1,0,0,0" Background="White" Padding="10,8">
-                <ScrollViewer VerticalScrollBarVisibility="Auto"
-                          HorizontalScrollBarVisibility="Disabled">
-                    <StackPanel Margin="0,0,0,6">
+                    <Grid>
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="2*" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+
+                    <ScrollViewer Grid.Row="0"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled"
+                                  Margin="0,0,0,8">
+                        <StackPanel Margin="0,0,0,6">
                         <Expander IsExpanded="True" Margin="0,0,0,8">
                             <Expander.Header>
                                 <TextBlock Text="Inspector"
@@ -319,6 +327,20 @@
 
                                         <TextBlock Text="{Binding SelectedProfessorName, StringFormat= - 교수 : {0}}"
                                                Style="{StaticResource InspectorValueText}" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,6">
+                                            <ComboBox ItemsSource="{Binding ProfessorOptions}"
+                                                      DisplayMemberPath="DisplayName"
+                                                      SelectedValuePath="ProfessorId"
+                                                      SelectedValue="{Binding SelectedProfessorId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      Width="150"
+                                                      Height="30"
+                                                      Padding="6,3" />
+                                            <Button Content="적용"
+                                                    Command="{Binding ApplyProfessorChangeCommand}"
+                                                    Width="58"
+                                                    Height="30"
+                                                    Margin="6,0,0,0" />
+                                        </StackPanel>
                                         <TextBlock Text="{Binding SelectedDurationText, StringFormat= - 수업 : {0}}"
                                                Style="{StaticResource InspectorValueText}" />
                                         <TextBlock Text="{Binding SelectedBlockText, StringFormat= - 블록 : {0}}"
@@ -327,6 +349,19 @@
                                                Style="{StaticResource InspectorValueText}" />
                                         <TextBlock Text="{Binding SelectedCoteachText, StringFormat= - 공동강의 교수 : {0}}"
                                                Style="{StaticResource InspectorValueText}" />
+                                        <StackPanel Orientation="Horizontal"
+                                                    Margin="0,8,0,0"
+                                                    Visibility="{Binding IsSelectedThreeHourOccurrence, Converter={StaticResource BoolToVisibility}}">
+                                            <Button Content="▲ 한 교시 위로"
+                                                    Command="{Binding MoveSelectedThreeHourUpCommand}"
+                                                    Height="30"
+                                                    Padding="8,0" />
+                                            <Button Content="▼ 한 교시 아래로"
+                                                    Command="{Binding MoveSelectedThreeHourDownCommand}"
+                                                    Height="30"
+                                                    Padding="8,0"
+                                                    Margin="6,0,0,0" />
+                                        </StackPanel>
                                     </StackPanel>
 
                                     <StackPanel Margin="0,0,0,8">
@@ -611,8 +646,89 @@
                                 </Grid>
                             </Border>
                         </Expander>
-                    </StackPanel>
-                </ScrollViewer>
+
+                        </StackPanel>
+                    </ScrollViewer>
+
+                    <Border x:Name="StagingDropHost"
+                            Grid.Row="1"
+                            Background="#FAFAFA"
+                            BorderBrush="#D8DEE8"
+                            BorderThickness="1"
+                            CornerRadius="2"
+                            Padding="10"
+                            AllowDrop="True"
+                            DragOver="OnStagingDragOver"
+                            Drop="OnStagingDrop"
+                            MouseLeftButtonDown="OnStagingEmptyMouseDown">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                                <RowDefinition Height="Auto" />
+                            </Grid.RowDefinitions>
+
+                            <DockPanel Grid.Row="0" LastChildFill="True" Margin="0,0,0,8">
+                                <Border DockPanel.Dock="Right"
+                                        Background="#005FB8"
+                                        CornerRadius="8"
+                                        Padding="6,1"
+                                        Margin="8,0,0,0"
+                                        Visibility="{Binding HasStagedBlocks, Converter={StaticResource BoolToVisibility}}">
+                                    <TextBlock Text="{Binding StagedBlockCount}"
+                                               Foreground="White"
+                                               FontSize="10"
+                                               FontWeight="Bold" />
+                                </Border>
+                                <TextBlock Text="블럭 보관함"
+                                           FontSize="11"
+                                           FontWeight="Bold"
+                                           Foreground="{StaticResource AppOnSurfaceVariant}"
+                                           VerticalAlignment="Center" />
+                            </DockPanel>
+
+                            <Button Grid.Row="1"
+                                    Content="선택 블럭 빼기"
+                                    Command="{Binding StageSelectedBlockCommand}"
+                                    Height="32"
+                                    Padding="10,0"
+                                    FontWeight="Bold"
+                                    Margin="0,0,0,8" />
+
+                            <Grid Grid.Row="2">
+                                <TextBlock Text="드래그해서 블럭을 넣어두세요."
+                                           Foreground="{StaticResource AppOnSurfaceVariant}"
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           HorizontalAlignment="Center"
+                                           VerticalAlignment="Center"
+                                           Visibility="{Binding HasNoStagedBlocks, Converter={StaticResource BoolToVisibility}}" />
+
+                                <ScrollViewer VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled"
+                                              Visibility="{Binding HasStagedBlocks, Converter={StaticResource BoolToVisibility}}">
+                                    <StackPanel x:Name="StagedBlocksHost"
+                                                HorizontalAlignment="Stretch" />
+                                </ScrollViewer>
+                            </Grid>
+
+                            <Border Grid.Row="3"
+                                    Background="#EEF5FF"
+                                    BorderBrush="#BFD7F5"
+                                    BorderThickness="1"
+                                    CornerRadius="2"
+                                    Padding="8,6"
+                                    Margin="0,8,0,0"
+                                    Visibility="{Binding HasSelectedStagedBlock, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="빈 칸으로 드래그하거나 클릭해서 넣습니다."
+                                           FontSize="12"
+                                           TextWrapping="Wrap"
+                                           VerticalAlignment="Center" />
+                            </Border>
+                        </Grid>
+                    </Border>
+                </Grid>
             </Border>
         </Grid>
     </Grid>

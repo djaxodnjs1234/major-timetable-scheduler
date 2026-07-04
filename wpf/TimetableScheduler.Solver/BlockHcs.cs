@@ -140,17 +140,16 @@ public static class BlockHcs
         }
     }
 
-    public static void AddHc22_SectionRoomConsistent(
+    public static void AddHc22_AutoCourseRoomConsistent(
         CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms)
     {
         foreach (var (_, sections) in ConstraintHelpers.GroupByBaseId(courses))
         {
-            if (sections.Count < 2) continue;
             if (sections.Any(section => section.FixedRooms.Count > 0)) continue;
 
             var sharedRoom = rooms.ToDictionary(
                 room => room.Id,
-                room => model.NewBoolVar($"section_room_{sections[0].Id}_{room.Id}"));
+                room => model.NewBoolVar($"course_room_{sections[0].Id}_{room.Id}"));
             model.Add(LinearExpr.Sum(sharedRoom.Values) == 1);
 
             foreach (var section in sections)

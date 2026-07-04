@@ -10,6 +10,12 @@ public class Course
     public string CourseType { get; set; } = "전필";
 
     public string ProfessorId { get; set; } = "";
+    private int? expectedEnrollment;
+    public int? ExpectedEnrollment
+    {
+        get => expectedEnrollment;
+        set => expectedEnrollment = value is < 0 ? null : value;
+    }
     public int Section { get; set; } = 1;
     public string SectionLabel =>
         Section > 0 && Section <= 26

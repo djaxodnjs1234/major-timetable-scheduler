@@ -252,6 +252,7 @@ public static class FormattedTimetableExporter
         HoursPerWeek = course.HoursPerWeek,
         CourseType = course.CourseType,
         ProfessorId = course.ProfessorId,
+        ExpectedEnrollment = course.ExpectedEnrollment,
         Section = course.Section,
         Department = course.Department,
         FixedRooms = course.FixedRooms.ToList(),

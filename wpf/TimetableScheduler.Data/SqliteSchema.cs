@@ -10,6 +10,7 @@ CREATE TABLE IF NOT EXISTS Courses (
     HoursPerWeek      INTEGER NOT NULL,
     CourseType        TEXT NOT NULL,
     ProfessorId       TEXT NOT NULL,
+    ExpectedEnrollment INTEGER NULL,
     Section           INTEGER NOT NULL DEFAULT 1,
     Department        TEXT NOT NULL,
     FixedRoomsJson    TEXT NOT NULL,
