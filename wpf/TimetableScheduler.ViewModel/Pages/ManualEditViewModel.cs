@@ -127,6 +127,23 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         public int RowSpan => Assignment.RowSpan;
     }
 
+    private sealed record WorkingOccurrence(
+        string Key,
+        SolutionAssignment Representative,
+        int Day,
+        int StartPeriod,
+        int EndPeriod,
+        int ActualLength,
+        IReadOnlyList<SolutionAssignment> Rows,
+        Course? Course,
+        Room? Room,
+        IReadOnlyList<string> ProfessorIds,
+        int Section,
+        string AssignmentId)
+    {
+        public IEnumerable<int> Periods => Enumerable.Range(StartPeriod, ActualLength);
+    }
+
     private static ManualCrossAssignmentKey BuildManualCrossAssignmentKey(
         CellAssignment assignment,
         int day,
@@ -263,31 +280,14 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     [RelayCommand]
     private void ValidateAll()
     {
-        if (StagedBlocks.Count > 0)
-        {
-            var stagedMessage = $"보관함에 빠져 있는 블럭 {StagedBlocks.Count}개를 시간표에 다시 넣어야 합니다.";
-            _dialog.ShowValidationResult("전체 검증", stagedMessage, Array.Empty<ConflictItem>());
-            StatusMessage = $"전체 검증 Error 1건: {stagedMessage}";
-            return;
-        }
-
-        var conflicts = GetManualEditVisibleConflicts(strictManualCrossValidation: true)
-            .Select(c => c with { Description = BuildUserConflictDescription(c) })
-            .ToList();
-        var errorCount = conflicts.Count(c => c.Severity == ConflictSeverity.Error);
-        var warningCount = conflicts.Count(c => c.Severity == ConflictSeverity.Warning);
-        var message = errorCount > 0
-            ? "저장할 수 없는 제약조건 위반이 있습니다."
-            : warningCount > 0
-                ? "주의가 필요한 항목이 있습니다."
-                : "전체 제약조건을 충족합니다.";
-
-        _dialog.ShowValidationResult("전체 검증", message, conflicts);
-        StatusMessage = errorCount > 0
-            ? $"전체 검증: Error {errorCount}건, Warning {warningCount}건"
-            : warningCount > 0
-                ? $"전체 검증: Warning {warningCount}건"
-                : "전체 검증: 전체 제약조건을 충족합니다.";
+        RefreshConflicts(strictManualCrossValidation: true);
+        var report = BuildManualValidationReport();
+        _dialog.ShowManualValidationReport(report);
+        StatusMessage = report.FailedCount > 0
+            ? $"전체 검증: 오류 {report.FailedCount}개 항목, 주의 {report.WarningCount}개 항목"
+            : report.WarningCount > 0
+                ? $"전체 검증: 주의 {report.WarningCount}개 항목"
+                : "전체 검증: 검사한 모든 항목에 이상이 없습니다.";
     }
 
     [RelayCommand]
@@ -2006,23 +2006,21 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return false;
         }
 
-        RefreshConflicts(strictManualCrossValidation: true);
-        var blockingConflicts = GetManualEditVisibleConflicts(strictManualCrossValidation: true)
-            .Where(conflict => conflict.Severity == ConflictSeverity.Error)
-            .Select(BuildConflictDisplayItem)
+        var report = BuildManualValidationReport();
+        var blockingConflicts = SaveBlockingManualValidationConflicts(report)
+            .Select(BuildUserConflictItem)
             .ToList();
         var errorCount = blockingConflicts.Count;
         if (errorCount == 0) return true;
 
         _dialog.ShowBlockingConflicts(
             blockTitle,
-            blockingConflicts
-                .Select(c => c.Conflict with { Description = BuildUserConflictDescription(c.Conflict) })
-                .ToList());
+            blockingConflicts);
 
         var errorLines = blockingConflicts
-            .SelectMany(c => c.Lines.Select(line => line.Text))
-            .Where(text => !string.IsNullOrWhiteSpace(text));
+            .Select(c => BuildUserConflictDescription(c))
+            .Where(text => !string.IsNullOrWhiteSpace(text))
+            .Distinct(StringComparer.Ordinal);
         StatusMessage = string.Join(
             Environment.NewLine,
             new[] { $"{blockTitle}: 제약조건 위반 Error {errorCount}건이 남아 있습니다." }.Concat(errorLines));
@@ -3383,6 +3381,685 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             ? conflict with { Severity = ConflictSeverity.Warning }
             : conflict;
 
+    private ManualValidationReport BuildManualValidationReport()
+    {
+        var detected = DetectAllConflicts(_working, strictManualCrossValidation: true)
+            .Where(c => !IsAllowedExistingManualCrossSectionConflict(c, _working))
+            .Where(c => !IsIgnoredManualEditConflict(c))
+            .Where(c => !IsAllowedManualGraduateDaytimeConflict(c))
+            .Select(ClassifyManualEditConflict)
+            .ToList();
+
+        var items = new List<ManualValidationItem>
+        {
+            BuildValidationItem("professor-conflict", "교수 중복 검증", ManualValidationStatus.Failed, detected, ConflictType.ProfessorConflict),
+            BuildValidationItem("room-conflict", "강의실 중복 검증", ManualValidationStatus.Failed, detected, ConflictType.RoomConflict),
+            BuildValidationItem("grade-conflict", "학년 중복 검증", ManualValidationStatus.Failed, detected, ConflictType.GradeConflict),
+            BuildValidationItem("same-course-day", "동일 과목 동일 요일 중복 검증", ManualValidationStatus.Failed, detected, ConflictType.SameCourseSameDayConflict),
+            BuildValidationItem("lunch", "점심시간 침범 검증", ManualValidationStatus.Failed, detected, ConflictType.LunchConflict),
+            BuildTimeRangeValidationItem(detected),
+            BuildSameCourseRoomValidationItem(),
+            BuildValidationItem("course-room-limit", "과목 강의실 제한 검증", ManualValidationStatus.Failed, detected, ConflictType.CourseUnavailableRoomViolation),
+            BuildValidationItem("professor-room-limit", "교수 강의실 제한 검증", ManualValidationStatus.Failed, detected, ConflictType.ProfUnavailableRoomViolation),
+            BuildLabRoomValidationItem(),
+            new(
+                "capacity",
+                "수용 인원 검증",
+                ManualValidationStatus.NotChecked,
+                "검사할 수 없음",
+                0,
+                Array.Empty<ConflictItem>(),
+                "수업별 요구 인원 정보가 없습니다."),
+            BuildValidationItem("professor-unavailable", "교수 불가 시간 검증", ManualValidationStatus.Warning, detected, ConflictType.ProfUnavailable),
+            BuildSoftTimeValidationItem(),
+            BuildFixedTimeManualChangeItem(),
+            BuildFixedRoomManualChangeItem(),
+            BuildBlockStartManualEditItem(),
+            BuildCrossIntegrityValidationItem(),
+            BuildReferenceIntegrityValidationItem(),
+        };
+
+        return new ManualValidationReport(items);
+    }
+
+    private ManualValidationItem BuildValidationItem(
+        string id,
+        string displayName,
+        ManualValidationStatus issueStatus,
+        IReadOnlyList<ConflictItem> conflicts,
+        ConflictType type)
+    {
+        var details = conflicts
+            .Where(c => c.Type == type)
+            .Select(c => c with { Description = BuildUserConflictDescription(c) })
+            .ToList();
+        return BuildValidationItem(id, displayName, issueStatus, details);
+    }
+
+    private static ManualValidationItem BuildValidationItem(
+        string id,
+        string displayName,
+        ManualValidationStatus issueStatus,
+        IReadOnlyList<ConflictItem> details,
+        string? reason = null)
+    {
+        if (details.Count == 0)
+            return new(id, displayName, ManualValidationStatus.Passed, "이상 없음", 0, details, reason);
+
+        var summary = issueStatus == ManualValidationStatus.Warning
+            ? $"주의 {details.Count}건"
+            : $"오류 {details.Count}건";
+        return new(id, displayName, issueStatus, summary, details.Count, details, reason);
+    }
+
+    private static IReadOnlyList<ConflictItem> SaveBlockingManualValidationConflicts(ManualValidationReport report) =>
+        report.Items
+            .Where(item => item.Status == ManualValidationStatus.Failed)
+            .SelectMany(item => item.Details)
+            .ToList();
+
+    private ManualValidationItem BuildTimeRangeValidationItem(IReadOnlyList<ConflictItem> detected)
+    {
+        var details = detected
+            .Where(c => c.Type == ConflictType.AcademicLevelTimeBandViolation)
+            .Select(c => c with { Description = BuildUserConflictDescription(c) })
+            .ToList();
+        var invalidAssignments = BuildInvalidAssignmentConflicts();
+        if (invalidAssignments.Count > 0)
+            details.AddRange(invalidAssignments);
+        return BuildValidationItem("time-range", "시간표 범위 검증", ManualValidationStatus.Failed, details);
+    }
+
+    private List<ConflictItem> BuildInvalidAssignmentConflicts()
+    {
+        var details = new List<ConflictItem>();
+        foreach (var occurrence in BuildWorkingOccurrences(_working))
+        {
+            var assignment = occurrence.Representative;
+            var periods = occurrence.Periods.ToList();
+            if (occurrence.Day < 0 || occurrence.Day >= Constants.Days
+                || !Constants.Periods.Contains(occurrence.StartPeriod)
+                || periods.Any(p => !Constants.Periods.Contains(p)))
+            {
+                details.Add(new ConflictItem(
+                    ConflictType.AcademicLevelTimeBandViolation,
+                    ConflictSeverity.Error,
+                    $"{CourseDisplayName(assignment.CourseId)}의 배치 범위가 시간표 범위를 벗어납니다.",
+                    occurrence.Day,
+                    occurrence.StartPeriod,
+                    occurrence.Rows));
+            }
+            if (occurrence.ActualLength <= 0)
+            {
+                details.Add(new ConflictItem(
+                    ConflictType.AcademicLevelTimeBandViolation,
+                    ConflictSeverity.Error,
+                    $"{CourseDisplayName(assignment.CourseId)}의 블록 길이가 유효하지 않습니다.",
+                    occurrence.Day,
+                    occurrence.StartPeriod,
+                    occurrence.Rows));
+            }
+            IReadOnlySet<int> knownBlockLengths = occurrence.Course == null
+                ? new HashSet<int>()
+                : KnownManualBlockLengths(occurrence.Course);
+            if (knownBlockLengths.Count > 0 && !knownBlockLengths.Contains(occurrence.ActualLength))
+            {
+                details.Add(new ConflictItem(
+                    ConflictType.AcademicLevelTimeBandViolation,
+                    ConflictSeverity.Error,
+                    $"{CourseDisplayName(assignment.CourseId)}의 실제 블록 길이가 과목의 블록 구성과 일치하지 않습니다.",
+                    occurrence.Day,
+                    occurrence.StartPeriod,
+                    occurrence.Rows));
+            }
+            if (CrossesManualPeriodBand(periods))
+            {
+                details.Add(new ConflictItem(
+                    ConflictType.AcademicLevelTimeBandViolation,
+                    ConflictSeverity.Error,
+                    $"{CourseDisplayName(assignment.CourseId)}의 배치가 오전·오후 또는 주야간 경계를 넘습니다.",
+                    occurrence.Day,
+                    occurrence.StartPeriod,
+                    occurrence.Rows));
+            }
+        }
+        return details;
+    }
+
+    private ManualValidationItem BuildSameCourseRoomValidationItem()
+    {
+        var details = new List<ConflictItem>();
+        var reported = new HashSet<string>(StringComparer.Ordinal);
+        var occurrences = BuildWorkingOccurrences(_working)
+            .Where(o => o.Course != null && !string.IsNullOrWhiteSpace(o.Room?.Id ?? o.Representative.RoomId))
+            .ToList();
+
+        foreach (var group in occurrences.GroupBy(o => SameCourseRoomGroupKey(o.Course!), StringComparer.Ordinal))
+        {
+            var temporalGroups = group
+                .GroupBy(o => string.Join("\u001f", o.Day, o.StartPeriod, o.EndPeriod), StringComparer.Ordinal)
+                .Select(g => new
+                {
+                    Occurrences = g.ToList(),
+                    RoomSet = string.Join("|", g.Select(o => NormalizeRoomId(o.Representative.RoomId))
+                        .Distinct(StringComparer.Ordinal)
+                        .OrderBy(room => room, StringComparer.Ordinal))
+                })
+                .ToList();
+            if (temporalGroups.Select(g => g.RoomSet).Distinct(StringComparer.Ordinal).Count() <= 1)
+                continue;
+
+            var rows = temporalGroups.SelectMany(g => g.Occurrences).SelectMany(o => o.Rows).ToList();
+            var key = string.Join(
+                "\u001f",
+                group.Key,
+                string.Join("\u001e", temporalGroups.Select(g => g.RoomSet).Distinct(StringComparer.Ordinal).OrderBy(x => x, StringComparer.Ordinal)));
+            if (!reported.Add(key))
+                continue;
+
+            var roomSummary = string.Join(
+                ", ",
+                temporalGroups.SelectMany(g => g.Occurrences)
+                    .Select(o => $"{CourseSectionDisplayName(o.Course!, o.Representative.CourseId)} {FormatPeriodRange(o.StartPeriod, o.EndPeriod)}={RoomDisplayName(o.Representative.RoomId)}")
+                    .Distinct(StringComparer.Ordinal));
+            details.Add(new ConflictItem(
+                ConflictType.CourseUnavailableRoomViolation,
+                ConflictSeverity.Error,
+                $"동일 과목 연동 그룹의 강의실이 일치하지 않습니다: {roomSummary}",
+                temporalGroups[0].Occurrences[0].Day,
+                temporalGroups[0].Occurrences[0].StartPeriod,
+                rows));
+        }
+
+        return BuildValidationItem("same-course-room", "과목별 동일 강의실 검증", ManualValidationStatus.Failed, details);
+    }
+
+    private ManualValidationItem BuildLabRoomValidationItem()
+    {
+        var roomById = BuildRoomCatalog()
+            .GroupBy(room => NormalizeRoomId(room.Id), StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal);
+        var details = new List<ConflictItem>();
+        foreach (var a in _working)
+        {
+            var course = ResolveCourseForAssignment(a);
+            if (course == null || !RequiresLabRoom(course))
+                continue;
+            if (!roomById.TryGetValue(NormalizeRoomId(a.RoomId), out var room) || room.IsLab)
+                continue;
+            details.Add(new ConflictItem(
+                ConflictType.CourseUnavailableRoomViolation,
+                ConflictSeverity.Error,
+                $"{course.Name}({course.Id}) 실습 수업이 비실습실 {RoomDisplayName(a.RoomId)}에 배정되었습니다.",
+                a.Day,
+                a.Period,
+                new[] { a }));
+        }
+        return BuildValidationItem("lab-room", "실습실 조건 검증", ManualValidationStatus.Failed, details);
+    }
+
+    private ManualValidationItem BuildSoftTimeValidationItem()
+    {
+        var details = BuildWorkingOccurrences(_working)
+            .Where(o => o.Course?.Grade != AcademicLevels.GraduateGrade)
+            .SelectMany(o => o.Periods
+                .Select(period => GetSoftWarning(o.Day, period))
+                .Where(warning => !string.IsNullOrWhiteSpace(warning))
+                .Distinct(StringComparer.Ordinal)
+                .Select(warning => (Occurrence: o, Warning: warning!)))
+            .Select(x => new ConflictItem(
+                ConflictType.GradeConflict,
+                ConflictSeverity.Warning,
+                x.Warning,
+                x.Occurrence.Day,
+                x.Occurrence.StartPeriod,
+                x.Occurrence.Rows))
+            .ToList();
+        return BuildValidationItem("soft-time", "월요일 오전·금요일 오후 검증", ManualValidationStatus.Warning, details);
+    }
+
+    private ManualValidationItem BuildFixedTimeManualChangeItem()
+    {
+        var details = new List<ConflictItem>();
+        foreach (var course in SessionCourses.Where(c => c.IsFixed && c.FixedSlots.Count > 0))
+        {
+            var actual = _working
+                .Where(a => ReferenceEquals(ResolveCourseForAssignment(a), course))
+                .Select(a => new TimeSlot(a.Day, a.Period))
+                .Distinct()
+                .ToHashSet();
+            var expected = course.FixedSlots.ToHashSet();
+            if (actual.SetEquals(expected))
+                continue;
+            var first = _working.FirstOrDefault(a => ReferenceEquals(ResolveCourseForAssignment(a), course));
+            var expectedText = string.Join(", ", expected
+                .OrderBy(slot => slot.Day)
+                .ThenBy(slot => slot.Period)
+                .Select(slot => $"{DayName(slot.Day)} {slot.Period}교시"));
+            var actualText = actual.Count == 0
+                ? "배치 없음"
+                : string.Join(", ", actual
+                    .OrderBy(slot => slot.Day)
+                    .ThenBy(slot => slot.Period)
+                    .Select(slot => $"{DayName(slot.Day)} {slot.Period}교시"));
+            details.Add(new ConflictItem(
+                ConflictType.FixedTimeViolation,
+                ConflictSeverity.Warning,
+                $"{course.Name}({course.Id})의 고정 시간이 수동 변경되었습니다. 원래 시간: {expectedText}. 현재 시간: {actualText}.",
+                first == default ? 0 : first.Day,
+                first == default ? 0 : first.Period,
+                first == default ? null : new[] { first }));
+        }
+        return BuildManualWarningItem("fixed-time-manual", "고정 시간 검증", "수동 변경", details);
+    }
+
+    private ManualValidationItem BuildFixedRoomManualChangeItem()
+    {
+        var details = new List<ConflictItem>();
+        foreach (var a in _working)
+        {
+            var course = ResolveCourseForAssignment(a);
+            if (course == null || course.FixedRooms.Count == 0)
+                continue;
+            var allowed = course.FixedRooms.Select(NormalizeRoomId).ToHashSet(StringComparer.Ordinal);
+            if (allowed.Contains(NormalizeRoomId(a.RoomId)))
+                continue;
+            details.Add(new ConflictItem(
+                ConflictType.FixedRoomViolation,
+                ConflictSeverity.Warning,
+                $"{course.Name}({course.Id})의 고정 강의실이 수동 변경되었습니다. 원래 강의실: {string.Join(", ", course.FixedRooms.Select(RoomDisplayName))}. 현재 강의실: {RoomDisplayName(a.RoomId)}.",
+                a.Day,
+                a.Period,
+                new[] { a }));
+        }
+        return BuildManualWarningItem("fixed-room-manual", "고정 강의실 검증", "수동 변경", details);
+    }
+
+    private ManualValidationItem BuildBlockStartManualEditItem()
+    {
+        var details = BuildWorkingOccurrences(_working)
+            .Where(o => o.ActualLength >= 2)
+            .Where(o => !Constants.Len2StartPeriods.Contains(o.StartPeriod))
+            .Select(o => new ConflictItem(
+                ConflictType.BlockStartViolation,
+                ConflictSeverity.Warning,
+                $"{CourseDisplayName(o.Representative.CourseId)}의 {o.ActualLength}시간 블록이 허용 시작 교시가 아닌 {o.StartPeriod}교시에 시작합니다.",
+                o.Day,
+                o.StartPeriod,
+                o.Rows))
+            .ToList();
+        return BuildManualWarningItem("block-start", "블록 시작 교시 검증", "수동 편집 허용 위반", details);
+    }
+
+    private static ManualValidationItem BuildManualWarningItem(
+        string id,
+        string displayName,
+        string issueLabel,
+        IReadOnlyList<ConflictItem> details)
+    {
+        if (details.Count == 0)
+            return new(id, displayName, ManualValidationStatus.Passed, "이상 없음", 0, details);
+
+        return new(id, displayName, ManualValidationStatus.Warning, $"{issueLabel} {details.Count}건", details.Count, details);
+    }
+
+    private ManualValidationItem BuildCrossIntegrityValidationItem()
+    {
+        var details = new List<ConflictItem>();
+        var participation = new Dictionary<string, (ManualCrossAssignmentKey Key, int Count)>(StringComparer.Ordinal);
+        var occurrences = BuildWorkingOccurrences(_working);
+        foreach (var link in _workingCrossLinks)
+        {
+            AddCrossParticipation(link.SourceKey);
+            AddCrossParticipation(link.TargetKey);
+            var sourceCourse = FindCourseForManualCrossKey(link.SourceKey);
+            var targetCourse = FindCourseForManualCrossKey(link.TargetKey);
+            var sourceAssignment = FindWorkingAssignmentForManualCrossKey(link.SourceKey);
+            var targetAssignment = FindWorkingAssignmentForManualCrossKey(link.TargetKey);
+            var sourceOccurrence = FindOccurrenceForManualCrossKey(occurrences, link.SourceKey);
+            var targetOccurrence = FindOccurrenceForManualCrossKey(occurrences, link.TargetKey);
+            if (sourceCourse == null || targetCourse == null || sourceAssignment == null || targetAssignment == null)
+            {
+                details.Add(BuildCrossIntegrityConflict(link, "존재하지 않는 수업 또는 assignment를 가리키는 Cross 관계입니다."));
+                continue;
+            }
+            if (sourceCourse.Grade != targetCourse.Grade)
+                details.Add(BuildCrossIntegrityConflict(link, "Cross 관계의 두 수업 학년이 다릅니다."));
+            var sourceRowSpan = sourceOccurrence?.ActualLength ?? ResolveRowSpanForAssignment(sourceAssignment.Value, sourceCourse);
+            var targetRowSpan = targetOccurrence?.ActualLength ?? ResolveRowSpanForAssignment(targetAssignment.Value, targetCourse);
+            if (sourceRowSpan != targetRowSpan)
+                details.Add(BuildCrossIntegrityConflict(link, "Cross 관계의 두 수업 블록 길이가 다릅니다."));
+            var sourceDay = sourceOccurrence?.Day ?? sourceAssignment.Value.Day;
+            var targetDay = targetOccurrence?.Day ?? targetAssignment.Value.Day;
+            var sourcePeriod = sourceOccurrence?.StartPeriod ?? sourceAssignment.Value.Period;
+            var targetPeriod = targetOccurrence?.StartPeriod ?? targetAssignment.Value.Period;
+            if (sourceDay != targetDay || sourcePeriod != targetPeriod)
+                details.Add(BuildCrossIntegrityConflict(link, "Cross 관계의 두 수업이 같은 요일·교시에 배치되어 있지 않습니다."));
+            if (HasProfessorOverlap(sourceAssignment.Value, targetAssignment.Value) || HasRoomOverlap(sourceAssignment.Value, targetAssignment.Value))
+                details.Add(BuildCrossIntegrityConflict(link, "Cross 관계가 교수 또는 강의실 중복을 포함합니다."));
+        }
+        foreach (var duplicated in participation.Values.Where(value => value.Count > 1))
+        {
+            details.Add(new ConflictItem(
+                ConflictType.GradeConflict,
+                ConflictSeverity.Error,
+                $"{duplicated.Key.CourseId} 수업이 여러 Cross 관계에 중복 참여합니다.",
+                duplicated.Key.Day,
+                duplicated.Key.Period));
+        }
+        return BuildValidationItem("cross-integrity", "Cross 관계 검증", ManualValidationStatus.Failed, details);
+
+        void AddCrossParticipation(ManualCrossAssignmentKey key)
+        {
+            var identity = ManualCrossAssignmentParticipationIdentity(key);
+            participation[identity] = participation.TryGetValue(identity, out var previous)
+                ? (previous.Key, previous.Count + 1)
+                : (key, 1);
+        }
+    }
+
+    private ConflictItem BuildCrossIntegrityConflict(ManualCrossLink link, string message) =>
+        new(
+            ConflictType.GradeConflict,
+            ConflictSeverity.Error,
+            message,
+            FindWorkingAssignmentForManualCrossKey(link.SourceKey)?.Day
+                ?? FindWorkingAssignmentForManualCrossKey(link.TargetKey)?.Day
+                ?? link.SourceKey.Day,
+            FindWorkingAssignmentForManualCrossKey(link.SourceKey)?.Period
+                ?? FindWorkingAssignmentForManualCrossKey(link.TargetKey)?.Period
+                ?? link.SourceKey.Period,
+            FindCrossAssignments(link));
+
+    private IReadOnlyList<SolutionAssignment> FindCrossAssignments(ManualCrossLink link)
+    {
+        var rows = new List<SolutionAssignment>();
+        var source = FindWorkingAssignmentForManualCrossKey(link.SourceKey);
+        if (source is { } sourceValue)
+            rows.Add(sourceValue);
+        var target = FindWorkingAssignmentForManualCrossKey(link.TargetKey);
+        if (target is { } targetValue)
+            rows.Add(targetValue);
+        return rows;
+    }
+
+    private SolutionAssignment? FindWorkingAssignmentForManualCrossKey(ManualCrossAssignmentKey key)
+    {
+        if (!string.IsNullOrWhiteSpace(key.AssignmentId))
+            return _working
+                .Select(a => (SolutionAssignment?)a)
+                .FirstOrDefault(a => string.Equals(a?.AssignmentId, key.AssignmentId, StringComparison.Ordinal));
+        return _working
+            .Select(a => (SolutionAssignment?)a)
+            .FirstOrDefault(a => a?.CourseId == key.CourseId
+                && a?.Day == key.Day
+                && a?.Period == key.Period
+                && (string.IsNullOrWhiteSpace(key.RoomIdsKey) || key.RoomIdsKey.Split('|').Contains(a?.RoomId)));
+    }
+
+    private ManualValidationItem BuildReferenceIntegrityValidationItem()
+    {
+        var details = new List<ConflictItem>();
+        var issueKeys = new HashSet<string>(StringComparer.Ordinal);
+        var courseIds = SessionCourses.Select(c => NormalizeReferenceId(c.Id)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var roomIds = BuildRoomCatalog()
+            .Select(r => NormalizeRoomId(r.Id))
+            .Where(id => !string.IsNullOrWhiteSpace(id))
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        var professorIds = SessionProfessors.Select(p => NormalizeReferenceId(p.Id)).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var a in _working)
+        {
+            var course = ResolveCourseForAssignment(a);
+            var assignmentKey = ReferenceAssignmentDuplicateKey(a);
+            var courseId = NormalizeReferenceId(a.CourseId);
+            if (string.IsNullOrWhiteSpace(courseId) || !courseIds.Contains(courseId))
+                AddReferenceIssue($"course|{assignmentKey}|{courseId}", BuildReferenceConflict(a, $"존재하지 않는 CourseId입니다: {a.CourseId}"));
+            var roomId = NormalizeRoomId(a.RoomId);
+            if (!string.IsNullOrWhiteSpace(roomId) && !roomIds.Contains(roomId))
+                AddReferenceIssue($"room|{assignmentKey}|{roomId}", BuildReferenceConflict(a, $"존재하지 않는 RoomId입니다: {a.RoomId}"));
+            if (course != null)
+            {
+                foreach (var pid in DomainHelpers.CourseProfIds(course))
+                {
+                    var professorId = NormalizeReferenceId(pid);
+                    if (!string.IsNullOrWhiteSpace(professorId) && !professorIds.Contains(professorId))
+                        AddReferenceIssue($"professor|{assignmentKey}|{professorId}", BuildReferenceConflict(a, $"존재하지 않는 ProfessorId입니다: {pid}"));
+                }
+            }
+        }
+        foreach (var g in _working.GroupBy(ReferenceAssignmentDuplicateKey, StringComparer.OrdinalIgnoreCase))
+        {
+            var rows = g.ToList();
+            if (rows.Count <= 1) continue;
+            AddReferenceIssue($"duplicate|{g.Key}", new ConflictItem(
+                ConflictType.GradeConflict,
+                ConflictSeverity.Error,
+                $"중복 assignment입니다: {g.Key}",
+                rows[0].Day,
+                rows[0].Period,
+                rows));
+        }
+        foreach (var duplicate in BuildWorkingOccurrences(_working)
+                     .Where(o => !string.IsNullOrWhiteSpace(o.AssignmentId))
+                     .GroupBy(o => o.AssignmentId, StringComparer.Ordinal)
+                     .Where(g => g
+                         .Select(o => string.Join("\u001f", NormalizeReferenceId(o.Representative.CourseId), o.Day, o.StartPeriod, o.EndPeriod))
+                         .Distinct(StringComparer.Ordinal)
+                         .Count() > 1))
+        {
+            var rows = duplicate.SelectMany(o => o.Rows).ToList();
+            AddReferenceIssue($"assignment-id-runs|{duplicate.Key}", new ConflictItem(
+                ConflictType.GradeConflict,
+                ConflictSeverity.Error,
+                $"같은 AssignmentId가 서로 분리된 여러 수업 run에 사용되었습니다: {duplicate.Key}",
+                rows[0].Day,
+                rows[0].Period,
+                rows));
+        }
+        if (StagedBlocks.Count > 0)
+        {
+            AddReferenceIssue("staged-blocks", new ConflictItem(
+                ConflictType.GradeConflict,
+                ConflictSeverity.Error,
+                $"보관함에 빠져 있는 블럭 {StagedBlocks.Count}개를 시간표에 다시 넣어야 합니다.",
+                0,
+                0));
+        }
+        return BuildValidationItem("reference-integrity", "참조 무결성 검증", ManualValidationStatus.Failed, details);
+
+        void AddReferenceIssue(string key, ConflictItem item)
+        {
+            if (issueKeys.Add(key))
+                details.Add(item);
+        }
+
+        string ReferenceAssignmentDuplicateKey(SolutionAssignment assignment)
+        {
+            var resolvedCourse = ResolveCourseForAssignment(assignment);
+            return string.Join(
+                "\u001f",
+                NormalizeReferenceId(assignment.AssignmentId),
+                NormalizeReferenceId(assignment.CourseId),
+                resolvedCourse?.Section.ToString() ?? "",
+                assignment.Day,
+                assignment.Period,
+                NormalizeRoomId(assignment.RoomId));
+        }
+    }
+
+    private static ConflictItem BuildReferenceConflict(SolutionAssignment assignment, string message) =>
+        new(
+            ConflictType.GradeConflict,
+            ConflictSeverity.Error,
+            message,
+            assignment.Day,
+            assignment.Period,
+            new[] { assignment });
+
+    private static string NormalizeReferenceId(string? id) => (id ?? "").Trim();
+
+    private IReadOnlyList<WorkingOccurrence> BuildWorkingOccurrences(IReadOnlyList<SolutionAssignment> assignments)
+    {
+        var rooms = BuildRoomCatalog()
+            .GroupBy(room => NormalizeRoomId(room.Id), StringComparer.OrdinalIgnoreCase)
+            .ToDictionary(group => group.Key, group => group.First(), StringComparer.OrdinalIgnoreCase);
+        var result = new List<WorkingOccurrence>();
+        foreach (var group in assignments
+                     .GroupBy(a => string.Join(
+                         "\u001f",
+                         NormalizeReferenceId(a.AssignmentId),
+                         NormalizeReferenceId(a.CourseId),
+                         a.Day,
+                         NormalizeRoomId(a.RoomId)), StringComparer.Ordinal))
+        {
+            var rowsByPeriod = group
+                .GroupBy(a => a.Period)
+                .OrderBy(g => g.Key)
+                .ToList();
+            var i = 0;
+            while (i < rowsByPeriod.Count)
+            {
+                var j = i;
+                while (j + 1 < rowsByPeriod.Count && rowsByPeriod[j + 1].Key == rowsByPeriod[j].Key + 1)
+                    j++;
+
+                var rows = rowsByPeriod
+                    .Skip(i)
+                    .Take(j - i + 1)
+                    .SelectMany(g => g)
+                    .OrderBy(a => a.Period)
+                    .ThenBy(a => a.RoomId, StringComparer.Ordinal)
+                    .ToList();
+                var representative = rows[0];
+                var course = ResolveCourseForAssignment(representative);
+                rooms.TryGetValue(NormalizeRoomId(representative.RoomId), out var room);
+                var startPeriod = rowsByPeriod[i].Key;
+                var endPeriod = rowsByPeriod[j].Key;
+                var key = string.Join(
+                    "\u001f",
+                    NormalizeReferenceId(representative.AssignmentId),
+                    NormalizeReferenceId(representative.CourseId),
+                    representative.Day,
+                    startPeriod,
+                    endPeriod,
+                    NormalizeRoomId(representative.RoomId));
+                result.Add(new WorkingOccurrence(
+                    key,
+                    representative,
+                    representative.Day,
+                    startPeriod,
+                    endPeriod,
+                    endPeriod - startPeriod + 1,
+                    rows,
+                    course,
+                    room,
+                    course == null
+                        ? Array.Empty<string>()
+                        : DomainHelpers.CourseProfIds(course).OrderBy(pid => pid, StringComparer.Ordinal).ToList(),
+                    course?.Section ?? 0,
+                    representative.AssignmentId ?? ""));
+
+                i = j + 1;
+            }
+        }
+
+        return result;
+    }
+
+    private static IReadOnlySet<int> KnownManualBlockLengths(Course course)
+    {
+        if (course.BlockStructure.Count == 0)
+            return new HashSet<int>();
+
+        return course.BlockStructure
+            .Where(length => length > 0)
+            .ToHashSet();
+    }
+
+    private static bool CrossesManualPeriodBand(IReadOnlyCollection<int> periods)
+    {
+        if (periods.Count == 0)
+            return false;
+        var crossesDayBand = periods.Any(period => period <= 4) && periods.Any(period => period >= 6 && period <= 9);
+        var crossesNightBand = periods.Any(period => period <= 9) && periods.Any(period => period >= Constants.FirstNightPeriod);
+        return crossesDayBand || crossesNightBand;
+    }
+
+    private string SameCourseRoomGroupKey(Course course) =>
+        string.Join(
+            "\u001f",
+            SameCourseFamilyKey(course),
+            course.Section,
+            NormalizeReferenceId(course.ProfessorId));
+
+    private static string SameCourseFamilyKey(Course course)
+    {
+        var baseId = DomainHelpers.BaseId(course.Id).Trim();
+        if (!string.IsNullOrWhiteSpace(baseId))
+            return $"id:{baseId.ToUpperInvariant()}";
+        return $"name:{NormalizeCourseName(course.Name)}";
+    }
+
+    private WorkingOccurrence? FindOccurrenceForManualCrossKey(
+        IReadOnlyList<WorkingOccurrence> occurrences,
+        ManualCrossAssignmentKey key)
+    {
+        if (!string.IsNullOrWhiteSpace(key.AssignmentId))
+        {
+            var byId = occurrences
+                .Where(o => string.Equals(o.AssignmentId, key.AssignmentId, StringComparison.Ordinal)
+                    && o.Day == key.Day
+                    && key.Period >= o.StartPeriod
+                    && key.Period <= o.EndPeriod)
+                .ToList();
+            if (byId.Count == 1)
+                return byId[0];
+        }
+
+        var keyRooms = key.RoomIdsKey
+            .Split('|', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(NormalizeRoomId)
+            .ToHashSet(StringComparer.Ordinal);
+        return occurrences.FirstOrDefault(o =>
+            string.Equals(o.Representative.CourseId, key.CourseId, StringComparison.Ordinal)
+            && NormalizeManualCrossSection(o.Section) == key.Section
+            && o.Day == key.Day
+            && key.Period >= o.StartPeriod
+            && key.Period <= o.EndPeriod
+            && (keyRooms.Count == 0 || keyRooms.Contains(NormalizeRoomId(o.Representative.RoomId))));
+    }
+
+    private static string ManualCrossAssignmentParticipationIdentity(ManualCrossAssignmentKey key) =>
+        !string.IsNullOrWhiteSpace(key.AssignmentId)
+            ? $"assignment:{key.AssignmentId}"
+            : string.Join("\u001f", "course", key.CourseId, key.Section, key.RoomIdsKey);
+
+    private bool HasProfessorOverlap(SolutionAssignment left, SolutionAssignment right)
+    {
+        var leftCourse = ResolveCourseForAssignment(left);
+        var rightCourse = ResolveCourseForAssignment(right);
+        if (leftCourse == null || rightCourse == null)
+            return false;
+        var leftProfessors = DomainHelpers.CourseProfIds(leftCourse).ToHashSet(StringComparer.Ordinal);
+        return DomainHelpers.CourseProfIds(rightCourse).Any(leftProfessors.Contains);
+    }
+
+    private static bool HasRoomOverlap(SolutionAssignment left, SolutionAssignment right) =>
+        string.Equals(NormalizeRoomId(left.RoomId), NormalizeRoomId(right.RoomId), StringComparison.Ordinal);
+
+    private int ResolveRowSpanForAssignment(SolutionAssignment assignment, Course? course)
+    {
+        var cell = RenderManualCells(_working)
+            .FirstOrDefault(c => string.Equals(c.Assignment.AssignmentId, assignment.AssignmentId, StringComparison.Ordinal)
+                || c.Assignment.CourseId == assignment.CourseId
+                && c.Day == assignment.Day
+                && c.Period == assignment.Period
+                && c.Assignment.Rooms.Contains(assignment.RoomId));
+        if (cell != null)
+            return cell.Assignment.RowSpan;
+        return course?.BlockStructure.FirstOrDefault() ?? Math.Max(1, course?.HoursPerWeek ?? 1);
+    }
+
     private static bool IsIgnoredManualRoomChangeConflict(ConflictItem conflict) =>
         conflict.Type == ConflictType.FixedRoomViolation;
 
@@ -3596,8 +4273,16 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             return SanitizeConflictDescription(conflict.Description);
 
         var (assignment, course) = representative.Value;
-        var professorId = course?.ProfessorId ?? "";
-        return $"{BuildConflictCourseLabel(course, assignment.CourseId)}은 {ProfessorDisplayName(professorId)} 교수님의 사용할 수 없는 강의실에 배정되었습니다. 현재 강의실: {RoomDisplayName(assignment.RoomId)}";
+        var unavailableProfessors = course == null
+            ? Array.Empty<string>()
+            : DomainHelpers.CourseProfIds(course)
+                .Where(pid => SessionProfessors.FirstOrDefault(p => p.Id == pid)?.UnavailableRooms.Contains(assignment.RoomId) == true)
+                .Select(ProfessorDisplayName)
+                .ToArray();
+        var professors = unavailableProfessors.Length == 0
+            ? "담당"
+            : string.Join(", ", unavailableProfessors);
+        return $"{BuildConflictCourseLabel(course, assignment.CourseId)}은 {professors} 교수님의 사용할 수 없는 강의실에 배정되었습니다. 현재 강의실: {RoomDisplayName(assignment.RoomId)}";
     }
 
     private string BuildProfessorRoomInconsistentDescription(ConflictItem conflict)

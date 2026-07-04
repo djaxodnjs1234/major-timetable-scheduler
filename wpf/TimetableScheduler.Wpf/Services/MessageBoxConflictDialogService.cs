@@ -11,6 +11,7 @@ namespace TimetableScheduler.Wpf.Services;
 public sealed class MessageBoxConflictDialogService : IConflictDialogService
 {
     private readonly WorkspaceService _workspace;
+    private Window? _manualValidationReportWindow;
 
     public MessageBoxConflictDialogService(WorkspaceService workspace)
     {
@@ -207,6 +208,198 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         layout.Children.Add(ok);
         dialog.Content = layout;
         dialog.ShowDialog();
+    }
+
+    public void ShowManualValidationReport(ManualValidationReport report)
+    {
+        if (_manualValidationReportWindow == null)
+        {
+            _manualValidationReportWindow = new Window
+            {
+                Title = "전체 검증 결과",
+                WindowStartupLocation = WindowStartupLocation.CenterOwner,
+                Width = 760,
+                Height = 720,
+                MinWidth = 620,
+                MinHeight = 420,
+                ResizeMode = ResizeMode.CanResize,
+                Background = Brushes.White,
+                Owner = Application.Current?.MainWindow,
+            };
+            _manualValidationReportWindow.Closed += (_, _) => _manualValidationReportWindow = null;
+        }
+
+        _manualValidationReportWindow.Content = BuildManualValidationReportContent(report);
+        if (_manualValidationReportWindow.WindowState == WindowState.Minimized)
+            _manualValidationReportWindow.WindowState = WindowState.Normal;
+        if (!_manualValidationReportWindow.IsVisible)
+            _manualValidationReportWindow.Show();
+        _manualValidationReportWindow.Activate();
+    }
+
+    private FrameworkElement BuildManualValidationReportContent(ManualValidationReport report)
+    {
+        var layout = new Grid
+        {
+            Background = Brushes.White,
+            HorizontalAlignment = HorizontalAlignment.Stretch,
+            VerticalAlignment = VerticalAlignment.Stretch,
+        };
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var header = new StackPanel { Margin = new Thickness(16, 16, 16, 10) };
+        header.Children.Add(new TextBlock
+        {
+            Text = "전체 검증 결과",
+            FontSize = 16,
+            FontWeight = FontWeights.Bold,
+            Margin = new Thickness(0, 0, 0, 8),
+        });
+        header.Children.Add(new TextBlock
+        {
+            Text = BuildReportSummary(report),
+            TextWrapping = TextWrapping.Wrap,
+            LineHeight = 18,
+        });
+        header.Children.Add(new TextBlock
+        {
+            Text = BuildReportMessage(report),
+            FontWeight = FontWeights.SemiBold,
+            Margin = new Thickness(0, 8, 0, 0),
+            TextWrapping = TextWrapping.Wrap,
+        });
+        Grid.SetRow(header, 0);
+        layout.Children.Add(header);
+
+        var items = new StackPanel();
+        foreach (var item in report.Items)
+            items.Children.Add(BuildReportItem(item));
+        var scroll = new ScrollViewer
+        {
+            Margin = new Thickness(16, 0, 16, 0),
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Content = items,
+        };
+        Grid.SetRow(scroll, 1);
+        layout.Children.Add(scroll);
+
+        var close = new Button
+        {
+            Content = "닫기",
+            MinWidth = 80,
+            HorizontalAlignment = HorizontalAlignment.Right,
+            Margin = new Thickness(16, 12, 16, 16),
+            Padding = new Thickness(10, 4, 10, 4),
+        };
+        close.Click += (_, _) => _manualValidationReportWindow?.Close();
+        Grid.SetRow(close, 2);
+        layout.Children.Add(close);
+        return layout;
+    }
+
+    private static string BuildReportSummary(ManualValidationReport report) =>
+        $"검사 항목: {report.TotalCount}개\n"
+        + $"정상: {report.PassedCount}개\n"
+        + $"주의: {report.WarningCount}개\n"
+        + $"오류: {report.FailedCount}개\n"
+        + $"검사 불가: {report.NotCheckedCount}개\n"
+        + $"제외: {report.ExcludedCount}개";
+
+    private static string BuildReportMessage(ManualValidationReport report)
+    {
+        if (report.FailedCount > 0)
+            return "저장할 수 없는 오류가 있습니다.";
+        if (report.WarningCount > 0)
+            return "저장은 가능하지만 주의가 필요한 항목이 있습니다.";
+        return "검사한 모든 항목에 이상이 없습니다.";
+    }
+
+    private FrameworkElement BuildReportItem(ManualValidationItem item)
+    {
+        var accent = item.Status switch
+        {
+            ManualValidationStatus.Passed => new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)),
+            ManualValidationStatus.Warning => new SolidColorBrush(Color.FromRgb(0xB7, 0x79, 0x1F)),
+            ManualValidationStatus.Failed => new SolidColorBrush(Color.FromRgb(0xBA, 0x1A, 0x1A)),
+            _ => new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80)),
+        };
+        var icon = item.Status switch
+        {
+            ManualValidationStatus.Passed => "✓",
+            ManualValidationStatus.Warning => "!",
+            ManualValidationStatus.Failed => "✕",
+            _ => "－",
+        };
+        var header = new StackPanel { Orientation = Orientation.Horizontal };
+        header.Children.Add(new TextBlock
+        {
+            Text = icon,
+            Foreground = accent,
+            FontWeight = FontWeights.Bold,
+            Width = 22,
+        });
+        header.Children.Add(new TextBlock
+        {
+            Text = item.DisplayName,
+            FontWeight = FontWeights.SemiBold,
+            MinWidth = 210,
+        });
+        header.Children.Add(new TextBlock
+        {
+            Text = item.Summary,
+            Foreground = accent,
+            FontWeight = FontWeights.SemiBold,
+        });
+
+        var body = new StackPanel { Margin = new Thickness(22, 6, 0, 0) };
+        if (!string.IsNullOrWhiteSpace(item.Reason))
+        {
+            body.Children.Add(new TextBlock
+            {
+                Text = item.Reason,
+                Foreground = Brushes.DimGray,
+                TextWrapping = TextWrapping.Wrap,
+                Margin = new Thickness(0, 0, 0, 6),
+            });
+        }
+        if (item.Details.Count > 0)
+        {
+            var detailItems = new StackPanel();
+            foreach (var conflict in item.Details)
+                detailItems.Children.Add(BuildConflictBlock(conflict, null));
+            body.Children.Add(new ScrollViewer
+            {
+                MaxHeight = 260,
+                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+                Content = detailItems,
+            });
+        }
+
+        if (item.Status == ManualValidationStatus.Passed)
+        {
+            return new Border
+            {
+                BorderBrush = new SolidColorBrush(Color.FromRgb(0xD1, 0xD5, 0xDB)),
+                BorderThickness = new Thickness(1),
+                Padding = new Thickness(10, 8, 10, 8),
+                Margin = new Thickness(0, 0, 0, 6),
+                Child = header,
+            };
+        }
+
+        return new Expander
+        {
+            Header = header,
+            IsExpanded = item.Status is ManualValidationStatus.NotChecked or ManualValidationStatus.Excluded,
+            Margin = new Thickness(0, 0, 0, 6),
+            BorderBrush = new SolidColorBrush(Color.FromRgb(0xD1, 0xD5, 0xDB)),
+            BorderThickness = new Thickness(1),
+            Content = body,
+        };
     }
 
     private ScrollViewer BuildConflictList(

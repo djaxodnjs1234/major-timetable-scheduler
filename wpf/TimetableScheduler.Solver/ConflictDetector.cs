@@ -254,15 +254,18 @@ public static class ConflictDetector
             var c = ResolveCourseForAssignment(a, courses);
             if (c == null) continue;
             if (c.FixedRooms.Count > 0) continue;
-            if (!profMap.TryGetValue(c.ProfessorId, out var prof)) continue;
-            if (prof.UnavailableRooms.Contains(a.RoomId))
+            var checkedProfessorIds = new HashSet<string>(StringComparer.Ordinal);
+            foreach (var professorId in DomainHelpers.CourseProfIds(c))
             {
+                if (!checkedProfessorIds.Add(professorId)) continue;
+                if (!profMap.TryGetValue(professorId, out var prof)) continue;
+                if (!prof.UnavailableRooms.Contains(a.RoomId)) continue;
+
                 list.Add(new ConflictItem(
                     ConflictType.ProfUnavailableRoomViolation, ConflictSeverity.Error,
-                    $"{c.Name}({c.Id})은 교수 {c.ProfessorId}의 불가 강의실을 사용할 수 없습니다.",
+                    $"{c.Name}({c.Id})은 교수 {professorId}의 불가 강의실을 사용할 수 없습니다.",
                     a.Day, a.Period,
                     new[] { a }));
-                continue;
             }
         }
 
