@@ -327,6 +327,20 @@
 
                                         <TextBlock Text="{Binding SelectedProfessorName, StringFormat= - 교수 : {0}}"
                                                Style="{StaticResource InspectorValueText}" />
+                                        <StackPanel Orientation="Horizontal" Margin="0,4,0,6">
+                                            <ComboBox ItemsSource="{Binding ProfessorOptions}"
+                                                      DisplayMemberPath="DisplayName"
+                                                      SelectedValuePath="ProfessorId"
+                                                      SelectedValue="{Binding SelectedProfessorId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      Width="150"
+                                                      Height="30"
+                                                      Padding="6,3" />
+                                            <Button Content="적용"
+                                                    Command="{Binding ApplyProfessorChangeCommand}"
+                                                    Width="58"
+                                                    Height="30"
+                                                    Margin="6,0,0,0" />
+                                        </StackPanel>
                                         <TextBlock Text="{Binding SelectedDurationText, StringFormat= - 수업 : {0}}"
                                                Style="{StaticResource InspectorValueText}" />
                                         <TextBlock Text="{Binding SelectedBlockText, StringFormat= - 블록 : {0}}"
@@ -335,6 +349,19 @@
                                                Style="{StaticResource InspectorValueText}" />
                                         <TextBlock Text="{Binding SelectedCoteachText, StringFormat= - 공동강의 교수 : {0}}"
                                                Style="{StaticResource InspectorValueText}" />
+                                        <StackPanel Orientation="Horizontal"
+                                                    Margin="0,8,0,0"
+                                                    Visibility="{Binding IsSelectedThreeHourOccurrence, Converter={StaticResource BoolToVisibility}}">
+                                            <Button Content="▲ 한 교시 위로"
+                                                    Command="{Binding MoveSelectedThreeHourUpCommand}"
+                                                    Height="30"
+                                                    Padding="8,0" />
+                                            <Button Content="▼ 한 교시 아래로"
+                                                    Command="{Binding MoveSelectedThreeHourDownCommand}"
+                                                    Height="30"
+                                                    Padding="8,0"
+                                                    Margin="6,0,0,0" />
+                                        </StackPanel>
                                     </StackPanel>
 
                                     <StackPanel Margin="0,0,0,8">

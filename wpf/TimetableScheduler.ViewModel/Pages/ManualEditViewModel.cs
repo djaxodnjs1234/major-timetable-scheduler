@@ -111,6 +111,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         string SearchText,
         bool IsSelectable);
 
+    public sealed record ProfessorOption(string ProfessorId, string DisplayName);
+
     public sealed record StagedBlockItem(
         string Id,
         CellAssignment Assignment,
@@ -233,6 +235,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         public int? SelectedGrade { get; init; }
         public int? SelectedSubColumnIdx { get; init; }
         public bool ShowRoomAdditionalInfo { get; init; }
+        public Dictionary<string, string> CourseProfessorIds { get; init; } = new(StringComparer.Ordinal);
+        public Dictionary<string, int?> CourseExpectedEnrollments { get; init; } = new(StringComparer.Ordinal);
     }
 
     private sealed record ManualMoveValidationResult(
@@ -371,12 +375,21 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ApplyRoomChangeCommand))]
+    [NotifyCanExecuteChangedFor(nameof(ApplyProfessorChangeCommand))]
     [NotifyCanExecuteChangedFor(nameof(ClearSelectionCommand))]
     [NotifyCanExecuteChangedFor(nameof(StageSelectedBlockCommand))]
+    [NotifyCanExecuteChangedFor(nameof(MoveSelectedThreeHourUpCommand))]
+    [NotifyCanExecuteChangedFor(nameof(MoveSelectedThreeHourDownCommand))]
     private CellAssignment? selectedAssignment;
 
     public bool HasSelection => SelectedAssignment != null;
     public bool HasNoSelection => !HasSelection;
+    public bool IsSelectedThreeHourOccurrence => SelectedAssignment?.RowSpan == 3
+        && SelectedDay is int day
+        && SelectedPeriod is int period
+        && FindSelectedWorkingOccurrence(day, period)?.ActualLength == 3;
+    public bool CanMoveSelectedThreeHourUp => CanMoveSelectedThreeHour(-1);
+    public bool CanMoveSelectedThreeHourDown => CanMoveSelectedThreeHour(1);
 
     [ObservableProperty]
     private StagedBlockItem? selectedStagedBlock;
@@ -403,6 +416,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     [ObservableProperty]
     [NotifyCanExecuteChangedFor(nameof(ApplyRoomChangeCommand))]
     private string selectedReplacementRoomId = "";
+
+    [ObservableProperty]
+    [NotifyCanExecuteChangedFor(nameof(ApplyProfessorChangeCommand))]
+    private string selectedProfessorId = "";
 
     [ObservableProperty]
     [NotifyPropertyChangedFor(nameof(HasSelectedRoomAdditionalInfo))]
@@ -503,6 +520,19 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     public string SelectedProfessorName => SelectedCourse == null
         ? "-"
         : ProfessorDisplayName(SelectedCourse.ProfessorId);
+
+    public IReadOnlyList<ProfessorOption> ProfessorOptions =>
+        SessionProfessors
+            .OrderBy(p => p.Name, StringComparer.CurrentCulture)
+            .Select(p => new ProfessorOption(p.Id, string.IsNullOrWhiteSpace(p.Name) ? p.Id : p.Name))
+            .ToList();
+
+    public bool HasPendingProfessorChange =>
+        SelectedCourse != null
+        && !string.IsNullOrWhiteSpace(SelectedProfessorId)
+        && !IsSameProfessorId(SelectedCourse.ProfessorId, SelectedProfessorId);
+
+    public bool CanApplyProfessorChange() => HasPendingProfessorChange;
 
     public string SelectedLocationText => SelectedAssignment == null
         ? "-"
@@ -619,6 +649,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         OnPropertyChanged(nameof(HasNoSelection));
         NotifySelectionDetailChanged();
         ApplyRoomChangeCommand.NotifyCanExecuteChanged();
+        ApplyProfessorChangeCommand.NotifyCanExecuteChanged();
         StageSelectedBlockCommand.NotifyCanExecuteChanged();
     }
 
@@ -637,6 +668,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         OnPropertyChanged(nameof(SelectedRoomAdditionalInfo));
         OnPropertyChanged(nameof(HasSelectedRoomAdditionalInfo));
         ApplyRoomChangeCommand.NotifyCanExecuteChanged();
+    }
+
+    partial void OnSelectedProfessorIdChanged(string value)
+    {
+        OnPropertyChanged(nameof(HasPendingProfessorChange));
+        OnPropertyChanged(nameof(CanApplyProfessorChange));
+        ApplyProfessorChangeCommand.NotifyCanExecuteChanged();
     }
 
     partial void OnSelectedOldRoomIdChanged(string value)
@@ -1347,6 +1385,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             NewRoomId = assignment.Rooms.FirstOrDefault() ?? "";
             SelectedOldRoomId = NewRoomId;
             SelectedReplacementRoomId = ReplacementRoomCandidates.FirstOrDefault() ?? "";
+            SelectedProfessorId = SelectedCourse?.ProfessorId ?? "";
             StatusMessage = $"선택: {CourseSectionDisplayName(assignment)} — "
                 + $"{DayName(day)} {period}교시";
             Grid.SetEditState(_selectedGridCell, BuildMoveStates(assignment, day, period));
@@ -1357,6 +1396,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             NewRoomId = "";
             SelectedOldRoomId = "";
             SelectedReplacementRoomId = "";
+            SelectedProfessorId = "";
             StatusMessage = $"{DayName(day)} {period}교시 — 비어있음";
             Grid.ClearEditState();
             RefreshConflicts();
@@ -1372,6 +1412,79 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         else
             ApplySingleRoomChange();
     }
+
+    [RelayCommand(CanExecute = nameof(CanApplyProfessorChange))]
+    private void ApplyProfessorChange()
+    {
+        RoomChangeStatusMessage = "";
+        if (SelectedAssignment == null || SelectedCourse == null)
+        {
+            StatusMessage = "수업을 선택하세요.";
+            return;
+        }
+
+        var targetProfessorId = (SelectedProfessorId ?? "").Trim();
+        if (string.IsNullOrWhiteSpace(targetProfessorId)
+            || !SessionProfessors.Any(p => IsSameProfessorId(p.Id, targetProfessorId)))
+        {
+            StatusMessage = "등록된 교수를 선택하세요.";
+            return;
+        }
+
+        if (IsSameProfessorId(SelectedCourse.ProfessorId, targetProfessorId))
+            return;
+
+        var course = SelectedCourse;
+        var oldProfessorId = course.ProfessorId;
+        var baselineKeys = ConflictKeys(GetManualEditVisibleConflicts(strictManualCrossValidation: true));
+        course.ProfessorId = targetProfessorId;
+        var candidateConflicts = GetManualEditVisibleConflicts(strictManualCrossValidation: true)
+            .Where(c => !baselineKeys.Contains(KeyOf(c)))
+            .Where(IsProfessorChangeRelevantConflict)
+            .ToList();
+        course.ProfessorId = oldProfessorId;
+
+        var errors = candidateConflicts
+            .Where(c => c.Severity == ConflictSeverity.Error)
+            .Select(BuildUserConflictItem)
+            .ToList();
+        if (errors.Count > 0)
+        {
+            _dialog.ShowBlockingConflicts("담당 교수를 변경할 수 없습니다.", errors);
+            StatusMessage = "담당 교수 변경이 차단되었습니다.";
+            return;
+        }
+
+        var warnings = candidateConflicts
+            .Where(c => c.Severity == ConflictSeverity.Warning)
+            .Select(BuildUserConflictItem)
+            .ToList();
+        if (warnings.Count > 0
+            && !_dialog.ConfirmDespiteConflicts(
+                warnings,
+                BuildConflictSelectionContext(SelectedAssignment, SelectedDay ?? 0, SelectedPeriod ?? 0)))
+        {
+            StatusMessage = "담당 교수 변경이 취소되었습니다.";
+            return;
+        }
+
+        var snapshot = CaptureSnapshot();
+        course.ProfessorId = targetProfessorId;
+        MarkUserEditedAfterLoad();
+        RefreshConflicts(strictManualCrossValidation: true);
+        Rerender();
+        RestoreSelectionFromSnapshot(snapshot);
+        PushUndoSnapshot(snapshot);
+        StatusMessage = $"{CourseSectionDisplayName(course)} 담당 교수를 {ProfessorDisplayName(targetProfessorId)}(으)로 변경했습니다.";
+        NotifySelectionDetailChanged();
+        OnPropertyChanged(nameof(HasUnsavedChanges));
+    }
+
+    private static bool IsProfessorChangeRelevantConflict(ConflictItem conflict) =>
+        conflict.Type is ConflictType.ProfessorConflict
+            or ConflictType.ProfUnavailable
+            or ConflictType.ProfUnavailableRoomViolation
+            or ConflictType.SameCourseSameDayConflict;
 
     private void ApplySingleRoomChange()
     {
@@ -1970,6 +2083,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         HoursPerWeek = src.HoursPerWeek,
         CourseType = src.CourseType,
         ProfessorId = src.ProfessorId,
+        ExpectedEnrollment = src.ExpectedEnrollment,
         Section = src.Section,
         Department = src.Department,
         FixedRooms = new List<string>(src.FixedRooms),
@@ -2073,6 +2187,96 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             : $"{movedCourseName} 이동 완료 — {DayName(targetDay)} {targetPeriod}교시. {warning}";
         ClearSelectionCore();
         return true;
+    }
+
+    [RelayCommand(CanExecute = nameof(CanMoveSelectedThreeHourUp))]
+    private void MoveSelectedThreeHourUp() => MoveSelectedThreeHourBy(-1);
+
+    [RelayCommand(CanExecute = nameof(CanMoveSelectedThreeHourDown))]
+    private void MoveSelectedThreeHourDown() => MoveSelectedThreeHourBy(1);
+
+    private bool CanMoveSelectedThreeHour(int delta)
+    {
+        if (SelectedAssignment == null || SelectedDay is not int day || SelectedPeriod is not int period || _selectedGridCell is not { } cell)
+            return false;
+        if (FindSelectedWorkingOccurrence(day, period)?.ActualLength != 3)
+            return false;
+        if (IsAssignmentAlreadyCrossed(BuildManualCrossAssignmentKey(SelectedAssignment, day, period)))
+            return false;
+
+        var targetPeriod = period + delta;
+        return ValidateGeneralManualMove(
+            SelectedAssignment,
+            day,
+            period,
+            day,
+            targetPeriod,
+            cell.Grade,
+            cell.SubColumnIdx).BlockingReasons.Count == 0;
+    }
+
+    private void MoveSelectedThreeHourBy(int delta)
+    {
+        if (SelectedAssignment == null || SelectedDay is not int day || SelectedPeriod is not int period || _selectedGridCell is not { } cell)
+            return;
+
+        var occurrence = FindSelectedWorkingOccurrence(day, period);
+        if (occurrence?.ActualLength != 3)
+        {
+            StatusMessage = "3시간 연속 수업만 한 교시 이동할 수 있습니다.";
+            return;
+        }
+        if (IsAssignmentAlreadyCrossed(BuildManualCrossAssignmentKey(SelectedAssignment, day, period)))
+        {
+            StatusMessage = "Cross 관계가 있는 수업은 한 교시 이동할 수 없습니다.";
+            return;
+        }
+
+        var targetPeriod = period + delta;
+        if (!TryMoveAssignment(
+                SelectedAssignment,
+                day,
+                period,
+                day,
+                targetPeriod,
+                cell.Grade,
+                cell.SubColumnIdx,
+                out var candidate,
+                out var reasons,
+                out var warnings,
+                useGeneralMovePolicy: true))
+        {
+            StatusMessage = reasons.FirstOrDefault() ?? "이동할 수 없는 위치입니다.";
+            return;
+        }
+
+        if (warnings.Count > 0
+            && !_dialog.ConfirmDespiteConflicts(
+                warnings.Select(BuildUserConflictItem).ToList(),
+                BuildConflictSelectionContext(SelectedAssignment, day, targetPeriod)))
+        {
+            StatusMessage = "이동이 취소되었습니다.";
+            return;
+        }
+
+        var snapshot = CaptureSnapshot();
+        var movedCourseName = CourseSectionDisplayName(SelectedAssignment);
+        var movedAssignmentId = SelectedAssignment.AssignmentId;
+        _working = candidate;
+        MarkUserEditedAfterLoad();
+        Rerender();
+        var movedCell = Grid.Cells.FirstOrDefault(c =>
+            string.Equals(c.Assignment.AssignmentId, movedAssignmentId, StringComparison.Ordinal)
+            && c.Day == day
+            && c.Period == targetPeriod
+            && c.Grade == cell.Grade);
+        if (movedCell != null)
+            SelectCell(movedCell.Day, movedCell.Period, movedCell.Grade, movedCell.SubColumnIdx, movedCell.Assignment);
+        else
+            ClearSelectionCore();
+        RefreshConflicts();
+        PushUndoSnapshot(snapshot);
+        StatusMessage = $"{movedCourseName} 3시간 블록을 {DayName(day)} {targetPeriod}~{targetPeriod + 2}교시로 이동했습니다.";
     }
 
     private bool TrySwapSelectedWith(
@@ -3350,6 +3554,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         NewRoomId = "";
         SelectedOldRoomId = "";
         SelectedReplacementRoomId = "";
+        SelectedProfessorId = "";
         OnPropertyChanged(nameof(SelectedSlotDisplayText));
         NotifySelectionDetailChanged();
         RefreshConflicts();
@@ -3402,14 +3607,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             BuildValidationItem("course-room-limit", "과목 강의실 제한 검증", ManualValidationStatus.Failed, detected, ConflictType.CourseUnavailableRoomViolation),
             BuildValidationItem("professor-room-limit", "교수 강의실 제한 검증", ManualValidationStatus.Failed, detected, ConflictType.ProfUnavailableRoomViolation),
             BuildLabRoomValidationItem(),
-            new(
-                "capacity",
-                "수용 인원 검증",
-                ManualValidationStatus.NotChecked,
-                "검사할 수 없음",
-                0,
-                Array.Empty<ConflictItem>(),
-                "수업별 요구 인원 정보가 없습니다."),
+            BuildCapacityValidationItem(detected),
             BuildValidationItem("professor-unavailable", "교수 불가 시간 검증", ManualValidationStatus.Warning, detected, ConflictType.ProfUnavailable),
             BuildSoftTimeValidationItem(),
             BuildFixedTimeManualChangeItem(),
@@ -3455,7 +3653,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private static IReadOnlyList<ConflictItem> SaveBlockingManualValidationConflicts(ManualValidationReport report) =>
         report.Items
             .Where(item => item.Status == ManualValidationStatus.Failed)
-            .SelectMany(item => item.Details)
+            .SelectMany(item => item.Details.Where(detail => detail.Severity == ConflictSeverity.Error))
             .ToList();
 
     private ManualValidationItem BuildTimeRangeValidationItem(IReadOnlyList<ConflictItem> detected)
@@ -3596,6 +3794,57 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 new[] { a }));
         }
         return BuildValidationItem("lab-room", "실습실 조건 검증", ManualValidationStatus.Failed, details);
+    }
+
+    private ManualValidationItem BuildCapacityValidationItem(IReadOnlyList<ConflictItem> detected)
+    {
+        var details = detected
+            .Where(c => c.Type == ConflictType.RoomCapacityViolation)
+            .Select(c => c with { Description = BuildUserConflictDescription(c) })
+            .ToList();
+        var missing = new List<ConflictItem>();
+        foreach (var occurrence in BuildWorkingOccurrences(_working))
+        {
+            if (occurrence.Course == null) continue;
+            if (string.IsNullOrWhiteSpace(occurrence.Representative.RoomId)) continue;
+
+            if (occurrence.Course.ExpectedEnrollment is not int enrollment || enrollment <= 0)
+            {
+                missing.Add(new ConflictItem(
+                    ConflictType.RoomCapacityViolation,
+                    ConflictSeverity.Warning,
+                    $"{CourseSectionDisplayName(occurrence.Course)} 수강 인원 정보가 없습니다.",
+                    occurrence.Day,
+                    occurrence.StartPeriod,
+                    occurrence.Rows));
+                continue;
+            }
+
+            if (occurrence.Room == null || occurrence.Room.Capacity <= 0)
+            {
+                missing.Add(new ConflictItem(
+                    ConflictType.RoomCapacityViolation,
+                    ConflictSeverity.Warning,
+                    $"{CourseSectionDisplayName(occurrence.Course)}의 강의실 {RoomDisplayName(occurrence.Representative.RoomId)} 수용 인원 정보가 없습니다.",
+                    occurrence.Day,
+                    occurrence.StartPeriod,
+                    occurrence.Rows));
+            }
+        }
+
+        if (details.Count > 0)
+        {
+            var all = details.Concat(missing).ToList();
+            var summary = missing.Count > 0
+                ? $"오류 {details.Count}건 / 검사 불가 {missing.Count}건"
+                : $"오류 {details.Count}건";
+            return new("capacity", "수용 인원 검증", ManualValidationStatus.Failed, summary, all.Count, all);
+        }
+
+        if (missing.Count > 0)
+            return new("capacity", "수용 인원 검증", ManualValidationStatus.NotChecked, $"검사 불가 {missing.Count}건", missing.Count, missing, "수업별 수강 인원 또는 강의실 수용 인원 정보가 없습니다.");
+
+        return new("capacity", "수용 인원 검증", ManualValidationStatus.Passed, "이상 없음", 0, Array.Empty<ConflictItem>());
     }
 
     private ManualValidationItem BuildSoftTimeValidationItem()
@@ -3966,6 +4215,18 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         return result;
     }
 
+    private WorkingOccurrence? FindSelectedWorkingOccurrence(int day, int period)
+    {
+        if (SelectedAssignment == null) return null;
+        var key = BuildManualCrossAssignmentKey(SelectedAssignment, day, period);
+        return BuildWorkingOccurrences(_working)
+            .FirstOrDefault(o =>
+                string.Equals(o.AssignmentId, key.AssignmentId, StringComparison.Ordinal)
+                && string.Equals(o.Representative.CourseId, key.CourseId, StringComparison.Ordinal)
+                && o.Day == day
+                && o.StartPeriod == period);
+    }
+
     private static IReadOnlySet<int> KnownManualBlockLengths(Course course)
     {
         if (course.BlockStructure.Count == 0)
@@ -4151,6 +4412,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         ConflictType.CourseUnavailableRoomViolation => BuildCourseUnavailableRoomDescription(conflict),
         ConflictType.ProfUnavailableRoomViolation => BuildProfessorRoomRestrictionDescription(conflict),
         ConflictType.ProfRoomInconsistent => BuildProfessorRoomInconsistentDescription(conflict),
+        ConflictType.RoomCapacityViolation => BuildRoomCapacityViolationDescription(conflict),
         ConflictType.BlockStartViolation => BuildBlockStartViolationDescription(conflict),
         ConflictType.SameCourseSameDayConflict => BuildSameCourseSameDayDescription(conflict),
         _ => SanitizeConflictDescription(conflict.Description),
@@ -4172,6 +4434,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         ConflictType.ProfUnavailableRoomViolation => "교수 불가 강의실",
         ConflictType.ProfRoomInconsistent => "교수 강의실 일관성",
         ConflictType.AcademicLevelTimeBandViolation => "학위과정 시간대 위반",
+        ConflictType.RoomCapacityViolation => "강의실 정원 초과",
         _ => "제약조건 위반",
     };
 
@@ -4320,6 +4583,22 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         return description.Contains("교수 강의실 일관성", StringComparison.Ordinal)
             ? description
             : $"교수 강의실 일관성: {description}";
+    }
+
+    private string BuildRoomCapacityViolationDescription(ConflictItem conflict)
+    {
+        var representative = ResolveRepresentativeConflictAssignment(conflict);
+        if (representative == null)
+            return SanitizeConflictDescription(conflict.Description);
+
+        var (assignment, course) = representative.Value;
+        if (course == null)
+            return SanitizeConflictDescription(conflict.Description);
+
+        var room = BuildRoomCatalog().FirstOrDefault(r => string.Equals(r.Id, assignment.RoomId, StringComparison.Ordinal));
+        var enrollmentText = course.ExpectedEnrollment is int enrollment && enrollment > 0 ? $"{enrollment}명" : "미입력";
+        var capacityText = room != null && room.Capacity > 0 ? $"{room.Capacity}명" : "미입력";
+        return $"{BuildConflictCourseLabel(course, assignment.CourseId)}의 수강 인원은 {enrollmentText}이고 {RoomDisplayName(assignment.RoomId)}의 수용 인원은 {capacityText}입니다.";
     }
 
     private string BuildBlockStartViolationDescription(ConflictItem conflict)
@@ -4750,7 +5029,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             SessionProfessors,
             _workingCrossGroups,
             strictManualCrossValidation ? IsManualGradeOverlapAllowedStrict : IsManualGradeOverlapAllowed,
-            AllowGraduateDaytimeOverflow);
+            AllowGraduateDaytimeOverflow,
+            SessionRooms);
 
     private IReadOnlyList<ConflictItem> DetectConflicts(
         IReadOnlyList<SolutionAssignment> assignment,
@@ -5048,12 +5328,18 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private void NotifySelectionDetailChanged()
     {
         OnPropertyChanged(nameof(SelectedProfessorName));
+        OnPropertyChanged(nameof(ProfessorOptions));
+        OnPropertyChanged(nameof(HasPendingProfessorChange));
+        OnPropertyChanged(nameof(CanApplyProfessorChange));
         OnPropertyChanged(nameof(SelectedLocationText));
         OnPropertyChanged(nameof(SelectedRoomsText));
         OnPropertyChanged(nameof(SelectedDurationText));
         OnPropertyChanged(nameof(SelectedOccupiedSlotsText));
         OnPropertyChanged(nameof(SelectedSlotDisplayText));
         OnPropertyChanged(nameof(SelectedBlockText));
+        OnPropertyChanged(nameof(IsSelectedThreeHourOccurrence));
+        OnPropertyChanged(nameof(CanMoveSelectedThreeHourUp));
+        OnPropertyChanged(nameof(CanMoveSelectedThreeHourDown));
         OnPropertyChanged(nameof(SelectedFixedText));
         OnPropertyChanged(nameof(SelectedCoteachText));
         OnPropertyChanged(nameof(SelectedMultiRoomText));
@@ -5081,6 +5367,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         OnPropertyChanged(nameof(HasAnyConstraintReasons));
         OnPropertyChanged(nameof(SelectedCrossGroupText));
         ApplyRoomChangeCommand.NotifyCanExecuteChanged();
+        ApplyProfessorChangeCommand.NotifyCanExecuteChanged();
+        MoveSelectedThreeHourUpCommand.NotifyCanExecuteChanged();
+        MoveSelectedThreeHourDownCommand.NotifyCanExecuteChanged();
     }
 
     public IReadOnlyList<CrossGroup> CommitWorkingCrossGroupsPreview() =>
@@ -5422,6 +5711,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         SelectedGrade = _selectedGridCell?.Grade,
         SelectedSubColumnIdx = _selectedGridCell?.SubColumnIdx,
         ShowRoomAdditionalInfo = ShowRoomAdditionalInfo,
+        CourseProfessorIds = SessionCourses
+            .ToDictionary(CourseSnapshotKey, c => c.ProfessorId, StringComparer.Ordinal),
+        CourseExpectedEnrollments = SessionCourses
+            .ToDictionary(CourseSnapshotKey, c => c.ExpectedEnrollment, StringComparer.Ordinal),
     };
 
     private static bool SnapshotContentEquals(ManualEditSnapshot left, ManualEditSnapshot right)
@@ -5453,8 +5746,28 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (!leftCrossLinks.SequenceEqual(rightCrossLinks, StringComparer.Ordinal))
             return false;
 
-        return left.ShowRoomAdditionalInfo == right.ShowRoomAdditionalInfo;
+        if (left.ShowRoomAdditionalInfo != right.ShowRoomAdditionalInfo)
+            return false;
+
+        if (!DictionaryEquals(left.CourseProfessorIds, right.CourseProfessorIds))
+            return false;
+
+        return DictionaryEquals(left.CourseExpectedEnrollments, right.CourseExpectedEnrollments);
     }
+
+    private static bool DictionaryEquals<T>(IReadOnlyDictionary<string, T> left, IReadOnlyDictionary<string, T> right)
+    {
+        if (left.Count != right.Count) return false;
+        foreach (var (key, value) in left)
+        {
+            if (!right.TryGetValue(key, out var other)) return false;
+            if (!EqualityComparer<T>.Default.Equals(value, other)) return false;
+        }
+        return true;
+    }
+
+    private static string CourseSnapshotKey(Course course) =>
+        string.Join("\u001f", course.Id, course.Section);
 
     private static string StagedBlockContentKey(StagedBlockItem item) =>
         string.Join(
@@ -5488,6 +5801,18 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         NotifyUndoRedoCanExecuteChanged();
     }
 
+    private void RestoreCourseSnapshotState(ManualEditSnapshot snapshot)
+    {
+        foreach (var course in SessionCourses)
+        {
+            var key = CourseSnapshotKey(course);
+            if (snapshot.CourseProfessorIds.TryGetValue(key, out var professorId))
+                course.ProfessorId = professorId;
+            if (snapshot.CourseExpectedEnrollments.TryGetValue(key, out var enrollment))
+                course.ExpectedEnrollment = enrollment;
+        }
+    }
+
     private void RestoreSnapshot(ManualEditSnapshot snapshot)
     {
         _working = snapshot.Assignments
@@ -5498,6 +5823,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             StagedBlocks.Add(item);
         NotifyStagedBlocksChanged();
         RestoreCrossLinks(snapshot.CrossLinks);
+        RestoreCourseSnapshotState(snapshot);
         ShowRoomAdditionalInfo = snapshot.ShowRoomAdditionalInfo;
         Rerender();
         RestoreSelectionFromSnapshot(snapshot);
@@ -5519,6 +5845,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             string.Equals(item.Id, _resetBaselineSnapshot.SelectedStagedBlockId, StringComparison.Ordinal));
         NotifyStagedBlocksChanged();
         RestoreCrossLinks(_resetBaselineSnapshot.CrossLinks);
+        RestoreCourseSnapshotState(_resetBaselineSnapshot);
         ShowRoomAdditionalInfo = _resetBaselineSnapshot.ShowRoomAdditionalInfo;
         new ManualEditUserSettings { ShowRoomAdditionalInfo = ShowRoomAdditionalInfo }.Save();
         _redoStack.Clear();
@@ -6288,6 +6615,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         ConflictType.ProfUnavailable => "해당 교수님의 불가능 시간과 겹칩니다.",
         ConflictType.BlockStartViolation => "이 수업 블록은 해당 교시에 시작할 수 없습니다.",
         ConflictType.AcademicLevelTimeBandViolation => "대학원 과목은 야간에만, 학부 과목은 야간 이외 시간에만 배치할 수 있습니다.",
+        ConflictType.RoomCapacityViolation => "강의실 수용 인원보다 수강 인원이 많습니다.",
         _ => "",
     };
 

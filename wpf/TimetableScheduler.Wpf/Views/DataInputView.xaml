@@ -193,6 +193,7 @@
                             <ColumnDefinition Width="170" SharedSizeGroup="CourseName" />
                             <ColumnDefinition Width="58" SharedSizeGroup="CourseSections" />
                             <ColumnDefinition Width="98" SharedSizeGroup="CourseProfessor" />
+                            <ColumnDefinition Width="92" SharedSizeGroup="CourseEnrollment" />
                             <ColumnDefinition Width="52" SharedSizeGroup="CourseType" />
                             <ColumnDefinition Width="68" SharedSizeGroup="CourseGrade" />
                             <ColumnDefinition Width="74" SharedSizeGroup="CourseHours" />
@@ -212,14 +213,15 @@
                         <TextBlock Grid.Column="1" Text="{Binding HeaderName}" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" Margin="6,0" />
                         <TextBlock Grid.Column="2" Text="{Binding HeaderSectionInfo}" Margin="6,0" />
                         <TextBlock Grid.Column="3" Text="{Binding HeaderProfessor}" TextTrimming="CharacterEllipsis" Margin="6,0" />
-                        <TextBlock Grid.Column="4" Text="{Binding HeaderCourseType}" Margin="6,0" />
-                        <TextBlock Grid.Column="5" Text="{Binding HeaderGrade}" Margin="6,0" />
-                        <TextBlock Grid.Column="6" Text="{Binding HeaderHours}" Margin="6,0" />
-                        <TextBlock Grid.Column="7" Text="{Binding HeaderBlockStructure}" TextTrimming="CharacterEllipsis" Margin="6,0" />
-                        <TextBlock Grid.Column="8" Text="{Binding HeaderCoteachProfessors}" TextTrimming="CharacterEllipsis" Margin="6,0" />
-                        <TextBlock Grid.Column="9" Text="{Binding HeaderUnavailableRooms}" TextTrimming="CharacterEllipsis" Margin="6,0" />
-                        <TextBlock Grid.Column="10" Text="{Binding HeaderFixedRooms}" TextTrimming="CharacterEllipsis" Margin="6,0" />
-                        <TextBlock Grid.Column="11" Text="{Binding HeaderFixedTimes}" TextTrimming="CharacterEllipsis" Margin="6,0" />
+                        <TextBlock Grid.Column="4" Text="{Binding HeaderEnrollment}" TextTrimming="CharacterEllipsis" Margin="6,0" />
+                        <TextBlock Grid.Column="5" Text="{Binding HeaderCourseType}" Margin="6,0" />
+                        <TextBlock Grid.Column="6" Text="{Binding HeaderGrade}" Margin="6,0" />
+                        <TextBlock Grid.Column="7" Text="{Binding HeaderHours}" Margin="6,0" />
+                        <TextBlock Grid.Column="8" Text="{Binding HeaderBlockStructure}" TextTrimming="CharacterEllipsis" Margin="6,0" />
+                        <TextBlock Grid.Column="9" Text="{Binding HeaderCoteachProfessors}" TextTrimming="CharacterEllipsis" Margin="6,0" />
+                        <TextBlock Grid.Column="10" Text="{Binding HeaderUnavailableRooms}" TextTrimming="CharacterEllipsis" Margin="6,0" />
+                        <TextBlock Grid.Column="11" Text="{Binding HeaderFixedRooms}" TextTrimming="CharacterEllipsis" Margin="6,0" />
+                        <TextBlock Grid.Column="12" Text="{Binding HeaderFixedTimes}" TextTrimming="CharacterEllipsis" Margin="6,0" />
                     </Grid>
                     </Border>
                 </Expander.Header>
@@ -421,6 +423,14 @@
                                                           DisplayMemberPath="Name"
                                                           SelectedValuePath="Id"
                                                           SelectedValue="{Binding ProfessorId, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                                <TextBlock Text="수강 인원"
+                                                           VerticalAlignment="Center"
+                                                           Margin="10,0,4,0"
+                                                           FontSize="11"
+                                                           Foreground="{StaticResource OnSurfaceVariant}" />
+                                                <TextBox Height="30" Width="70" Padding="6,3"
+                                                         LostFocus="OnNumericTextBoxLostFocus"
+                                                         Text="{Binding ExpectedEnrollment, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged, TargetNullValue=''}" />
                                             </StackPanel>
                                         </DataTemplate>
                                     </ItemsControl.ItemTemplate>
@@ -804,6 +814,7 @@
                                     <ColumnDefinition Width="170" SharedSizeGroup="CourseName" />
                                     <ColumnDefinition Width="58" SharedSizeGroup="CourseSections" />
                                     <ColumnDefinition Width="98" SharedSizeGroup="CourseProfessor" />
+                                    <ColumnDefinition Width="92" SharedSizeGroup="CourseEnrollment" />
                                     <ColumnDefinition Width="52" SharedSizeGroup="CourseType" />
                                     <ColumnDefinition Width="68" SharedSizeGroup="CourseGrade" />
                                     <ColumnDefinition Width="74" SharedSizeGroup="CourseHours" />
@@ -817,14 +828,15 @@
                                 <TextBlock Grid.Column="2" Text="이름" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                                 <TextBlock Grid.Column="3" Text="분반" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                                 <TextBlock Grid.Column="4" Text="교수" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="5" Text="유형" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="6" Text="학년" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="7" Text="시수" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="8" Text="블록" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="9" Text="팀티칭 교수" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="10" Text="불가 강의실" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="11" Text="강의실" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
-                                <TextBlock Grid.Column="12" Text="시간 고정" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="5" Text="수강 인원" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="6" Text="유형" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="7" Text="학년" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="8" Text="시수" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="9" Text="블록" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="10" Text="팀티칭 교수" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="11" Text="불가 강의실" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="12" Text="강의실" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
+                                <TextBlock Grid.Column="13" Text="시간 고정" FontWeight="Bold" FontSize="11" Foreground="White" VerticalAlignment="Center" Margin="6,0" />
                             </Grid>
                             <ItemsControl ItemsSource="{Binding CourseGroups}"
                                           ItemTemplate="{StaticResource CourseGroupRowTemplate}" />

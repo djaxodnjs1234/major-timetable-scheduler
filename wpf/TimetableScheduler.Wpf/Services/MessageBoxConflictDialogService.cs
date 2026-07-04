@@ -562,6 +562,7 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         ConflictType.ProfUnavailableRoomViolation => "교수 불가 강의실",
         ConflictType.ProfRoomInconsistent => "교수 강의실 일관성",
         ConflictType.AcademicLevelTimeBandViolation => "학위과정 시간대 위반",
+        ConflictType.RoomCapacityViolation => "강의실 정원 초과",
         _ => "제약조건 위반",
     };
 }

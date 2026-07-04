@@ -121,6 +121,7 @@ public sealed partial class CourseGroupItem : ObservableObject
     public string HeaderHours { get; init; } = "";
     public string HeaderSectionInfo { get; init; } = "";
     public string HeaderProfessor { get; init; } = "";
+    public string HeaderEnrollment { get; init; } = "";
     public string HeaderBlockStructure { get; init; } = "";
     public string HeaderUnavailableRooms { get; init; } = "";
     public string HeaderFixedRooms { get; init; } = "";
@@ -1468,6 +1469,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 HeaderHours = $"{rep.HoursPerWeek}시간",
                 HeaderSectionInfo = $"{sections.Count}개",
                 HeaderProfessor = FormatSectionProfessors(sections, profNames),
+                HeaderEnrollment = FormatSectionEnrollments(sections),
                 HeaderBlockStructure = FormatBlocks(rep),
                 HeaderUnavailableRooms = FormatCourseNames(rep.UnavailableRooms, roomNames),
                 HeaderFixedRooms = FormatCourseNames(rep.FixedRooms, roomNames),
@@ -1528,6 +1530,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         HoursPerWeek = src.HoursPerWeek,
         CourseType = src.CourseType,
         ProfessorId = src.ProfessorId,
+        ExpectedEnrollment = src.ExpectedEnrollment,
         Section = src.Section,
         Department = src.Department,
         FixedRooms = new List<string>(src.FixedRooms),
@@ -1761,6 +1764,24 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                     ? $"{SectionLetter(section.Section)}분반: 없음"
                     : $"{SectionLetter(section.Section)}분반: {professor}";
             }));
+    }
+
+    private static string FormatSectionEnrollments(IReadOnlyList<Course> sections)
+    {
+        if (sections.Count == 0) return "";
+        var values = sections
+            .OrderBy(section => section.Section)
+            .Select(section =>
+            {
+                var value = section.ExpectedEnrollment is > 0
+                    ? $"{section.ExpectedEnrollment.Value}명"
+                    : "-";
+                return sections.Count == 1
+                    ? value
+                    : $"{SectionLetter(section.Section)}분반: {value}";
+            })
+            .ToList();
+        return string.Join(", ", values);
     }
 
     private static string FormatNames(IReadOnlyList<string> ids, IReadOnlyDictionary<string, string> names) =>

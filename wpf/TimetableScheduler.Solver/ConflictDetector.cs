@@ -19,6 +19,7 @@ public enum ConflictType
     ProfRoomInconsistent,
     SameCourseSameDayConflict,
     AcademicLevelTimeBandViolation,
+    RoomCapacityViolation,
 }
 
 public sealed record ConflictItem(
@@ -37,10 +38,15 @@ public static class ConflictDetector
         IReadOnlyList<Professor>? professors = null,
         IReadOnlyList<CrossGroup>? crosses = null,
         Func<string, string, int, int, bool>? isManualGradeOverlapAllowed = null,
-        bool allowGraduateDaytimeOverflow = false)
+        bool allowGraduateDaytimeOverflow = false,
+        IReadOnlyList<Room>? rooms = null)
     {
         var list = new List<ConflictItem>();
         var profMap = professors?.ToDictionary(p => p.Id) ?? new Dictionary<string, Professor>();
+        var roomMap = rooms?
+            .GroupBy(r => r.Id, StringComparer.Ordinal)
+            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal)
+            ?? new Dictionary<string, Room>();
         var resolved = assignment
             .Select(a => (Assignment: a, Course: ResolveCourseForAssignment(a, courses)))
             .ToList();
@@ -190,6 +196,32 @@ public static class ConflictDetector
                 new[] { a }));
         }
 
+        if (roomMap.Count > 0)
+        {
+            foreach (var occurrence in BuildCapacityOccurrences(resolved))
+            {
+                var (a, c) = occurrence;
+                if (c?.ExpectedEnrollment is not int enrollment || enrollment <= 0) continue;
+                if (!roomMap.TryGetValue(a.RoomId, out var room) || room.Capacity <= 0) continue;
+                if (enrollment <= room.Capacity) continue;
+
+                list.Add(new ConflictItem(
+                    ConflictType.RoomCapacityViolation,
+                    ConflictSeverity.Error,
+                    $"{c.Name}({c.Id})의 수강 인원은 {enrollment}명이고 {room.Name}의 수용 인원은 {room.Capacity}명입니다.",
+                    a.Day,
+                    a.Period,
+                    resolved
+                        .Where(x => x.Course != null
+                            && ReferenceEquals(x.Course, c)
+                            && x.Assignment.Day == a.Day
+                            && x.Assignment.RoomId == a.RoomId
+                            && x.Assignment.AssignmentId == a.AssignmentId)
+                        .Select(x => x.Assignment)
+                        .ToList()));
+            }
+        }
+
         // HC-19: length-2 blocks must start at 1/3/6/8.
         var runs = TimetableRuns.ComputeRuns(assignment);
         foreach (var c in courses)
@@ -333,6 +365,29 @@ public static class ConflictDetector
         }
 
         return list;
+    }
+
+    private static IEnumerable<(SolutionAssignment Assignment, Course? Course)> BuildCapacityOccurrences(
+        IReadOnlyList<(SolutionAssignment Assignment, Course? Course)> resolved)
+    {
+        foreach (var group in resolved.GroupBy(x => string.Join(
+                     "\u001f",
+                     x.Assignment.AssignmentId ?? "",
+                     x.Assignment.CourseId,
+                     x.Assignment.Day,
+                     x.Assignment.RoomId), StringComparer.Ordinal))
+        {
+            var rows = group.OrderBy(x => x.Assignment.Period).ToList();
+            var i = 0;
+            while (i < rows.Count)
+            {
+                yield return rows[i];
+                var j = i;
+                while (j + 1 < rows.Count && rows[j + 1].Assignment.Period == rows[j].Assignment.Period + 1)
+                    j++;
+                i = j + 1;
+            }
+        }
     }
 
     private static Course? ResolveCourseForAssignment(

@@ -48,6 +48,7 @@ public static class DomainHelpers
         HoursPerWeek = src.HoursPerWeek,
         CourseType = src.CourseType,
         ProfessorId = src.ProfessorId,
+        ExpectedEnrollment = src.ExpectedEnrollment,
         Section = newSection,
         Department = src.Department,
         FixedRooms = new List<string>(src.FixedRooms),
