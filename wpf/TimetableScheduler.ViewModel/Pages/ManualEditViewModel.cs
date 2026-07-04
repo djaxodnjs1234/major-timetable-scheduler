@@ -3392,10 +3392,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
         var items = new List<ManualValidationItem>
         {
-            BuildValidationItem("professor-conflict", "교수 중복 검증", ManualValidationStatus.Failed, detected, ConflictType.ProfessorConflict),
-            BuildValidationItem("room-conflict", "강의실 중복 검증", ManualValidationStatus.Failed, detected, ConflictType.RoomConflict),
-            BuildValidationItem("grade-conflict", "학년 중복 검증", ManualValidationStatus.Failed, detected, ConflictType.GradeConflict),
-            BuildValidationItem("same-course-day", "동일 과목 동일 요일 중복 검증", ManualValidationStatus.Failed, detected, ConflictType.SameCourseSameDayConflict),
+            BuildValidationItem("professor-conflict", "교수 시간 중복 검증", ManualValidationStatus.Failed, detected, ConflictType.ProfessorConflict),
+            BuildValidationItem("room-conflict", "강의실 시간 중복 검증", ManualValidationStatus.Failed, detected, ConflictType.RoomConflict),
+            BuildValidationItem("grade-conflict", "학년 시간 중복 검증", ManualValidationStatus.Failed, detected, ConflictType.GradeConflict),
+            BuildValidationItem("same-course-day", "동일 과목 동일 요일 검증", ManualValidationStatus.Failed, detected, ConflictType.SameCourseSameDayConflict),
             BuildValidationItem("lunch", "점심시간 침범 검증", ManualValidationStatus.Failed, detected, ConflictType.LunchConflict),
             BuildTimeRangeValidationItem(detected),
             BuildSameCourseRoomValidationItem(),
@@ -3610,12 +3610,12 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .Select(x => new ConflictItem(
                 ConflictType.GradeConflict,
                 ConflictSeverity.Warning,
-                x.Warning,
+                $"{CourseDisplayName(x.Occurrence.Representative.CourseId)} 수업이 {DayName(x.Occurrence.Day)} {FormatPeriodRange(x.Occurrence.StartPeriod, x.Occurrence.EndPeriod)}에 배치되어 있습니다. 수동 편집에서는 허용되지만 권장되지 않습니다. {x.Warning}",
                 x.Occurrence.Day,
                 x.Occurrence.StartPeriod,
                 x.Occurrence.Rows))
             .ToList();
-        return BuildValidationItem("soft-time", "월요일 오전·금요일 오후 검증", ManualValidationStatus.Warning, details);
+        return BuildValidationItem("soft-time", "월요일 오전·금요일 오후 배치 검증", ManualValidationStatus.Warning, details);
     }
 
     private ManualValidationItem BuildFixedTimeManualChangeItem()
@@ -3650,7 +3650,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 first == default ? 0 : first.Period,
                 first == default ? null : new[] { first }));
         }
-        return BuildManualWarningItem("fixed-time-manual", "고정 시간 검증", "수동 변경", details);
+        return BuildManualWarningItem("fixed-time-manual", "고정 시간 변경 검증", "수동 변경", details);
     }
 
     private ManualValidationItem BuildFixedRoomManualChangeItem()
@@ -3672,7 +3672,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 a.Period,
                 new[] { a }));
         }
-        return BuildManualWarningItem("fixed-room-manual", "고정 강의실 검증", "수동 변경", details);
+        return BuildManualWarningItem("fixed-room-manual", "고정 강의실 변경 검증", "수동 변경", details);
     }
 
     private ManualValidationItem BuildBlockStartManualEditItem()
@@ -3683,7 +3683,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .Select(o => new ConflictItem(
                 ConflictType.BlockStartViolation,
                 ConflictSeverity.Warning,
-                $"{CourseDisplayName(o.Representative.CourseId)}의 {o.ActualLength}시간 블록이 허용 시작 교시가 아닌 {o.StartPeriod}교시에 시작합니다.",
+                $"{CourseDisplayName(o.Representative.CourseId)}의 {o.ActualLength}시간 블록이 허용 시작 교시가 아닌 {o.StartPeriod}교시에 시작합니다. 수동 편집에서는 허용됩니다.",
                 o.Day,
                 o.StartPeriod,
                 o.Rows))

@@ -368,8 +368,9 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         if (item.Details.Count > 0)
         {
             var detailItems = new StackPanel();
+            var reportReasonLabel = ReportReasonLabel(item);
             foreach (var conflict in item.Details)
-                detailItems.Children.Add(BuildConflictBlock(conflict, null));
+                detailItems.Children.Add(BuildConflictBlock(conflict, null, reportReasonLabel));
             body.Children.Add(new ScrollViewer
             {
                 MaxHeight = 260,
@@ -419,7 +420,18 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         };
     }
 
-    private Border BuildConflictBlock(ConflictItem conflict, ConflictSelectionContext? selection)
+    private static string ReportReasonLabel(ManualValidationItem item)
+    {
+        var label = item.DisplayName.Trim();
+        return label.EndsWith(" 검증", StringComparison.Ordinal)
+            ? label[..^3]
+            : label;
+    }
+
+    private Border BuildConflictBlock(
+        ConflictItem conflict,
+        ConflictSelectionContext? selection,
+        string? reasonLabelOverride = null)
     {
         var accent = conflict.Severity == ConflictSeverity.Warning
             ? Color.FromRgb(0xB7, 0x79, 0x1F)
@@ -448,7 +460,7 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
                      || AssignmentIdentity(assignment) != AssignmentIdentity(selectedRow)))
             AddCourseLine(selected == null ? "관련 수업:" : "충돌 상대:", assignment, null);
 
-        AddLine("사유:", KoreanLabel(conflict.Type), accentBrush, FontWeights.SemiBold);
+        AddLine("사유:", reasonLabelOverride ?? KoreanLabel(conflict.Type), accentBrush, FontWeights.SemiBold);
         foreach (var line in conflict.Description.Split(
                      new[] { "\r\n", "\n" },
                      StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
