@@ -104,8 +104,8 @@ public sealed partial class ResultsViewModel : PageViewModelBase
         SolutionCards.Clear();
         if (Solutions.Count == 0) return;
 
-        // Theoretical max = SC01+SC02+SC03 weights each 1.0 → 3.0
-        const double maxScore = 3.0;
+        // Theoretical max is the sum of configured soft-constraint score weights.
+        var maxScore = SolutionScoring.ScWeights.Values.Sum();
 
         // Global max course count across all solutions and days for consistent density scaling
         int globalMax = Solutions
@@ -135,7 +135,7 @@ public sealed partial class ResultsViewModel : PageViewModelBase
 
             var previewRows = BuildPreviewRows(s.Assignment, globalMaxSlotCount);
 
-            var normalized = Math.Round(s.Score.Total / maxScore * 100, 1);
+            var normalized = Math.Round(s.Score.Total / Math.Max(1.0, maxScore) * 100, 1);
             SolutionCards.Add(new SolutionCardViewModel(s, rank++, normalized, days, previewRows));
         }
     }

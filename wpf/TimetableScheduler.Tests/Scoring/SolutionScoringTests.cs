@@ -114,7 +114,50 @@ public class SolutionScoringTests
     }
 
     [Fact]
-    public void Score_AllPerfect_TotalIsThree()
+    public void Sc04_AboveTwoFirstPeriodClasses_ReducesScore()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "A-01", ProfessorId = "P1" },
+            new() { Id = "B-01", ProfessorId = "P1" },
+            new() { Id = "C-01", ProfessorId = "P1" },
+        };
+        var profs = new List<Professor> { new() { Id = "P1", Name = "P" } };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("A-01", 0, SoftConstraints.Sc04FirstPeriod, "R1"),
+            new("B-01", 1, SoftConstraints.Sc04FirstPeriod, "R1"),
+            new("C-01", 2, SoftConstraints.Sc04FirstPeriod, "R1"),
+        };
+
+        var expected = 1.0 - 1.0 / (Constants.Days - SoftConstraints.Sc04FirstPeriodThreshold);
+        Assert.Equal(expected, SolutionScoring.Sc04FirstPeriodLimit(assignment, courses, profs), 6);
+    }
+
+    [Fact]
+    public void Sc04_FixedCourses_AreIgnored()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "A-01", ProfessorId = "P1" },
+            new() { Id = "B-01", ProfessorId = "P1" },
+            new() { Id = "F-01", ProfessorId = "P1", IsFixed = true },
+            new() { Id = "F-02", ProfessorId = "P1", IsFixed = true },
+        };
+        var profs = new List<Professor> { new() { Id = "P1", Name = "P" } };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("A-01", 0, SoftConstraints.Sc04FirstPeriod, "R1"),
+            new("B-01", 1, SoftConstraints.Sc04FirstPeriod, "R1"),
+            new("F-01", 2, SoftConstraints.Sc04FirstPeriod, "R1"),
+            new("F-02", 3, SoftConstraints.Sc04FirstPeriod, "R1"),
+        };
+
+        Assert.Equal(1.0, SolutionScoring.Sc04FirstPeriodLimit(assignment, courses, profs), 6);
+    }
+
+    [Fact]
+    public void Score_AllPerfect_TotalIsFour()
     {
         var courses = new List<Course>
         {
@@ -127,7 +170,8 @@ public class SolutionScoringTests
         Assert.Equal(1.0, score.Sc01, 6);
         Assert.Equal(1.0, score.Sc02, 6);
         Assert.Equal(1.0, score.Sc03, 6);
-        Assert.Equal(3.0, score.Total, 6);
+        Assert.Equal(1.0, score.Sc04, 6);
+        Assert.Equal(4.0, score.Total, 6);
     }
 
     [Fact]

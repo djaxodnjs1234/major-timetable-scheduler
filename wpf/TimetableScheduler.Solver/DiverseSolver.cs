@@ -26,6 +26,7 @@ public sealed record DiverseSolverOptions
     public bool UseSc01 { get; init; }
     public bool UseSc02 { get; init; }
     public bool UseSc03 { get; init; }
+    public bool UseSc04 { get; init; }
 }
 
 public sealed record DiverseSolverResult(
@@ -34,7 +35,8 @@ public sealed record DiverseSolverResult(
     int? Sc01Bound,
     int? Sc02Bound,
     int? Sc03Bound,
-    int Attempts);
+    int Attempts,
+    int? Sc04Bound = null);
 
 public static class DiverseSolver
 {
@@ -56,7 +58,7 @@ public static class DiverseSolver
         var effectiveRetakes = EffectiveRetakes(courses, retakes, options.ConsiderRetakeStudents);
         var totalSw = Stopwatch.StartNew();
 
-        int? sc01Bound = null, sc02Bound = null, sc03Bound = null;
+        int? sc01Bound = null, sc02Bound = null, sc03Bound = null, sc04Bound = null;
         if (cancellationToken.IsCancellationRequested)
             return Cancelled();
 
@@ -156,6 +158,42 @@ public static class DiverseSolver
                 "1C", $"SC-03 opt={opt}, bound={sc03Bound}", 0, 0, 0));
         }
 
+        if (options.UseSc04)
+        {
+            if (cancellationToken.IsCancellationRequested)
+                return Cancelled(sc01Bound, sc02Bound, sc03Bound);
+            progress?.Report(new SolverProgress("1D", "SC-04 measuring", 0, 0, 0));
+            var p4 = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes, blockingCourses);
+            if (sc01Bound.HasValue)
+                p4.Model.Add(SoftConstraints.Sc01PenaltyTerm(p4.X, courses, rooms) <= sc01Bound.Value);
+            if (sc02Bound.HasValue)
+                p4.Model.Add(SoftConstraints.Sc02PenaltyTerm(p4.Model, p4.X, courses, rooms) <= sc02Bound.Value);
+            if (sc03Bound.HasValue)
+                p4.Model.Add(SoftConstraints.Sc03PenaltyTerm(p4.Model, p4.DayVarsByCourse, courses) <= sc03Bound.Value);
+            var term = SoftConstraints.Sc04PenaltyTerm(p4.Model, p4.X, courses, rooms);
+            p4.Model.Minimize(term);
+            if (!TryGetSolveTimeLimit(options, totalSw, 2d, out var sc04TimeLimit))
+                return Unknown(sc01Bound, sc02Bound, sc03Bound, sc04Bound: sc04Bound);
+            using var s = NewSolver(sc04TimeLimit);
+            CpSolverStatus st;
+            try
+            {
+                st = SolveWithCancellation(s, p4.Model, cancellationToken);
+            }
+            catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
+            {
+                return Cancelled(sc01Bound, sc02Bound, sc03Bound, sc04Bound: sc04Bound);
+            }
+            if (cancellationToken.IsCancellationRequested)
+                return Cancelled(sc01Bound, sc02Bound, sc03Bound, sc04Bound: sc04Bound);
+            if (!IsFeasible(st))
+                return new DiverseSolverResult(StatusName(st), Array.Empty<IReadOnlyList<SolutionAssignment>>(), sc01Bound, sc02Bound, sc03Bound, 0);
+            int opt = (int)s.ObjectiveValue;
+            sc04Bound = opt + Math.Max(0, SoftConstraints.Sc04SlackAbs);
+            progress?.Report(new SolverProgress(
+                "1D", $"SC-04 opt={opt}, bound={sc04Bound}", 0, 0, 0));
+        }
+
         // Phase 2: build full model with SC bounds, seed loop
         progress?.Report(new SolverProgress("2", "Phase 2 모델 빌드", 0, options.TotalSolutions, 0));
         var build = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes, blockingCourses);
@@ -165,6 +203,8 @@ public static class DiverseSolver
             build.Model.Add(SoftConstraints.Sc02PenaltyTerm(build.Model, build.X, courses, rooms) <= sc02Bound.Value);
         if (sc03Bound.HasValue)
             build.Model.Add(SoftConstraints.Sc03PenaltyTerm(build.Model, build.DayVarsByCourse, courses) <= sc03Bound.Value);
+        if (sc04Bound.HasValue)
+            build.Model.Add(SoftConstraints.Sc04PenaltyTerm(build.Model, build.X, courses, rooms) <= sc04Bound.Value);
 
         var seen = new HashSet<string>();
         var solutions = new List<IReadOnlyList<SolutionAssignment>>();
@@ -174,7 +214,7 @@ public static class DiverseSolver
         for (int i = 0; i < options.TotalSolutions; i++)
         {
             if (cancellationToken.IsCancellationRequested)
-                return Cancelled(sc01Bound, sc02Bound, sc03Bound, attempts);
+                return Cancelled(sc01Bound, sc02Bound, sc03Bound, attempts, sc04Bound);
 
             if (!TryGetSolveTimeLimit(options, totalSw, 1d, out var perSolveTimeLimit))
                 break;
@@ -192,10 +232,10 @@ public static class DiverseSolver
             }
             catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
             {
-                return Cancelled(sc01Bound, sc02Bound, sc03Bound, attempts);
+                return Cancelled(sc01Bound, sc02Bound, sc03Bound, attempts, sc04Bound);
             }
             if (cancellationToken.IsCancellationRequested)
-                return Cancelled(sc01Bound, sc02Bound, sc03Bound, attempts);
+                return Cancelled(sc01Bound, sc02Bound, sc03Bound, attempts, sc04Bound);
             lastStatus = StatusName(status);
 
             bool isNew = false;
@@ -217,7 +257,7 @@ public static class DiverseSolver
         }
 
         return new DiverseSolverResult(
-            lastStatus, solutions, sc01Bound, sc02Bound, sc03Bound, attempts);
+            lastStatus, solutions, sc01Bound, sc02Bound, sc03Bound, attempts, sc04Bound);
     }
 
     private static CpSolverStatus SolveWithCancellation(
@@ -246,15 +286,17 @@ public static class DiverseSolver
         int? sc01Bound = null,
         int? sc02Bound = null,
         int? sc03Bound = null,
-        int attempts = 0) =>
-        new("CANCELLED", Array.Empty<IReadOnlyList<SolutionAssignment>>(), sc01Bound, sc02Bound, sc03Bound, attempts);
+        int attempts = 0,
+        int? sc04Bound = null) =>
+        new("CANCELLED", Array.Empty<IReadOnlyList<SolutionAssignment>>(), sc01Bound, sc02Bound, sc03Bound, attempts, sc04Bound);
 
     private static DiverseSolverResult Unknown(
         int? sc01Bound = null,
         int? sc02Bound = null,
         int? sc03Bound = null,
-        int attempts = 0) =>
-        new("UNKNOWN", Array.Empty<IReadOnlyList<SolutionAssignment>>(), sc01Bound, sc02Bound, sc03Bound, attempts);
+        int attempts = 0,
+        int? sc04Bound = null) =>
+        new("UNKNOWN", Array.Empty<IReadOnlyList<SolutionAssignment>>(), sc01Bound, sc02Bound, sc03Bound, attempts, sc04Bound);
 
     private static bool TryGetSolveTimeLimit(
         DiverseSolverOptions options,

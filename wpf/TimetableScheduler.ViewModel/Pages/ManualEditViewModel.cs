@@ -723,7 +723,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var assignments = record.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
             .ToList();
-        LoadCore(new RankedSolution(assignments, new SolutionScore(0, 0, 0, 0)));
+        LoadCore(new RankedSolution(assignments, new SolutionScore(0, 0, 0, 0, 0)));
         EditingSavedTimetableId = record.Id;
         SaveName = record.Name;
     }
@@ -734,7 +734,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var snapshotCopy = JsonSerializer.Deserialize<AppData>(JsonSerializer.Serialize(snapshot))!;
         var solution = new RankedSolution(
             _working.ToList(),
-            BaseSolution?.Score ?? new SolutionScore(0, 0, 0, 0));
+            BaseSolution?.Score ?? new SolutionScore(0, 0, 0, 0, 0));
         var handoff = new ManualEditHandoff(
             solution,
             ToSavedManualCrossLinks(),
@@ -937,7 +937,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         try
         {
             _working = EnsureAssignmentIds(assignments);
-            BaseSolution = new RankedSolution(_working.ToList(), new SolutionScore(0, 0, 0, 0));
+            BaseSolution = new RankedSolution(_working.ToList(), new SolutionScore(0, 0, 0, 0, 0));
             _workingCrossGroups = SessionCrossGroups
                 .Select(g => new CrossGroup { Id = g.Id, BaseIds = g.BaseIds.ToList() })
                 .ToList();
@@ -1977,7 +1977,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             EditingSavedTimetableId = record.Id;
             SaveName = record.Name;
             _resetBaselineSnapshot = CaptureSnapshot();
-            BaseSolution = new RankedSolution(_working.ToList(), BaseSolution?.Score ?? new SolutionScore(0, 0, 0, 0));
+            BaseSolution = new RankedSolution(_working.ToList(), BaseSolution?.Score ?? new SolutionScore(0, 0, 0, 0, 0));
             OnPropertyChanged(nameof(HasUnsavedChanges));
             StatusMessage = saveAsCopy
                 ? $"'{record.Name}' 복사본 저장 완료"
