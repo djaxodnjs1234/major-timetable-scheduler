@@ -37,16 +37,22 @@ public static class ConflictDetector
         IReadOnlyList<Professor>? professors = null,
         IReadOnlyList<CrossGroup>? crosses = null,
         Func<string, string, int, int, bool>? isManualGradeOverlapAllowed = null,
-        bool allowGraduateDaytimeOverflow = false)
+        bool allowGraduateDaytimeOverflow = false,
+        SchedulePolicy? schedulePolicy = null,
+        IReadOnlyDictionary<int, int>? lunchPeriodsByDay = null)
     {
+        schedulePolicy ??= SchedulePolicy.Default;
+        lunchPeriodsByDay ??=
+            SchedulePolicyRules.StaticLunchPeriodsByDay(schedulePolicy, Constants.Days);
         var list = new List<ConflictItem>();
         var profMap = professors?.ToDictionary(p => p.Id) ?? new Dictionary<string, Professor>();
         var resolved = assignment
             .Select(a => (Assignment: a, Course: ResolveCourseForAssignment(a, courses)))
             .ToList();
 
-        // HC-12: lunch period (5) — never allowed
-        foreach (var a in assignment.Where(a => a.Period == Constants.LunchPeriod))
+        // HC-12: the configured or solver-selected lunch cell must stay empty.
+        foreach (var a in assignment.Where(a => SchedulePolicyRules.IsLunch(
+                     schedulePolicy, lunchPeriodsByDay, a.Day, a.Period)))
         {
             var name = ResolveCourseForAssignment(a, courses)?.Name ?? a.CourseId;
             list.Add(new ConflictItem(
@@ -60,9 +66,11 @@ public static class ConflictDetector
         // undergraduate courses use daytime only.
         foreach (var (a, course) in resolved)
         {
-            if (course == null || a.Period == Constants.LunchPeriod) continue;
+            if (course == null || SchedulePolicyRules.IsLunch(
+                    schedulePolicy, lunchPeriodsByDay, a.Day, a.Period)) continue;
             var allowedPeriods =
-                AcademicLevelTimePolicy.AllowedPeriods(course.Grade, allowGraduateDaytimeOverflow);
+                AcademicLevelTimePolicy.AllowedPeriods(
+                    course.Grade, allowGraduateDaytimeOverflow, schedulePolicy);
             if (allowedPeriods.Contains(a.Period)) continue;
 
             list.Add(new ConflictItem(
@@ -149,7 +157,8 @@ public static class ConflictDetector
             foreach (var pid in DomainHelpers.CourseProfIds(c))
             {
                 if (!profMap.TryGetValue(pid, out var prof)) continue;
-                if (a.Period == Constants.LunchPeriod) continue;
+                if (SchedulePolicyRules.IsLunch(
+                        schedulePolicy, lunchPeriodsByDay, a.Day, a.Period)) continue;
                 if (prof.UnavailableSlots.Contains(new TimeSlot(a.Day, a.Period)))
                 {
                     list.Add(new ConflictItem(
@@ -206,10 +215,15 @@ public static class ConflictDetector
                     .Where(a => a.CourseId == cid && a.Day == d && a.Period >= p && a.Period < p + len)
                     .FirstOrDefault(a => ReferenceEquals(ResolveCourseForAssignment(a, courses), c));
                 if (runAssignment == default) continue;
-                if (Constants.Len2StartPeriods.Contains(p)) continue;
+                var allowedPeriods = AcademicLevelTimePolicy.AllowedPeriods(
+                    c.Grade, allowGraduateDaytimeOverflow, schedulePolicy);
+                if (lunchPeriodsByDay.TryGetValue(d, out var lunchPeriod))
+                    allowedPeriods = allowedPeriods.Where(period => period != lunchPeriod).ToArray();
+                var allowedStarts = SchedulePolicyRules.DeriveTwoHourStarts(allowedPeriods);
+                if (allowedStarts.Contains(p)) continue;
                 list.Add(new ConflictItem(
                     ConflictType.BlockStartViolation, ConflictSeverity.Error,
-                    $"{c.Name}({c.Id})의 2시간 수업은 1, 3, 6, 8교시에만 시작할 수 있습니다.",
+                    $"{c.Name}({c.Id})의 2시간 수업 시작 교시가 현재 점심시간 정책과 맞지 않습니다.",
                     d, p,
                     assignment
                         .Where(a => a.CourseId == cid && a.Day == d && a.Period >= p && a.Period < p + len)

@@ -37,13 +37,6 @@ public partial class TimetableGridControl : UserControl
             typeof(TimetableGridControl),
             new PropertyMetadata(64.0, OnLayoutMetricsChanged));
 
-    public static readonly DependencyProperty LunchRowMinHeightProperty =
-        DependencyProperty.Register(
-            nameof(LunchRowMinHeight),
-            typeof(double),
-            typeof(TimetableGridControl),
-            new PropertyMetadata(32.0, OnLayoutMetricsChanged));
-
     public static readonly DependencyProperty NightSeparatorThicknessProperty =
         DependencyProperty.Register(
             nameof(NightSeparatorThickness),
@@ -62,12 +55,6 @@ public partial class TimetableGridControl : UserControl
     {
         get => (double)GetValue(PeriodRowMinHeightProperty);
         set => SetValue(PeriodRowMinHeightProperty, value);
-    }
-
-    public double LunchRowMinHeight
-    {
-        get => (double)GetValue(LunchRowMinHeightProperty);
-        set => SetValue(LunchRowMinHeightProperty, value);
     }
 
     public double NightSeparatorThickness
@@ -92,11 +79,13 @@ public partial class TimetableGridControl : UserControl
     {
         if (e.OldValue is TimetableGridViewModel oldVm)
         {
+            oldVm.Rebuilt -= OnGridRebuilt;
             foreach (var c in oldVm.Cells)
                 c.Items.CollectionChanged -= OnCellItemsChanged;
         }
         if (e.NewValue is TimetableGridViewModel newVm)
         {
+            newVm.Rebuilt += OnGridRebuilt;
             foreach (var c in newVm.Cells)
                 c.Items.CollectionChanged += OnCellItemsChanged;
         }
@@ -105,6 +94,8 @@ public partial class TimetableGridControl : UserControl
 
     private void OnCellItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
         => Rebuild();
+
+    private void OnGridRebuilt(object? sender, EventArgs e) => Rebuild();
 
     private void Rebuild()
     {
@@ -128,13 +119,9 @@ public partial class TimetableGridControl : UserControl
         foreach (var p in vm.Periods)
         {
             int row = BodyRowForPeriod(p);
-            var label = p == 5 ? "점심" : p.ToString();
-            BodyGrid.Children.Add(MakeLabel(label, row, 0, HeaderBg));
+            BodyGrid.Children.Add(MakeLabel(p.ToString(), row, 0, HeaderBg));
             BodyGrid.Children.Add(MakeLabel(SchedulePeriods.TimeRange(p), row, 1, HeaderBg));
         }
-        AddLunchBorder(
-            row: vm.Periods.TakeWhile(period => period != 5).Count(),
-            colSpan: 2 + layout.DayWidths.Sum());
         AddNightSeparatorLine(
             row: NightSeparatorRow,
             colSpan: 2 + layout.DayWidths.Sum());
@@ -148,8 +135,19 @@ public partial class TimetableGridControl : UserControl
             {
                 int row = BodyRowForPeriod(p);
 
-                if (p == 5)
+                if (vm.CellAt(d, p).IsLunch)
                 {
+                    for (int sub = 0; sub < layout.DayWidths[d]; sub++)
+                    {
+                        BodyGrid.Children.Add(MakeCell(
+                            "점심",
+                            row,
+                            layout.DayStart[d] + sub,
+                            1,
+                            LunchBg,
+                            9,
+                            FontWeights.Normal));
+                    }
                     continue;
                 }
 
@@ -228,7 +226,7 @@ public partial class TimetableGridControl : UserControl
             BodyGrid.RowDefinitions.Add(new RowDefinition
             {
                 Height = new GridLength(1, GridUnitType.Star),
-                MinHeight = period == 5 ? LunchRowMinHeight : PeriodRowMinHeight,
+                MinHeight = PeriodRowMinHeight,
             });
         }
     }
@@ -337,29 +335,6 @@ public partial class TimetableGridControl : UserControl
         Grid.SetColumn(border, col);
         if (rowSpan > 1) Grid.SetRowSpan(border, rowSpan);
         return border;
-    }
-
-    private void AddLunchBorder(int row, int colSpan)
-    {
-        var border = new Border
-        {
-            BorderBrush = DayBoundaryBorder,
-            BorderThickness = new Thickness(0, 1, 0, 1),
-            Background = LunchBg,
-            Child = new TextBlock
-            {
-                Text = "점 심 시 간",
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                FontSize = 8,
-                FontWeight = FontWeights.Normal,
-            },
-        };
-        Grid.SetRow(border, row);
-        Grid.SetColumn(border, 0);
-        Grid.SetColumnSpan(border, colSpan);
-        Panel.SetZIndex(border, 30);
-        BodyGrid.Children.Add(border);
     }
 
     private void AddNightSeparatorLine(int row, int colSpan)

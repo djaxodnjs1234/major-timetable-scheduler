@@ -952,9 +952,10 @@
                                         <ColumnDefinition Width="*" />
                                     </Grid.ColumnDefinitions>
                                     <Grid.RowDefinitions>
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
-                                        <RowDefinition Height="Auto" />
+                                         <RowDefinition Height="Auto" />
+                                         <RowDefinition Height="Auto" />
+                                         <RowDefinition Height="Auto" />
+                                         <RowDefinition Height="Auto" />
                                     </Grid.RowDefinitions>
                                     <StackPanel Grid.Row="0" Grid.Column="0" Orientation="Horizontal" Margin="0,4" VerticalAlignment="Center">
                                         <TextBlock Text="해 후보 수" />
@@ -969,10 +970,21 @@
                                         <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
                                                    ToolTip="시간표 전체 생성에 사용할 최대 시간입니다. 한 해를 찾는 시간은 제한하지 않습니다." />
                                     </StackPanel>
-                                    <TextBox Grid.Row="1" Grid.Column="1" Padding="6,4" Margin="0,4" Width="120" HorizontalAlignment="Left"
-                                             Text="{Binding TimeLimitSec, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
-                                    <CheckBox x:Name="ConsiderRetakeStudentsCheckBox"
-                                              Grid.Row="2" Grid.ColumnSpan="2"
+                                     <TextBox Grid.Row="1" Grid.Column="1" Padding="6,4" Margin="0,4" Width="120" HorizontalAlignment="Left"
+                                              Text="{Binding TimeLimitSec, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" />
+                                     <StackPanel Grid.Row="2" Grid.Column="0" Orientation="Horizontal" Margin="0,4" VerticalAlignment="Center">
+                                         <TextBlock Text="점심시간 조건" />
+                                         <TextBlock Text=" (?)" Foreground="{StaticResource PrimaryBrush}"
+                                                    ToolTip="시간표 생성 전에 점심시간을 선택합니다.&#x0a;요일별 선택은 각 요일마다 4·5교시 중 한 교시를 솔버가 비웁니다." />
+                                     </StackPanel>
+                                     <ComboBox Grid.Row="2" Grid.Column="1"
+                                               ItemsSource="{Binding LunchPolicyOptions}"
+                                               SelectedItem="{Binding SelectedLunchPolicy, Mode=TwoWay}"
+                                               DisplayMemberPath="Display"
+                                               Padding="6,4" Margin="0,4"
+                                               MinWidth="250" HorizontalAlignment="Left" />
+                                     <CheckBox x:Name="ConsiderRetakeStudentsCheckBox"
+                                               Grid.Row="3" Grid.ColumnSpan="2"
                                               IsChecked="{Binding ConsiderRetakeStudents}"
                                               Margin="0,10,0,4"
                                               ToolTip="전필 재수강 과목과 현재 학년 전필이 겹치지 않는 분반을 최소 하나 확보합니다.&#x0a;전필-전필 시간이 모두 겹치면 시간표가 생성되지 않을 수 있습니다.">

@@ -9,6 +9,8 @@ public sealed record AppData(
     List<CrossGroup> CrossGroups,
     List<RetakeScenario> RetakeScenarios)
 {
+    public SchedulePolicy SchedulePolicy { get; init; } = SchedulePolicy.Default;
+
     public static AppData Empty() => new(
         new List<Course>(),
         new List<Professor>(),

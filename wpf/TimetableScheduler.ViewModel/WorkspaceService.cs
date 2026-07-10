@@ -21,6 +21,7 @@ public sealed class WorkspaceService
     public ObservableCollection<CrossGroup> CrossGroups { get; } = new();
     public ObservableCollection<RetakeScenario> RetakeScenarios { get; } = new();
     public ObservableCollection<SavedTimetableRecord> SavedTimetables { get; } = new();
+    public SchedulePolicy SchedulePolicy { get; private set; } = SchedulePolicy.Default;
     private readonly HashSet<string> _importedRoomIds = new(StringComparer.Ordinal);
     public IReadOnlySet<string> ImportedRoomIds => _importedRoomIds;
 
@@ -50,6 +51,7 @@ public sealed class WorkspaceService
 
     private void LoadFrom(AppData data)
     {
+        SchedulePolicy = data.SchedulePolicy;
         Courses.Clear();
         foreach (var c in data.Courses) Courses.Add(c);
         Professors.Clear();
@@ -68,6 +70,7 @@ public sealed class WorkspaceService
     {
         if (_repo == null) return;
         var data = _repo.LoadAll();
+        SchedulePolicy = data.SchedulePolicy;
         Courses.Clear();
         foreach (var c in data.Courses) Courses.Add(c);
         Professors.Clear();
@@ -91,7 +94,8 @@ public sealed class WorkspaceService
         IReadOnlyList<SolutionAssignment> assignments,
         IReadOnlyList<SavedManualCrossLinkRow>? manualCrossLinks = null,
         AppData? snapshot = null,
-        string? id = null)
+        string? id = null,
+        IReadOnlyDictionary<int, int>? lunchPeriodsByDay = null)
     {
         var rows = assignments
             .Select(a => new TimetableAssignmentRow(a.CourseId, a.Day, a.Period, a.RoomId, a.AssignmentId))
@@ -104,7 +108,10 @@ public sealed class WorkspaceService
             DateTime.Now,
             rows,
             manualCrossLinks?.ToList() ?? new List<SavedManualCrossLinkRow>(),
-            snapshotJson);
+            snapshotJson,
+            lunchPeriodsByDay == null
+                ? null
+                : new Dictionary<int, int>(lunchPeriodsByDay));
         _repo!.UpsertSavedTimetable(record);
         var existing = SavedTimetables.FirstOrDefault(t => t.Id == record.Id);
         if (existing == null)
@@ -286,19 +293,31 @@ public sealed class WorkspaceService
         Persist();
     }
 
+    public void UpdateSchedulePolicy(SchedulePolicy policy)
+    {
+        SchedulePolicy = policy;
+        Persist();
+    }
+
     public IReadOnlyList<Course> ExpandedCourses => Courses.ToList();
 
     public AppData Snapshot() => new(
         Courses.ToList(),
         Professors.ToList(), Rooms.ToList(),
-        CrossGroups.ToList(), RetakeScenarios.ToList());
+        CrossGroups.ToList(), RetakeScenarios.ToList())
+    {
+        SchedulePolicy = SchedulePolicy,
+    };
 
     public AppData SchedulingSnapshot() => new(
         NormalizeCourseGroupsForScheduling(Courses),
         Professors.ToList(),
         Rooms.ToList(),
         CrossGroups.ToList(),
-        RetakeScenarios.ToList());
+        RetakeScenarios.ToList())
+    {
+        SchedulePolicy = SchedulePolicy,
+    };
 
     private static List<Course> NormalizeCourseGroupsForScheduling(IEnumerable<Course> courses)
     {

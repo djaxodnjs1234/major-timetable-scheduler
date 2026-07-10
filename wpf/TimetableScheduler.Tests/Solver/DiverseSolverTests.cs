@@ -96,7 +96,7 @@ public class DiverseSolverTests
             {
                 Id = "P1",
                 Name = "P1",
-                UnavailableSlots = Constants.ValidPeriods
+                UnavailableSlots = SchedulePolicyRules.CandidateInstructionalPeriods(SchedulePolicy.Default)
                     .SelectMany(p => Enumerable.Range(0, Constants.Days).Select(d => new TimeSlot(d, p)))
                     .Where(slot =>
                         !(slot.Day == 0 && slot.Period is 1 or 2) &&
@@ -234,7 +234,7 @@ public class DiverseSolverTests
             {
                 Id = "P1",
                 Name = "P1",
-                UnavailableSlots = Constants.ValidPeriods
+                UnavailableSlots = SchedulePolicyRules.CandidateInstructionalPeriods(SchedulePolicy.Default)
                     .SelectMany(period => Enumerable.Range(0, Constants.Days).Select(day => new TimeSlot(day, period)))
                     .Where(slot => slot != new TimeSlot(0, 1) && slot != new TimeSlot(0, 2))
                     .ToList(),
@@ -291,7 +291,7 @@ public class DiverseSolverTests
                 SchoolFixedTargetGrade = 1,
             },
         };
-        var allSlots = Constants.ValidPeriods
+        var allSlots = SchedulePolicyRules.CandidateInstructionalPeriods(SchedulePolicy.Default)
             .SelectMany(period => Enumerable.Range(0, Constants.Days).Select(day => new TimeSlot(day, period)))
             .ToList();
         var profs = new List<Professor>

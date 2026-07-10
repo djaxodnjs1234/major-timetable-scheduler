@@ -37,7 +37,7 @@ public static class GroupingHcs
                     var c1 = g1[k];
                     var c2 = g2[(k + 1) % K];
                     for (int d = 0; d < Constants.Days; d++)
-                        foreach (var p in Constants.ValidPeriods)
+                        foreach (var p in Constants.Periods)
                             model.Add(y[(c1.Id, d, p)] == y[(c2.Id, d, p)]);
                 }
             }
@@ -83,7 +83,7 @@ public static class GroupingHcs
                 var conflictVars = new List<BoolVar>();
                 foreach (var m in majors)
                     for (int d = 0; d < Constants.Days; d++)
-                        foreach (var p in Constants.ValidPeriods)
+                        foreach (var p in Constants.Periods)
                         {
                             var sUses = y[(s.Id, d, p)];
                             var mUses = y[(m.Id, d, p)];

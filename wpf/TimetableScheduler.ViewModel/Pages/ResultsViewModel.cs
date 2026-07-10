@@ -72,7 +72,8 @@ public sealed partial class ResultsViewModel : PageViewModelBase
         _workspace.SaveTimetable(
             name,
             card.Solution.Assignment,
-            snapshot: CurrentSnapshot);
+            snapshot: CurrentSnapshot,
+            lunchPeriodsByDay: card.Solution.LunchPeriodsByDay);
         card.IsKept = true;
     }
 
@@ -115,9 +116,14 @@ public sealed partial class ResultsViewModel : PageViewModelBase
             .DefaultIfEmpty(1).Max();
         if (globalMax == 0) globalMax = 1;
 
+        var schedulePolicy = CurrentSnapshot.SchedulePolicy;
         var globalMaxSlotCount = Solutions
             .SelectMany(s => s.Assignment
-                .Where(a => a.Period != 5)
+                .Where(a => !SchedulePolicyRules.IsLunch(
+                    schedulePolicy,
+                    s.LunchPeriodsByDay,
+                    a.Day,
+                    a.Period))
                 .GroupBy(a => (a.Day, a.Period))
                 .Select(g => g.Select(a => a.CourseId).Distinct().Count()))
             .DefaultIfEmpty(1)
@@ -133,7 +139,11 @@ public sealed partial class ResultsViewModel : PageViewModelBase
                     .Select(a => a.CourseId).Distinct().Count() / globalMax
             )).ToList();
 
-            var previewRows = BuildPreviewRows(s.Assignment, globalMaxSlotCount);
+            var previewRows = BuildPreviewRows(
+                s.Assignment,
+                globalMaxSlotCount,
+                schedulePolicy,
+                s.LunchPeriodsByDay);
 
             var normalized = Math.Round(s.Score.Total / maxScore * 100, 1);
             SolutionCards.Add(new SolutionCardViewModel(s, rank++, normalized, days, previewRows));
@@ -142,7 +152,9 @@ public sealed partial class ResultsViewModel : PageViewModelBase
 
     private static IReadOnlyList<MiniPreviewRow> BuildPreviewRows(
         IReadOnlyList<SolutionAssignment> assignments,
-        int maxSlotCount)
+        int maxSlotCount,
+        SchedulePolicy schedulePolicy,
+        IReadOnlyDictionary<int, int>? lunchPeriodsByDay)
     {
         var rows = new List<MiniPreviewRow>();
         for (var period = 1; period <= 9; period++)
@@ -150,7 +162,11 @@ public sealed partial class ResultsViewModel : PageViewModelBase
             var cells = new List<MiniPreviewCell>();
             for (var day = 0; day < 5; day++)
             {
-                if (period == 5)
+                if (SchedulePolicyRules.IsLunch(
+                        schedulePolicy,
+                        lunchPeriodsByDay,
+                        day,
+                        period))
                 {
                     cells.Add(new MiniPreviewCell(false, true, 0, 0));
                     continue;
@@ -171,7 +187,7 @@ public sealed partial class ResultsViewModel : PageViewModelBase
                 cells.Add(new MiniPreviewCell(true, false, courseCount, (double)courseCount / maxSlotCount));
             }
 
-            rows.Add(new MiniPreviewRow(period, period == 5, cells));
+            rows.Add(new MiniPreviewRow(period, false, cells));
         }
 
         return rows;
@@ -183,14 +199,29 @@ public sealed partial class ResultsViewModel : PageViewModelBase
         var courses = SessionCourses;
         var professors = SessionProfessors;
         var rooms = SessionRooms;
+        var schedulePolicy = CurrentSnapshot.SchedulePolicy;
+        var lunchPeriodsByDay = SelectedSolution?.LunchPeriodsByDay;
 
-        Unified.Render(assignment, courses, professors, rooms);
+        Unified.Render(
+            assignment,
+            courses,
+            professors,
+            rooms,
+            schedulePolicy,
+            lunchPeriodsByDay);
 
         GradeViews.Clear();
         foreach (var g in AcademicLevels.AllGrades)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignment, courses, (c, _) => c.Grade == g, professors, rooms);
+            vm.Render(
+                assignment,
+                courses,
+                (c, _) => c.Grade == g,
+                professors,
+                rooms,
+                schedulePolicy,
+                lunchPeriodsByDay);
             GradeViews.Add(new NamedGridViewModel(g.ToString(), AcademicLevels.DisplayName(g), vm));
         }
 
@@ -198,7 +229,14 @@ public sealed partial class ResultsViewModel : PageViewModelBase
         foreach (var r in rooms)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignment, courses, (_, rid) => rid == r.Id, professors, rooms);
+            vm.Render(
+                assignment,
+                courses,
+                (_, rid) => rid == r.Id,
+                professors,
+                rooms,
+                schedulePolicy,
+                lunchPeriodsByDay);
             RoomViews.Add(new NamedGridViewModel(r.Id, r.Name, vm));
         }
 
@@ -206,7 +244,14 @@ public sealed partial class ResultsViewModel : PageViewModelBase
         foreach (var p in professors)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignment, courses, (c, _) => IsCourseTaughtBy(c, p.Id), professors, rooms);
+            vm.Render(
+                assignment,
+                courses,
+                (c, _) => IsCourseTaughtBy(c, p.Id),
+                professors,
+                rooms,
+                schedulePolicy,
+                lunchPeriodsByDay);
             ProfessorViews.Add(new NamedGridViewModel(p.Id, p.Name, vm));
         }
     }

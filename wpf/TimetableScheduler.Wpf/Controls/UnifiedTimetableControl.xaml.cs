@@ -119,13 +119,6 @@ public partial class UnifiedTimetableControl : UserControl
             typeof(UnifiedTimetableControl),
             new PropertyMetadata(64.0, OnLayoutMetricsChanged));
 
-    public static readonly DependencyProperty LunchRowHeightProperty =
-        DependencyProperty.Register(
-            nameof(LunchRowHeight),
-            typeof(double),
-            typeof(UnifiedTimetableControl),
-            new PropertyMetadata(22.0, OnLayoutMetricsChanged));
-
     public static readonly DependencyProperty NightSeparatorThicknessProperty =
         DependencyProperty.Register(
             nameof(NightSeparatorThickness),
@@ -144,12 +137,6 @@ public partial class UnifiedTimetableControl : UserControl
     {
         get => (double)GetValue(PeriodRowMinHeightProperty);
         set => SetValue(PeriodRowMinHeightProperty, value);
-    }
-
-    public double LunchRowHeight
-    {
-        get => (double)GetValue(LunchRowHeightProperty);
-        set => SetValue(LunchRowHeightProperty, value);
     }
 
     public double NightSeparatorThickness
@@ -249,12 +236,11 @@ public partial class UnifiedTimetableControl : UserControl
         for (int i = 0; i < 2; i++)
             RootGrid.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
         foreach (var period in vm.Periods)
-        {
-            if (period == 5)
-                RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(LunchRowHeight) });
-            else
-                RootGrid.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star), MinHeight = PeriodRowMinHeight });
-        }
+            RootGrid.RowDefinitions.Add(new RowDefinition
+            {
+                Height = new GridLength(1, GridUnitType.Star),
+                MinHeight = PeriodRowMinHeight,
+            });
 
         // 2 label cols (period, time) + sum of all grade widths
         RootGrid.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(40) });
@@ -302,13 +288,6 @@ public partial class UnifiedTimetableControl : UserControl
         {
             int row = GridRowForPeriod(p);
 
-            if (p == 5)
-            {
-                // Single merged lunch row spanning all columns
-                AddLunchBorder(row, 2 + totalDayCols);
-                continue;
-            }
-
             AddBorder(p.ToString(), row, 0, 1, 1, HeaderBg, 11, FontWeights.Normal);
             AddBorder($"{8 + p:00}:00~{9 + p:00}:00", row, 1, 1, 1, HeaderBg, 9, FontWeights.Normal);
 
@@ -318,6 +297,14 @@ public partial class UnifiedTimetableControl : UserControl
                 int sub = startCol;
                 foreach (var col in dg.Grades)
                 {
+                    if (vm.IsLunch(dg.Day, p))
+                    {
+                        for (var k = 0; k < col.Width; k++)
+                            AddBorder("점심", row, sub + k, 1, 1, LunchBg, 9, FontWeights.Normal);
+                        sub += col.Width;
+                        continue;
+                    }
+
                     if (col.Grade is not int g)
                     {
                         AddBorder("", row, sub, 1, col.Width, EmptyBg, 0, FontWeights.Normal);
@@ -465,29 +452,6 @@ public partial class UnifiedTimetableControl : UserControl
         Grid.SetColumn(border, col);
         if (rowSpan > 1) Grid.SetRowSpan(border, rowSpan);
         if (colSpan > 1) Grid.SetColumnSpan(border, colSpan);
-        RootGrid.Children.Add(border);
-    }
-
-    private void AddLunchBorder(int row, int colSpan)
-    {
-        var border = new Border
-        {
-            BorderBrush = DayBoundaryBorder,
-            BorderThickness = new Thickness(0, 1, 0, 1),
-            Background = LunchBg,
-            Child = new TextBlock
-            {
-                Text = "점 심 시 간",
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                FontSize = 8,
-                FontWeight = FontWeights.Normal,
-            },
-        };
-        Grid.SetRow(border, row);
-        Grid.SetColumn(border, 0);
-        Grid.SetColumnSpan(border, colSpan);
-        Panel.SetZIndex(border, 30);
         RootGrid.Children.Add(border);
     }
 

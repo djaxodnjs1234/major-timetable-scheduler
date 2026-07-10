@@ -1,4 +1,5 @@
 using TimetableScheduler.Data;
+using TimetableScheduler.Domain;
 using TimetableScheduler.Scoring;
 using TimetableScheduler.Solver;
 
@@ -60,7 +61,11 @@ public class EndToEndSolverTests
         }
 
         // HC-12: no lunch period
-        Assert.DoesNotContain(sol, a => a.Period == Constants.LunchPeriod);
+        Assert.DoesNotContain(sol, a => SchedulePolicyRules.IsLunch(
+            SchedulePolicy.Default,
+            sol.LunchPeriodsByDay,
+            a.Day,
+            a.Period));
 
         // HC-01: each (day, period, room) has ≤ 1 course
         var roomSlot = sol.GroupBy(a => (a.Day, a.Period, a.RoomId)).Select(g => g.Count());

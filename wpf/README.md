@@ -54,6 +54,8 @@ TimetableScheduler.Tests       xUnit 회귀 테스트
 | ViewModel | `TimetableGridViewModel`, `UnifiedTimetableViewModel` | 격자 VM (공유) |
 | ViewModel | `MainWindowViewModel`, 4개 Page VM | 네비게이션 + 페이지 |
 
+점심 정책은 시간표 생성 전에 `4교시 점심`, `5교시 점심`, `요일별 4·5교시 중 한 교시 점심` 중 하나를 선택한다. 마지막 모드에서는 솔버가 요일마다 정확히 한 교시를 점심으로 비우며, 그 선택은 결과·수동 편집·저장 시간표·엑셀에 함께 보존된다. 기존 데이터는 기본값인 `5교시 점심`으로 열린다.
+
 ## HC/SC 매핑 (Python 동일)
 
 | HC | 의미 | 위치 |
@@ -65,14 +67,14 @@ TimetableScheduler.Tests       xUnit 회귀 테스트
 | 06 | 블록 연속 + 다중방 동시 점유 | blocks |
 | 08 | 분반 중복 금지 (**y**) | basic |
 | 11 | 같은 학년 중복 (분반/Cross 제외, **y**) | basic |
-| 12 | 점심(5교시) 금지 | basic |
+| 12 | 선택한 점심 교시 금지(4교시/5교시/요일별 4·5 중 하나) | basic |
 | 13 | `is_fixed` 과목 시간 슬롯 강제 (강의실 별도) | basic |
 | 14 | `fixed_rooms` 외 사용 금지 | blocks |
 | 15 | 같은 교수 분반 인접 | blocks |
 | 16 | Cross cyclic shift (**y**) | grouping |
 | 17 | 재수강 안전 분반 (**y**) | grouping |
 | 18 | SC-03으로 이동: 블록 페어 요일 차 선호 | soft |
-| 19 | 블록 시작 교시 ∈ {1,3,6,8} | blocks |
+| 19 | 점심 정책의 연속 가능 구간에서 2시간 블록 시작 교시 계산 | blocks |
 | 20 | 같은 과목 블록들 다른 요일 | blocks |
 | 21 | 자동 배정 과목의 교수 강의실 조건 | blocks |
 | 22 | 자동 배정 과목의 공통 강의실 | blocks |

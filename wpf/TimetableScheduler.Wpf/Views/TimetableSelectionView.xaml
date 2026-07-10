@@ -138,7 +138,6 @@
                     <DockPanel>
                         <ctrl:UnifiedTimetableControl DataContext="{Binding Preview}"
                                                       PeriodRowMinHeight="52"
-                                                      LunchRowHeight="18"
                                                       NightSeparatorThickness="3"
                                                       DayColumnWidth="68">
                             <ctrl:UnifiedTimetableControl.LayoutTransform>
@@ -160,7 +159,6 @@
                                 <DockPanel>
                                     <ctrl:TimetableGridControl DataContext="{Binding Grid}"
                                                                PeriodRowMinHeight="52"
-                                                               LunchRowMinHeight="24"
                                                                NightSeparatorThickness="3"
                                                                DayColumnMinWidth="66">
                                         <ctrl:TimetableGridControl.LayoutTransform>
@@ -185,7 +183,6 @@
                                 <DockPanel>
                                     <ctrl:TimetableGridControl DataContext="{Binding Grid}"
                                                                PeriodRowMinHeight="52"
-                                                               LunchRowMinHeight="24"
                                                                NightSeparatorThickness="3"
                                                                DayColumnMinWidth="66">
                                         <ctrl:TimetableGridControl.LayoutTransform>
@@ -210,7 +207,6 @@
                                 <DockPanel>
                                     <ctrl:TimetableGridControl DataContext="{Binding Grid}"
                                                                PeriodRowMinHeight="52"
-                                                               LunchRowMinHeight="24"
                                                                NightSeparatorThickness="3"
                                                                DayColumnMinWidth="66">
                                         <ctrl:TimetableGridControl.LayoutTransform>

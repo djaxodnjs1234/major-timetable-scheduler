@@ -1895,7 +1895,7 @@ public class CourseGroupsTests : IDisposable
             await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
             return new DiverseSolverResult(
                 "UNKNOWN",
-                Array.Empty<IReadOnlyList<SolutionAssignment>>(),
+                Array.Empty<SolverSolution>(),
                 null,
                 null,
                 null,
@@ -1913,7 +1913,7 @@ public class CourseGroupsTests : IDisposable
         {
             return Task.FromResult(new DiverseSolverResult(
                 "INFEASIBLE",
-                Array.Empty<IReadOnlyList<SolutionAssignment>>(),
+                Array.Empty<SolverSolution>(),
                 null,
                 null,
                 null,

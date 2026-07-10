@@ -7,6 +7,17 @@ namespace TimetableScheduler.Solver;
 public readonly record struct SolutionAssignment(
     string CourseId, int Day, int Period, string RoomId, string AssignmentId = "");
 
+public sealed record SolverSolution(
+    IReadOnlyList<SolutionAssignment> Assignment,
+    IReadOnlyDictionary<int, int> LunchPeriodsByDay) : IReadOnlyList<SolutionAssignment>
+{
+    public int Count => Assignment.Count;
+    public SolutionAssignment this[int index] => Assignment[index];
+
+    public IEnumerator<SolutionAssignment> GetEnumerator() => Assignment.GetEnumerator();
+    System.Collections.IEnumerator System.Collections.IEnumerable.GetEnumerator() => GetEnumerator();
+}
+
 public sealed record SolverProgress(
     string Phase,
     string Message,
@@ -30,7 +41,7 @@ public sealed record DiverseSolverOptions
 
 public sealed record DiverseSolverResult(
     string Status,
-    IReadOnlyList<IReadOnlyList<SolutionAssignment>> Solutions,
+    IReadOnlyList<SolverSolution> Solutions,
     int? Sc01Bound,
     int? Sc02Bound,
     int? Sc03Bound,
@@ -47,9 +58,11 @@ public static class DiverseSolver
         IReadOnlyList<RetakeScenario>? retakes = null,
         IProgress<SolverProgress>? progress = null,
         CancellationToken cancellationToken = default,
-        IReadOnlyList<Course>? schoolFixedCourses = null)
+        IReadOnlyList<Course>? schoolFixedCourses = null,
+        SchedulePolicy? schedulePolicy = null)
     {
         options ??= new DiverseSolverOptions();
+        schedulePolicy ??= SchedulePolicy.Default;
         var schedulableCourses = SchoolFixedTimePolicy.SchedulableCourses(courses);
         var blockingCourses = (schoolFixedCourses ?? SchoolFixedTimePolicy.SchoolFixedCourses(courses)).ToList();
         courses = schedulableCourses;
@@ -65,7 +78,8 @@ public static class DiverseSolver
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound);
             progress?.Report(new SolverProgress("1A", "SC-01 측정 중", 0, 0, 0));
-            var p1 = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes, blockingCourses);
+            var p1 = ModelBuilder.Build(
+                courses, professors, rooms, crosses, effectiveRetakes, blockingCourses, schedulePolicy);
             var term = SoftConstraints.Sc01PenaltyTerm(p1.X, courses, rooms);
             p1.Model.Minimize(term);
             if (!TryGetSolveTimeLimit(options, totalSw, 2d, out var sc01TimeLimit))
@@ -83,7 +97,7 @@ public static class DiverseSolver
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound);
             if (!IsFeasible(st))
-                return new DiverseSolverResult(StatusName(st), Array.Empty<IReadOnlyList<SolutionAssignment>>(), null, null, null, 0);
+                return new DiverseSolverResult(StatusName(st), Array.Empty<SolverSolution>(), null, null, null, 0);
             int opt = (int)s.ObjectiveValue;
             sc01Bound = opt + Math.Max(0, SoftConstraints.Sc01SlackAbs);
             progress?.Report(new SolverProgress(
@@ -95,7 +109,8 @@ public static class DiverseSolver
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound);
             progress?.Report(new SolverProgress("1B", "SC-02 측정 중", 0, 0, 0));
-            var p2 = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes, blockingCourses);
+            var p2 = ModelBuilder.Build(
+                courses, professors, rooms, crosses, effectiveRetakes, blockingCourses, schedulePolicy);
             if (sc01Bound.HasValue)
                 p2.Model.Add(SoftConstraints.Sc01PenaltyTerm(p2.X, courses, rooms) <= sc01Bound.Value);
             var term = SoftConstraints.Sc02PenaltyTerm(p2.Model, p2.X, courses, rooms);
@@ -115,7 +130,7 @@ public static class DiverseSolver
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound);
             if (!IsFeasible(st))
-                return new DiverseSolverResult(StatusName(st), Array.Empty<IReadOnlyList<SolutionAssignment>>(), sc01Bound, null, null, 0);
+                return new DiverseSolverResult(StatusName(st), Array.Empty<SolverSolution>(), sc01Bound, null, null, 0);
             int opt = (int)s.ObjectiveValue;
             sc02Bound = opt + Math.Max(0, SoftConstraints.Sc02SlackAbs);
             progress?.Report(new SolverProgress(
@@ -127,7 +142,8 @@ public static class DiverseSolver
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound);
             progress?.Report(new SolverProgress("1C", "SC-03 측정 중", 0, 0, 0));
-            var p3 = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes, blockingCourses);
+            var p3 = ModelBuilder.Build(
+                courses, professors, rooms, crosses, effectiveRetakes, blockingCourses, schedulePolicy);
             if (sc01Bound.HasValue)
                 p3.Model.Add(SoftConstraints.Sc01PenaltyTerm(p3.X, courses, rooms) <= sc01Bound.Value);
             if (sc02Bound.HasValue)
@@ -149,7 +165,7 @@ public static class DiverseSolver
             if (cancellationToken.IsCancellationRequested)
                 return Cancelled(sc01Bound, sc02Bound, sc03Bound);
             if (!IsFeasible(st))
-                return new DiverseSolverResult(StatusName(st), Array.Empty<IReadOnlyList<SolutionAssignment>>(), sc01Bound, sc02Bound, null, 0);
+                return new DiverseSolverResult(StatusName(st), Array.Empty<SolverSolution>(), sc01Bound, sc02Bound, null, 0);
             int opt = (int)s.ObjectiveValue;
             sc03Bound = opt + Math.Max(0, SoftConstraints.Sc03SlackAbs);
             progress?.Report(new SolverProgress(
@@ -158,7 +174,8 @@ public static class DiverseSolver
 
         // Phase 2: build full model with SC bounds, seed loop
         progress?.Report(new SolverProgress("2", "Phase 2 모델 빌드", 0, options.TotalSolutions, 0));
-        var build = ModelBuilder.Build(courses, professors, rooms, crosses, effectiveRetakes, blockingCourses);
+        var build = ModelBuilder.Build(
+            courses, professors, rooms, crosses, effectiveRetakes, blockingCourses, schedulePolicy);
         if (sc01Bound.HasValue)
             build.Model.Add(SoftConstraints.Sc01PenaltyTerm(build.X, courses, rooms) <= sc01Bound.Value);
         if (sc02Bound.HasValue)
@@ -167,7 +184,7 @@ public static class DiverseSolver
             build.Model.Add(SoftConstraints.Sc03PenaltyTerm(build.Model, build.DayVarsByCourse, courses) <= sc03Bound.Value);
 
         var seen = new HashSet<string>();
-        var solutions = new List<IReadOnlyList<SolutionAssignment>>();
+        var solutions = new List<SolverSolution>();
         string lastStatus = "UNKNOWN";
         int attempts = 0;
 
@@ -202,10 +219,12 @@ public static class DiverseSolver
             if (IsFeasible(status))
             {
                 var assignments = ExtractAssignments(solver, build.X);
-                var key = MakeKey(assignments);
+                var lunchPeriodsByDay = ExtractLunchPeriods(solver, build);
+                var solution = new SolverSolution(assignments, lunchPeriodsByDay);
+                var key = MakeKey(solution);
                 if (seen.Add(key))
                 {
-                    solutions.Add(assignments);
+                    solutions.Add(solution);
                     isNew = true;
                 }
             }
@@ -247,14 +266,14 @@ public static class DiverseSolver
         int? sc02Bound = null,
         int? sc03Bound = null,
         int attempts = 0) =>
-        new("CANCELLED", Array.Empty<IReadOnlyList<SolutionAssignment>>(), sc01Bound, sc02Bound, sc03Bound, attempts);
+        new("CANCELLED", Array.Empty<SolverSolution>(), sc01Bound, sc02Bound, sc03Bound, attempts);
 
     private static DiverseSolverResult Unknown(
         int? sc01Bound = null,
         int? sc02Bound = null,
         int? sc03Bound = null,
         int attempts = 0) =>
-        new("UNKNOWN", Array.Empty<IReadOnlyList<SolutionAssignment>>(), sc01Bound, sc02Bound, sc03Bound, attempts);
+        new("UNKNOWN", Array.Empty<SolverSolution>(), sc01Bound, sc02Bound, sc03Bound, attempts);
 
     private static bool TryGetSolveTimeLimit(
         DiverseSolverOptions options,
@@ -343,16 +362,47 @@ public static class DiverseSolver
         return list;
     }
 
-    private static string MakeKey(IReadOnlyList<SolutionAssignment> sorted)
+    private static IReadOnlyDictionary<int, int> ExtractLunchPeriods(
+        CpSolver solver,
+        BuildResult build)
+    {
+        var staticLunch = SchedulePolicyRules.StaticLunchPeriod(build.SchedulePolicy);
+        if (staticLunch.HasValue)
+            return Enumerable.Range(0, Constants.Days)
+                .ToDictionary(day => day, _ => staticLunch.Value);
+
+        var result = new Dictionary<int, int>();
+        for (var day = 0; day < Constants.Days; day++)
+        {
+            foreach (var period in new[]
+                     {
+                         SchedulePolicyRules.FirstLunchCandidate,
+                         SchedulePolicyRules.SecondLunchCandidate,
+                     })
+            {
+                if (solver.Value(build.LunchBanVars[(day, period)]) == 1)
+                {
+                    result[day] = period;
+                    break;
+                }
+            }
+        }
+        return result;
+    }
+
+    private static string MakeKey(SolverSolution solution)
     {
         var sb = new System.Text.StringBuilder();
-        foreach (var a in sorted)
+        foreach (var a in solution.Assignment)
         {
             sb.Append(a.CourseId).Append('|')
               .Append(a.Day).Append('|')
               .Append(a.Period).Append('|')
               .Append(a.RoomId).Append(';');
         }
+        sb.Append("lunch:");
+        foreach (var pair in solution.LunchPeriodsByDay.OrderBy(pair => pair.Key))
+            sb.Append(pair.Key).Append('=').Append(pair.Value).Append(';');
         return sb.ToString();
     }
 }

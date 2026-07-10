@@ -8,15 +8,16 @@ public sealed partial class TimeSlotPickerCell : ObservableObject
 {
     public int Day { get; }
     public int Period { get; }
-    public bool IsLunch => Period == Constants.LunchPeriod;
+    public bool IsLunch { get; }
 
     [ObservableProperty]
     private bool isSelected;
 
-    public TimeSlotPickerCell(int day, int period, bool initial)
+    public TimeSlotPickerCell(int day, int period, bool initial, bool isLunch)
     {
         Day = day;
         Period = period;
+        IsLunch = isLunch;
         isSelected = initial;
     }
 }
@@ -26,8 +27,12 @@ public sealed class TimeSlotPickerViewModel
     public IReadOnlyList<TimeSlotPickerCell> Cells { get; }
     private readonly IList<TimeSlot> _target;
 
-    public TimeSlotPickerViewModel(IList<TimeSlot> target, IReadOnlyList<int>? periods = null)
+    public TimeSlotPickerViewModel(
+        IList<TimeSlot> target,
+        IReadOnlyList<int>? periods = null,
+        SchedulePolicy? schedulePolicy = null)
     {
+        schedulePolicy ??= SchedulePolicy.Default;
         _target = target;
         var visiblePeriods = periods ?? Constants.Periods;
         if (periods != null)
@@ -45,7 +50,9 @@ public sealed class TimeSlotPickerViewModel
             foreach (var p in visiblePeriods)
             {
                 bool initial = target.Contains(new TimeSlot(d, p));
-                cells.Add(new TimeSlotPickerCell(d, p, initial));
+                cells.Add(new TimeSlotPickerCell(
+                    d, p, initial,
+                    SchedulePolicyRules.IsStaticallyBlocked(schedulePolicy, p)));
             }
         Cells = cells;
     }

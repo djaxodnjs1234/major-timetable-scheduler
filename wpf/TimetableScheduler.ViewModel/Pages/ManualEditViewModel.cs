@@ -236,6 +236,17 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         (IReadOnlyList<Room>?)_sessionData?.Rooms ?? _workspace.Rooms;
     private IReadOnlyList<CrossGroup> SessionCrossGroups =>
         (IReadOnlyList<CrossGroup>?)_sessionData?.CrossGroups ?? _workspace.CrossGroups;
+    private SchedulePolicy SessionSchedulePolicy =>
+        _sessionData?.SchedulePolicy ?? _workspace.SchedulePolicy;
+    private IReadOnlyDictionary<int, int> _lunchPeriodsByDay =
+        SchedulePolicyRules.StaticLunchPeriodsByDay(SchedulePolicy.Default, Constants.Days);
+
+    private bool IsLunchPeriod(int day, int period) =>
+        SchedulePolicyRules.IsLunch(
+            SessionSchedulePolicy,
+            _lunchPeriodsByDay,
+            day,
+            period);
 
     public override string Title => "수동 편집";
 
@@ -685,7 +696,10 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var assignments = record.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
             .ToList();
-        LoadCore(new RankedSolution(assignments, new SolutionScore(0, 0, 0, 0)));
+        LoadCore(new RankedSolution(
+            assignments,
+            new SolutionScore(0, 0, 0, 0),
+            record.LunchPeriodsByDay));
         EditingSavedTimetableId = record.Id;
         SaveName = record.Name;
     }
@@ -696,7 +710,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var snapshotCopy = JsonSerializer.Deserialize<AppData>(JsonSerializer.Serialize(snapshot))!;
         var solution = new RankedSolution(
             _working.ToList(),
-            BaseSolution?.Score ?? new SolutionScore(0, 0, 0, 0));
+            BaseSolution?.Score ?? new SolutionScore(0, 0, 0, 0),
+            _lunchPeriodsByDay);
         var handoff = new ManualEditHandoff(
             solution,
             ToSavedManualCrossLinks(),
@@ -746,6 +761,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         _lastIgnoredCrossLinkCount = 0;
         _ignoredSavedCrossLinkReasons.Clear();
         BaseSolution = solution;
+        _lunchPeriodsByDay = solution.LunchPeriodsByDay == null
+            ? SchedulePolicyRules.StaticLunchPeriodsByDay(SessionSchedulePolicy, Constants.Days)
+            : new Dictionary<int, int>(solution.LunchPeriodsByDay);
         _working = EnsureAssignmentIds(solution.Assignment);
         _workingCrossGroups = SessionCrossGroups
             .Select(g => new CrossGroup { Id = g.Id, BaseIds = g.BaseIds.ToList() })
@@ -899,7 +917,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         try
         {
             _working = EnsureAssignmentIds(assignments);
-            BaseSolution = new RankedSolution(_working.ToList(), new SolutionScore(0, 0, 0, 0));
+            _lunchPeriodsByDay = timetable.LunchPeriodsByDay == null
+                ? SchedulePolicyRules.StaticLunchPeriodsByDay(SessionSchedulePolicy, Constants.Days)
+                : new Dictionary<int, int>(timetable.LunchPeriodsByDay);
+            BaseSolution = new RankedSolution(
+                _working.ToList(),
+                new SolutionScore(0, 0, 0, 0),
+                _lunchPeriodsByDay);
             _workingCrossGroups = SessionCrossGroups
                 .Select(g => new CrossGroup { Id = g.Id, BaseIds = g.BaseIds.ToList() })
                 .ToList();
@@ -1860,11 +1884,15 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 _working,
                 ToSavedManualCrossLinks(),
                 saveSnapshot,
-                saveAsCopy ? null : EditingSavedTimetableId);
+                saveAsCopy ? null : EditingSavedTimetableId,
+                _lunchPeriodsByDay);
             EditingSavedTimetableId = record.Id;
             SaveName = record.Name;
             _resetBaselineSnapshot = CaptureSnapshot();
-            BaseSolution = new RankedSolution(_working.ToList(), BaseSolution?.Score ?? new SolutionScore(0, 0, 0, 0));
+            BaseSolution = new RankedSolution(
+                _working.ToList(),
+                BaseSolution?.Score ?? new SolutionScore(0, 0, 0, 0),
+                _lunchPeriodsByDay);
             OnPropertyChanged(nameof(HasUnsavedChanges));
             StatusMessage = saveAsCopy
                 ? $"'{record.Name}' 복사본 저장 완료"
@@ -1989,7 +2017,15 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         var rows = _working.Select(a => new TimetableAssignmentRow(a.CourseId, a.Day, a.Period, a.RoomId, a.AssignmentId)).ToList();
         var name = string.IsNullOrWhiteSpace(SaveName) ? "시간표" : SaveName.Trim();
-        FormattedTimetableExporter.Export(name, rows, SessionCourses, SessionProfessors, path, SessionRooms);
+        FormattedTimetableExporter.Export(
+            name,
+            rows,
+            SessionCourses,
+            SessionProfessors,
+            path,
+            SessionRooms,
+            schedulePolicy: SessionSchedulePolicy,
+            lunchPeriodsByDay: _lunchPeriodsByDay);
     }
 
     private bool CanExport() => BaseSolution != null;
@@ -2194,7 +2230,8 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var targetAtSelected = GetOccupiedPeriods(selectedPeriod, target.RowSpan);
         if (selectedAtTarget.Concat(targetAtSelected).Any(p => !Constants.Periods.Contains(p)))
             return "수업 블록이 시간표 범위를 벗어납니다.";
-        if (selectedAtTarget.Concat(targetAtSelected).Contains(Constants.LunchPeriod))
+        if (selectedAtTarget.Any(period => IsLunchPeriod(targetDay, period))
+            || targetAtSelected.Any(period => IsLunchPeriod(selectedDay, period)))
             return "점심시간에는 수업을 배정할 수 없습니다.";
 
         if (!TryBuildSwappedCandidate(selected, selectedDay, selectedPeriod, target, targetDay, targetPeriod, out var candidate, out var candidateReason))
@@ -2461,7 +2498,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var targetPeriods = GetOccupiedPeriods(targetPeriod, assignment.RowSpan);
         if (targetPeriods.Any(p => !Constants.Periods.Contains(p)))
             return Block("수업 블럭이 시간표 범위를 벗어납니다.");
-        if (targetPeriods.Contains(Constants.LunchPeriod))
+        if (targetPeriods.Any(period => IsLunchPeriod(targetDay, period)))
             return Block("점심시간에는 수업을 배정할 수 없습니다.");
         if (targetPeriods.Any(period => !IsAllowedManualEditPeriod(course, period)))
             return Block(AcademicLevelTimeBandBlockedReason);
@@ -2671,7 +2708,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var targetPeriods = GetOccupiedPeriods(targetPeriod, assignment.RowSpan);
         if (targetPeriods.Any(p => !Constants.Periods.Contains(p)))
             return Block("수업 블록이 시간표 범위를 벗어납니다.");
-        if (targetPeriods.Contains(Constants.LunchPeriod))
+        if (targetPeriods.Any(period => IsLunchPeriod(targetDay, period)))
             return Block("점심시간에는 수업을 배정할 수 없습니다.");
         if (targetPeriods.Any(period => !IsAllowedManualEditPeriod(course, period)))
             return Block(AcademicLevelTimeBandBlockedReason);
@@ -3273,7 +3310,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private void Rerender()
     {
         Grid.SetCrossParallelOrder(BuildCrossParallelOrder());
-        Grid.Render(_working, SessionCourses, SessionProfessors, SessionRooms);
+        Grid.Render(
+            _working,
+            SessionCourses,
+            SessionProfessors,
+            SessionRooms,
+            SessionSchedulePolicy,
+            _lunchPeriodsByDay);
         Grid.SetCrossLinkLabels(BuildCrossLinkLabels());
         RenderBreakdownViews();
         RefreshConflicts();
@@ -3396,7 +3439,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         {
             var course = ResolveCourseForAssignment(assignment);
             return course?.Grade == AcademicLevels.GraduateGrade
-                && Constants.DaytimePeriods.Contains(assignment.Period);
+                && SchedulePeriods.Daytime.Contains(assignment.Period);
         });
     }
 
@@ -4032,7 +4075,14 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         foreach (var g in AcademicLevels.AllGrades)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(_working, courses, (c, _) => c.Grade == g, professors, rooms);
+            vm.Render(
+                _working,
+                courses,
+                (c, _) => c.Grade == g,
+                professors,
+                rooms,
+                SessionSchedulePolicy,
+                _lunchPeriodsByDay);
             GradeViews.Add(new NamedGridViewModel(g.ToString(), AcademicLevels.DisplayName(g), vm));
         }
 
@@ -4040,7 +4090,14 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         foreach (var r in rooms)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(_working, courses, (_, rid) => rid == r.Id, professors, rooms);
+            vm.Render(
+                _working,
+                courses,
+                (_, rid) => rid == r.Id,
+                professors,
+                rooms,
+                SessionSchedulePolicy,
+                _lunchPeriodsByDay);
             RoomViews.Add(new NamedGridViewModel(r.Id, r.Name, vm));
         }
 
@@ -4048,7 +4105,14 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         foreach (var p in professors)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(_working, courses, (c, _) => IsCourseTaughtBy(c, p.Id), professors, rooms);
+            vm.Render(
+                _working,
+                courses,
+                (c, _) => IsCourseTaughtBy(c, p.Id),
+                professors,
+                rooms,
+                SessionSchedulePolicy,
+                _lunchPeriodsByDay);
             ProfessorViews.Add(new NamedGridViewModel(p.Id, p.Name, vm));
         }
     }
@@ -4065,7 +4129,9 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             SessionProfessors,
             _workingCrossGroups,
             strictManualCrossValidation ? IsManualGradeOverlapAllowedStrict : IsManualGradeOverlapAllowed,
-            AllowGraduateDaytimeOverflow);
+            AllowGraduateDaytimeOverflow,
+            SessionSchedulePolicy,
+            _lunchPeriodsByDay);
 
     private IReadOnlyList<ConflictItem> DetectConflicts(
         IReadOnlyList<SolutionAssignment> assignment,
@@ -4081,13 +4147,13 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private bool IsAllowedManualEditPeriod(Course course, int period)
     {
         if (course.Grade == AcademicLevels.GraduateGrade
-            && Constants.DaytimePeriods.Contains(period))
+            && SchedulePeriods.Daytime.Contains(period))
         {
             return true;
         }
 
         return AcademicLevelTimePolicy
-            .AllowedPeriods(course.Grade, AllowGraduateDaytimeOverflow)
+            .AllowedPeriods(course.Grade, AllowGraduateDaytimeOverflow, SessionSchedulePolicy)
             .Contains(period);
     }
 
@@ -5419,8 +5485,26 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         targetPeriod = normalizedTarget.Period;
         targetGrade = normalizedTarget.Grade;
         targetSubColumnIdx = normalizedTarget.SubColumnIdx;
-        if (selected.RowSpan == 2 && !Constants.Len2StartPeriods.Contains(targetPeriod))
-            return new[] { "2시간 수업은 1, 3, 6, 8교시에만 시작할 수 있습니다." };
+        if (selected.RowSpan == 2)
+        {
+            var selectedCourse = ResolveCourseForCellAssignment(selected);
+            var allowedStarts = selectedCourse == null
+                ? Array.Empty<int>()
+                : SchedulePolicyRules.DeriveTwoHourStarts(
+                    AcademicLevelTimePolicy
+                        .AllowedPeriods(
+                            selectedCourse.Grade,
+                            AllowGraduateDaytimeOverflow,
+                            SessionSchedulePolicy)
+                        .Where(period => !IsLunchPeriod(targetDay, period)));
+            if (!allowedStarts.Contains(targetPeriod))
+            {
+                return new[]
+                {
+                    $"2시간 수업은 {string.Join(", ", allowedStarts)}교시에만 시작할 수 있습니다.",
+                };
+            }
+        }
 
         var selectedKey = BuildManualCrossAssignmentKey(selected, selectedDay, selectedPeriod);
         var targetKey = BuildManualCrossAssignmentKey(target, targetDay, targetPeriod);

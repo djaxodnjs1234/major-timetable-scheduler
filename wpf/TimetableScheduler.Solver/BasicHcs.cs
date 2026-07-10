@@ -5,14 +5,17 @@ namespace TimetableScheduler.Solver;
 
 using XDict = Dictionary<(string CourseId, int Day, int Period, string RoomId), BoolVar>;
 using YDict = Dictionary<(string CourseId, int Day, int Period), BoolVar>;
+using LunchVarMap = Dictionary<(int Day, int Period), BoolVar>;
 
 public static class BasicHcs
 {
     public static void AddHc01_RoomSingle(
-        CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms)
+        CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms,
+        SchedulePolicy schedulePolicy)
     {
+        var periods = SchedulePolicyRules.CandidateInstructionalPeriods(schedulePolicy);
         for (int d = 0; d < Constants.Days; d++)
-            foreach (var p in Constants.ValidPeriods)
+            foreach (var p in periods)
                 foreach (var r in rooms)
                 {
                     var terms = courses.Select(c => x[(c.Id, d, p, r.Id)]).ToArray();
@@ -21,7 +24,7 @@ public static class BasicHcs
     }
 
     public static void AddHc02_ProfSingle(
-        CpModel model, YDict y, IReadOnlyList<Course> courses)
+        CpModel model, YDict y, IReadOnlyList<Course> courses, SchedulePolicy schedulePolicy)
     {
         var profCourses = new Dictionary<string, List<Course>>();
         foreach (var c in courses)
@@ -32,9 +35,10 @@ public static class BasicHcs
                 list.Add(c);
             }
 
+        var periods = SchedulePolicyRules.CandidateInstructionalPeriods(schedulePolicy);
         foreach (var (_, pcourses) in profCourses)
             for (int d = 0; d < Constants.Days; d++)
-                foreach (var p in Constants.ValidPeriods)
+                foreach (var p in periods)
                 {
                     var terms = pcourses.Select(c => y[(c.Id, d, p)]).ToArray();
                     model.Add(LinearExpr.Sum(terms) <= 1);
@@ -51,7 +55,9 @@ public static class BasicHcs
                 if (!profMap.TryGetValue(pid, out var prof)) continue;
                 foreach (var slot in prof.UnavailableSlots)
                 {
-                    if (slot.Period == Constants.LunchPeriod) continue;
+                    if (slot.Day < 0 || slot.Day >= Constants.Days
+                        || !Constants.Periods.Contains(slot.Period))
+                        continue;
                     foreach (var r in rooms)
                         model.Add(x[(c.Id, slot.Day, slot.Period, r.Id)] == 0);
                 }
@@ -59,22 +65,26 @@ public static class BasicHcs
     }
 
     public static void AddHc04_Hours(
-        CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms)
+        CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms,
+        SchedulePolicy schedulePolicy)
     {
+        var periods = SchedulePolicyRules.CandidateInstructionalPeriods(schedulePolicy);
         foreach (var c in courses)
         {
             int K = Math.Max(c.FixedRooms.Count, 1);
             var terms = new List<BoolVar>();
             for (int d = 0; d < Constants.Days; d++)
-                foreach (var p in Constants.ValidPeriods)
+                foreach (var p in periods)
                     foreach (var r in rooms)
                         terms.Add(x[(c.Id, d, p, r.Id)]);
             model.Add(LinearExpr.Sum(terms) == c.HoursPerWeek * K);
         }
     }
 
-    public static void AddHc08_SectionNoOverlap(CpModel model, YDict y, IReadOnlyList<Course> courses)
+    public static void AddHc08_SectionNoOverlap(
+        CpModel model, YDict y, IReadOnlyList<Course> courses, SchedulePolicy schedulePolicy)
     {
+        var periods = SchedulePolicyRules.CandidateInstructionalPeriods(schedulePolicy);
         var groups = ConstraintHelpers.GroupByBaseId(courses);
         foreach (var (_, group) in groups)
         {
@@ -85,15 +95,17 @@ public static class BasicHcs
                     var c1 = group[i];
                     var c2 = group[j];
                     for (int d = 0; d < Constants.Days; d++)
-                        foreach (var p in Constants.ValidPeriods)
+                        foreach (var p in periods)
                             model.Add(y[(c1.Id, d, p)] + y[(c2.Id, d, p)] <= 1);
                 }
         }
     }
 
     public static void AddHc11_GradeNoOverlap(
-        CpModel model, YDict y, IReadOnlyList<Course> courses, IReadOnlyList<CrossGroup>? crosses)
+        CpModel model, YDict y, IReadOnlyList<Course> courses, IReadOnlyList<CrossGroup>? crosses,
+        SchedulePolicy schedulePolicy)
     {
+        var periods = SchedulePolicyRules.CandidateInstructionalPeriods(schedulePolicy);
         var byGrade = new Dictionary<int, List<Course>>();
         foreach (var c in courses)
         {
@@ -122,18 +134,42 @@ public static class BasicHcs
                     if (b1 == b2) continue;
                     if (SameCrossGroup(b1, b2)) continue;
                     for (int d = 0; d < Constants.Days; d++)
-                        foreach (var p in Constants.ValidPeriods)
+                        foreach (var p in periods)
                             model.Add(y[(c1.Id, d, p)] + y[(c2.Id, d, p)] <= 1);
                 }
     }
 
-    public static void AddHc12_Lunch(
-        CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms)
+    public static LunchVarMap AddHc12_Lunch(
+        CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms,
+        SchedulePolicy schedulePolicy)
     {
-        foreach (var c in courses)
-            for (int d = 0; d < Constants.Days; d++)
-                foreach (var r in rooms)
-                    model.Add(x[(c.Id, d, Constants.LunchPeriod, r.Id)] == 0);
+        var lunchBanVars = new LunchVarMap();
+        var staticLunch = SchedulePolicyRules.StaticLunchPeriod(schedulePolicy);
+        if (staticLunch.HasValue)
+        {
+            foreach (var c in courses)
+                for (int d = 0; d < Constants.Days; d++)
+                    foreach (var r in rooms)
+                        model.Add(x[(c.Id, d, staticLunch.Value, r.Id)] == 0);
+            return lunchBanVars;
+        }
+
+        for (var day = 0; day < Constants.Days; day++)
+        {
+            var ban4 = model.NewBoolVar($"lunch_ban_{day}_4");
+            var ban5 = model.NewBoolVar($"lunch_ban_{day}_5");
+            lunchBanVars[(day, SchedulePolicyRules.FirstLunchCandidate)] = ban4;
+            lunchBanVars[(day, SchedulePolicyRules.SecondLunchCandidate)] = ban5;
+            model.Add(ban4 + ban5 == 1);
+
+            foreach (var course in courses)
+                foreach (var room in rooms)
+                {
+                    model.Add(x[(course.Id, day, SchedulePolicyRules.FirstLunchCandidate, room.Id)] + ban4 <= 1);
+                    model.Add(x[(course.Id, day, SchedulePolicyRules.SecondLunchCandidate, room.Id)] + ban5 <= 1);
+                }
+        }
+        return lunchBanVars;
     }
 
     public static void AddHc13_Fixed(
@@ -151,13 +187,28 @@ public static class BasicHcs
         CpModel model,
         YDict y,
         IReadOnlyList<Course> courses,
-        IReadOnlyList<Course> schoolFixedCourses)
+        IReadOnlyList<Course> schoolFixedCourses,
+        SchedulePolicy schedulePolicy,
+        LunchVarMap lunchBanVars)
     {
         foreach (var schoolFixed in schoolFixedCourses)
         {
             if (!schoolFixed.IsSchoolFixed || !schoolFixed.IsFixed) continue;
             foreach (var slot in schoolFixed.FixedSlots)
             {
+                if (SchedulePolicyRules.IsStaticallyBlocked(schedulePolicy, slot.Period))
+                {
+                    var infeasible = model.NewBoolVar(
+                        $"school_fixed_lunch_conflict_{schoolFixed.Id}_{slot.Day}_{slot.Period}");
+                    model.Add(infeasible == 0);
+                    model.Add(infeasible == 1);
+                }
+                else if (schedulePolicy.LunchMode == LunchPolicyMode.BanOneOfPeriods4And5
+                    && lunchBanVars.TryGetValue((slot.Day, slot.Period), out var lunchBan))
+                {
+                    model.Add(lunchBan == 0);
+                }
+
                 foreach (var course in courses)
                 {
                     if (course.IsFixed) continue;
@@ -175,14 +226,16 @@ public static class BasicHcs
         YDict y,
         IReadOnlyList<Course> courses,
         IReadOnlyList<Room> rooms,
-        IReadOnlyList<CrossGroup>? crosses)
+        IReadOnlyList<CrossGroup>? crosses,
+        SchedulePolicy schedulePolicy)
     {
         var allowGraduateDaytimeOverflow =
             AcademicLevelTimePolicy.AllowsGraduateDaytimeOverflow(courses, crosses);
         foreach (var course in courses)
         {
             var disallowedPeriods =
-                AcademicLevelTimePolicy.DisallowedPeriods(course.Grade, allowGraduateDaytimeOverflow);
+                AcademicLevelTimePolicy.DisallowedPeriods(
+                    course.Grade, allowGraduateDaytimeOverflow, schedulePolicy);
             foreach (var day in Enumerable.Range(0, Constants.Days))
                 foreach (var period in disallowedPeriods)
                     foreach (var room in rooms)
@@ -195,7 +248,7 @@ public static class BasicHcs
         var graduateDaytimeTerms = courses
             .Where(course => course.Grade == AcademicLevels.GraduateGrade)
             .SelectMany(course => Enumerable.Range(0, Constants.Days)
-                .SelectMany(day => Constants.DaytimePeriods
+                .SelectMany(day => SchedulePolicyRules.CandidateDaytimePeriods(schedulePolicy)
                     .Select(period => y[(course.Id, day, period)])))
             .ToArray();
         if (graduateDaytimeTerms.Length > 0)

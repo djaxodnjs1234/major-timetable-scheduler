@@ -39,15 +39,27 @@ public static class AcademicLevelTimePolicy
         IReadOnlyList<CrossGroup>? crosses = null) =>
         GraduateDaytimeOverflowSlots(courses, crosses) > 0;
 
-    public static IReadOnlyList<int> AllowedPeriods(int grade, bool allowGraduateDaytimeOverflow) =>
-        grade == AcademicLevels.GraduateGrade
-            ? allowGraduateDaytimeOverflow ? Constants.ValidPeriods : Constants.NightPeriods
-            : Constants.DaytimePeriods;
+    public static IReadOnlyList<int> AllowedPeriods(
+        int grade,
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy? schedulePolicy = null)
+    {
+        schedulePolicy ??= SchedulePolicy.Default;
+        return grade == AcademicLevels.GraduateGrade
+            ? allowGraduateDaytimeOverflow
+                ? SchedulePolicyRules.CandidateInstructionalPeriods(schedulePolicy)
+                : Constants.NightPeriods
+            : SchedulePolicyRules.CandidateDaytimePeriods(schedulePolicy);
+    }
 
-    public static IReadOnlyList<int> DisallowedPeriods(int grade, bool allowGraduateDaytimeOverflow) =>
-        grade == AcademicLevels.GraduateGrade
-            ? allowGraduateDaytimeOverflow ? Array.Empty<int>() : Constants.DaytimePeriods
-            : Constants.NightPeriods;
+    public static IReadOnlyList<int> DisallowedPeriods(
+        int grade,
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy? schedulePolicy = null)
+    {
+        var allowed = AllowedPeriods(grade, allowGraduateDaytimeOverflow, schedulePolicy).ToHashSet();
+        return Constants.Periods.Where(period => !allowed.Contains(period)).ToArray();
+    }
 
     public static bool IsGraduateOverMaxHours(Course course) =>
         course.Grade == AcademicLevels.GraduateGrade &&

@@ -72,6 +72,12 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
     public bool MergeOnlyStructuredBlocks { get; set; }
 
     public IReadOnlyList<int> Periods => Constants.Periods;
+    public SchedulePolicy SchedulePolicy { get; private set; } = SchedulePolicy.Default;
+    public IReadOnlyDictionary<int, int> LunchPeriodsByDay { get; private set; } =
+        SchedulePolicyRules.StaticLunchPeriodsByDay(SchedulePolicy.Default, Constants.Days);
+
+    public bool IsLunch(int day, int period) =>
+        SchedulePolicyRules.IsLunch(SchedulePolicy, LunchPeriodsByDay, day, period);
 
     public event EventHandler? Rebuilt;
 
@@ -107,7 +113,13 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
     partial void OnExpandAllGradesChanged(bool value)
     {
         if (_lastAssignment != null && _lastCourses != null)
-            Render(_lastAssignment, _lastCourses, _lastProfessors, _lastRooms);
+            Render(
+                _lastAssignment,
+                _lastCourses,
+                _lastProfessors,
+                _lastRooms,
+                SchedulePolicy,
+                LunchPeriodsByDay);
     }
 
     private IReadOnlyList<SolutionAssignment>? _lastAssignment;
@@ -119,8 +131,13 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         IReadOnlyList<SolutionAssignment> assignment,
         IReadOnlyList<Course> courses,
         IReadOnlyList<Professor>? professors = null,
-        IReadOnlyList<Room>? rooms = null)
+        IReadOnlyList<Room>? rooms = null,
+        SchedulePolicy? schedulePolicy = null,
+        IReadOnlyDictionary<int, int>? lunchPeriodsByDay = null)
     {
+        SchedulePolicy = schedulePolicy ?? SchedulePolicy.Default;
+        LunchPeriodsByDay = lunchPeriodsByDay
+            ?? SchedulePolicyRules.StaticLunchPeriodsByDay(SchedulePolicy, Constants.Days);
         _lastAssignment = assignment;
         _lastCourses = courses;
         _lastProfessors = professors;
@@ -198,8 +215,6 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
         {
             foreach (var p in Constants.Periods)
             {
-                if (p == Constants.LunchPeriod) continue;
-
                 // For each grade in this day, find all (cid, rooms) at (d, p) of that grade,
                 // sorted by section.
                 var dayGroup = dayGroups[d];
@@ -606,7 +621,13 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
     {
         CrossParallelOrder = order;
         if (_lastAssignment != null && _lastCourses != null)
-            Render(_lastAssignment, _lastCourses, _lastProfessors, _lastRooms);
+            Render(
+                _lastAssignment,
+                _lastCourses,
+                _lastProfessors,
+                _lastRooms,
+                SchedulePolicy,
+                LunchPeriodsByDay);
     }
 
     private static Dictionary<string, string>? BuildProfessorNameMap(IReadOnlyList<Professor>? professors) =>

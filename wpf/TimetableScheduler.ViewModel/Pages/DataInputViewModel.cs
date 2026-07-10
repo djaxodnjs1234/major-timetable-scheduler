@@ -33,6 +33,8 @@ public sealed record CourseDeletionImpact(
 
 public sealed record CrossGroupListItem(string Id, string Display);
 
+public sealed record LunchPolicyOption(LunchPolicyMode Mode, string Display);
+
 public sealed class UnsavedBackNavigationEventArgs : EventArgs
 {
     public IReadOnlyList<string> UnsavedEditLabels { get; }
@@ -197,6 +199,18 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public int[] HourOptions { get; } = { 1, 2, 3, 4, 5 };
     public string[] CourseTypeOptions { get; } = { "전필", "전선", "교양" };
     public string[] BlockStructureOptions { get; } = GenerateBlockStructureOptions(3).ToArray();
+    public IReadOnlyList<LunchPolicyOption> LunchPolicyOptions { get; } =
+        new[]
+        {
+            new LunchPolicyOption(LunchPolicyMode.BanPeriod4, "4교시 점심 (12:00~13:00)"),
+            new LunchPolicyOption(LunchPolicyMode.BanPeriod5, "5교시 점심 (13:00~14:00)"),
+            new LunchPolicyOption(
+                LunchPolicyMode.BanOneOfPeriods4And5,
+                "요일별 4·5교시 중 한 교시 점심"),
+        };
+
+    [ObservableProperty]
+    private LunchPolicyOption? selectedLunchPolicy;
 
     [ObservableProperty]
     private InputCategory selectedCategory = InputCategory.Course;
@@ -228,6 +242,16 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         OnPropertyChanged(nameof(IsRoomSelected));
         OnPropertyChanged(nameof(IsSolveSelected));
         SelectedItem = null;
+    }
+
+    partial void OnSelectedLunchPolicyChanged(LunchPolicyOption? value)
+    {
+        if (value == null || _workspace.SchedulePolicy.LunchMode == value.Mode)
+            return;
+
+        _workspace.UpdateSchedulePolicy(new SchedulePolicy { LunchMode = value.Mode });
+        IsSolveComplete = false;
+        StatusMessage = "점심시간 조건이 변경되었습니다. 고정시간과 불가시간을 확인한 뒤 시간표를 생성하세요.";
     }
 
     [RelayCommand]
@@ -357,7 +381,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 _workspace.Courses,
                 _workspace.Professors,
                 _workspace.Rooms,
-                new[] { cross })
+                new[] { cross },
+                schedulePolicy: _workspace.SchedulePolicy)
             .FirstOrDefault(diagnostic => diagnostic.Id == "IE-039");
         if (crossRoomError != null)
         {
@@ -788,13 +813,33 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         if (savedSections.Count == 0) return;
 
         item.Sections = savedSections;
-        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, savedSections[0].IsFixed);
+        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(
+            item, savedSections[0].IsFixed, _workspace.SchedulePolicy);
         item.IsEditing = false;
     }
 
     private TimetableDiagnostic? FirstCourseSaveError(IReadOnlyList<Course> sections)
     {
         var roomIds = _workspace.Rooms.Select(room => room.Id).ToHashSet(StringComparer.Ordinal);
+        var staticLunch = SchedulePolicyRules.StaticLunchPeriod(_workspace.SchedulePolicy);
+        if (_workspace.SchedulePolicy.LunchMode == LunchPolicyMode.BanOneOfPeriods4And5)
+        {
+            foreach (var day in Enumerable.Range(0, Constants.Days))
+            {
+                var used = sections
+                    .Where(course => course.IsFixed)
+                    .SelectMany(course => course.FixedSlots)
+                    .Where(slot => slot.Day == day && SchedulePolicyRules.IsLunchCandidate(slot.Period))
+                    .Select(slot => slot.Period)
+                    .ToHashSet();
+                if (used.Contains(SchedulePolicyRules.FirstLunchCandidate)
+                    && used.Contains(SchedulePolicyRules.SecondLunchCandidate))
+                    return new TimetableDiagnostic(
+                        "IE-043",
+                        $"{DayName(day)}요일 4교시와 5교시를 모두 고정할 수 없습니다. 두 교시 중 하나는 점심시간으로 비워야 합니다.");
+            }
+        }
+
         foreach (var course in sections)
         {
             var courseName = CourseInputLocation(course);
@@ -806,8 +851,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 if (!course.IsFixed || course.FixedSlots.Count == 0)
                     return new TimetableDiagnostic("IE-010", $"{courseName}: 학교 고정 과목은 고정 시간이 필요합니다.");
 
-                if (course.FixedSlots.Any(slot => slot.Period == Constants.LunchPeriod))
-                    return new TimetableDiagnostic("IE-011", $"{courseName}: 학교 고정 시간에 점심시간 5교시를 포함할 수 없습니다.");
+                if (staticLunch.HasValue
+                    && course.FixedSlots.Any(slot => slot.Period == staticLunch.Value))
+                    return new TimetableDiagnostic("IE-011", $"{courseName}: 학교 고정 시간에 현재 점심시간인 {staticLunch.Value}교시를 포함할 수 없습니다.");
 
                 if (course.FixedSlots.Count > 0 && course.FixedSlots.Count != course.HoursPerWeek)
                     return new TimetableDiagnostic("IE-012", $"{courseName}: 학교 고정 시간 개수가 주당 수업시간과 맞지 않습니다.");
@@ -827,8 +873,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             if (course.IsFixed && course.FixedSlots.Count == 0)
                 return new TimetableDiagnostic("IE-010", $"{courseName} 시간고정이 켜졌지만 고정 시간이 비어 있습니다.");
 
-            if (course.IsFixed && course.FixedSlots.Any(slot => slot.Period == Constants.LunchPeriod))
-                return new TimetableDiagnostic("IE-011", $"{courseName} 고정 시간이 점심시간 5교시를 포함합니다.");
+            if (course.IsFixed && staticLunch.HasValue
+                && course.FixedSlots.Any(slot => slot.Period == staticLunch.Value))
+                return new TimetableDiagnostic("IE-011", $"{courseName} 고정 시간이 현재 점심시간인 {staticLunch.Value}교시를 포함합니다.");
 
             if (course.IsFixed && course.FixedSlots.Count > 0 && course.FixedSlots.Count != course.HoursPerWeek)
                 return new TimetableDiagnostic("IE-012", $"{courseName} 고정 시간 개수가 주당 수업시간과 다릅니다.");
@@ -1011,7 +1058,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 scheduleSnapshot.Rooms,
                 scheduleSnapshot.CrossGroups,
                 hasUnsavedEdits: true,
-                unsavedEditSummary: string.Join(", ", unsavedEditLabels));
+                unsavedEditSummary: string.Join(", ", unsavedEditLabels),
+                schedulePolicy: scheduleSnapshot.SchedulePolicy);
             StatusMessage = FormatDiagnostics("입력 오류", inputErrors);
             return;
         }
@@ -1035,7 +1083,10 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public ManualEditHandoff? BuildEditHandoff()
     {
         if (_editBaseAssignments == null) return null;
-        var solution = new RankedSolution(_editBaseAssignments, new SolutionScore(0, 0, 0, 0));
+        var solution = new RankedSolution(
+            _editBaseAssignments,
+            new SolutionScore(0, 0, 0, 0),
+            _editBaseLunchPeriodsByDay);
         return new ManualEditHandoff(solution, _editBaseManualCrossLinks, _editBaseId, _editBaseName);
     }
 
@@ -1043,10 +1094,19 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     public override void OnNavigatedTo()
     {
+        SyncLunchPolicySelection();
         RebuildProfessorItems();
         RebuildCourseGroups();
         RebuildRoomItems();
         RebuildCrossManager();
+    }
+
+    private void SyncLunchPolicySelection()
+    {
+        var option = LunchPolicyOptions.First(item =>
+            item.Mode == _workspace.SchedulePolicy.LunchMode);
+        if (!Equals(SelectedLunchPolicy, option))
+            SelectedLunchPolicy = option;
     }
 
     public DataInputViewModel(WorkspaceService workspace, SolverService solver)
@@ -1055,6 +1115,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         _solver = solver;
         _workspaceChangedHandler = (_, _) =>
         {
+            SyncLunchPolicySelection();
             SolveCommand.NotifyCanExecuteChanged();
             RebuildProfessorItems();
             RebuildCourseGroups();
@@ -1064,6 +1125,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         _workspace = workspace;
         _workspace.Changed += _workspaceChangedHandler;
         SetBackBaseline(_workspace.Snapshot());
+        SyncLunchPolicySelection();
         RebuildProfessorItems();
         RebuildCourseGroups();
         RebuildRoomItems();
@@ -1078,6 +1140,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         _workspace.Changed += _workspaceChangedHandler;
         OnPropertyChanged(nameof(Workspace));
         OnPropertyChanged(nameof(IsSessionMode));
+        SyncLunchPolicySelection();
         RebuildProfessorItems();
         RebuildCourseGroups();
         RebuildRoomItems();
@@ -1096,6 +1159,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         ClearGeneratedSolutions();
         IsExistingMode = false;
         _editBaseAssignments = null;
+        _editBaseLunchPeriodsByDay = null;
         _editBaseManualCrossLinks = Array.Empty<SavedManualCrossLinkRow>();
         _editBaseId = null;
         _editBaseName = "";
@@ -1116,7 +1180,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                     record.Assignments
                         .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
                         .ToList(),
-                    new SolutionScore(0, 0, 0, 0)),
+                    new SolutionScore(0, 0, 0, 0),
+                    record.LunchPeriodsByDay),
                 (record.ManualCrossLinks ?? Array.Empty<SavedManualCrossLinkRow>()).ToList(),
                 record.Id,
                 record.Name)));
@@ -1133,12 +1198,14 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         IsExistingMode = true;
         SelectedCategory = InputCategory.Course;
         _editBaseAssignments = context.Handoff.Solution.Assignment.ToList();
+        _editBaseLunchPeriodsByDay = context.Handoff.Solution.LunchPeriodsByDay;
         _editBaseManualCrossLinks = context.Handoff.ManualCrossLinks.ToList();
         _editBaseId = context.Handoff.SavedTimetableId;
         _editBaseName = context.Handoff.SaveName;
     }
 
     private IReadOnlyList<SolutionAssignment>? _editBaseAssignments;
+    private IReadOnlyDictionary<int, int>? _editBaseLunchPeriodsByDay;
     private IReadOnlyList<SavedManualCrossLinkRow> _editBaseManualCrossLinks = Array.Empty<SavedManualCrossLinkRow>();
     private string? _editBaseId;
     private string _editBaseName = "";
@@ -1478,7 +1545,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 IsImportedFromExcel = sections.Any(s => !string.IsNullOrWhiteSpace(s.Department)),
                 Sections = sections,
             };
-            item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, rep.IsFixed);
+            item.FixedSlotEditor = FixedSlotEditorViewModel.Build(
+                item, rep.IsFixed, _workspace.SchedulePolicy);
             CourseGroups.Add(item);
         }
     }
@@ -1884,7 +1952,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 sec.IsFixed = true;
         }
         NormalizeSchoolFixedFields(item.Sections);
-        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, rep.IsFixed);
+        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(
+            item, rep.IsFixed, _workspace.SchedulePolicy);
     }
 
     private static void NormalizeSchoolFixedFields(IEnumerable<Course> courses)
@@ -1986,7 +2055,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             scheduleSnapshot.Rooms,
             scheduleSnapshot.CrossGroups,
             hasUnsavedEdits: unsavedEditLabels.Count > 0,
-            unsavedEditSummary: string.Join(", ", unsavedEditLabels));
+            unsavedEditSummary: string.Join(", ", unsavedEditLabels),
+            schedulePolicy: scheduleSnapshot.SchedulePolicy);
         if (inputErrors.Count > 0)
         {
             StatusMessage = FormatDiagnostics("입력 오류", inputErrors);
@@ -2000,7 +2070,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             scheduleSnapshot.Rooms,
             scheduleSnapshot.CrossGroups,
             scheduleSnapshot.RetakeScenarios,
-            ConsiderRetakeStudents);
+            ConsiderRetakeStudents,
+            scheduleSnapshot.SchedulePolicy);
         if (generationErrors.Count > 0)
         {
             StatusMessage = FormatDiagnostics("생성 조건 오류", generationErrors);
@@ -2130,7 +2201,8 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             scheduleSnapshot.Rooms,
             scheduleSnapshot.CrossGroups,
             scheduleSnapshot.RetakeScenarios,
-            ConsiderRetakeStudents);
+            ConsiderRetakeStudents,
+            scheduleSnapshot.SchedulePolicy);
         if (diagnostics.Count > 0)
             return FormatDiagnostics("INFEASIBLE", diagnostics);
 
@@ -2142,7 +2214,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             if (course.IsFixed && course.FixedSlots.Count == 0)
                 reasons.Add($"fixed time conflict: {course.Name} 고정 시간이 비어 있습니다");
 
-            if (course.IsFixed && course.FixedSlots.Any(slot => slot.Period == 5))
+            var staticLunch = SchedulePolicyRules.StaticLunchPeriod(scheduleSnapshot.SchedulePolicy);
+            if (course.IsFixed && staticLunch.HasValue
+                && course.FixedSlots.Any(slot => slot.Period == staticLunch.Value))
                 reasons.Add($"fixed time conflict: {course.Name} 이 점심 시간에 고정되어 있습니다");
 
             if (course.BlockStructure.Count > 0 && course.BlockStructure.Sum() != course.HoursPerWeek)
@@ -2168,8 +2242,13 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
                 if (!course.IsFixed)
                 {
-                    var availableSlots = Constants.Periods
-                        .Where(period => period != 5)
+                    var allowGraduateDaytimeOverflow =
+                        AcademicLevelTimePolicy.AllowsGraduateDaytimeOverflow(
+                            scheduleSnapshot.Courses, scheduleSnapshot.CrossGroups);
+                    var availableSlots = AcademicLevelTimePolicy.AllowedPeriods(
+                            course.Grade,
+                            allowGraduateDaytimeOverflow,
+                            scheduleSnapshot.SchedulePolicy)
                         .SelectMany(period => Enumerable.Range(0, 5).Select(day => new TimeSlot(day, period)))
                         .Count(slot => professor.UnavailableSlots.All(p => p.Day != slot.Day || p.Period != slot.Period));
                     if (availableSlots < Math.Max(course.HoursPerWeek, course.BlockStructure.Sum()))

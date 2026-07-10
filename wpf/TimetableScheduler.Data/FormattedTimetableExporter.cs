@@ -6,8 +6,6 @@ namespace TimetableScheduler.Data;
 public static class FormattedTimetableExporter
 {
     private static readonly string[] DayNames = { "월", "화", "수", "목", "금" };
-    private static readonly IReadOnlyList<int> ValidPeriods = SchedulePeriods.Instructional;
-
     private static readonly XLColor[] GradeFills =
     {
         XLColor.NoColor,
@@ -48,8 +46,13 @@ public static class FormattedTimetableExporter
         IReadOnlyList<Professor> professors,
         string path,
         IReadOnlyList<Room>? rooms = null,
-        bool expandAllGrades = false)
+        bool expandAllGrades = false,
+        SchedulePolicy? schedulePolicy = null,
+        IReadOnlyDictionary<int, int>? lunchPeriodsByDay = null)
     {
+        schedulePolicy ??= SchedulePolicy.Default;
+        lunchPeriodsByDay ??=
+            SchedulePolicyRules.StaticLunchPeriodsByDay(schedulePolicy, 5);
         var aList = assignments.ToList();
         var display = BuildSchoolFixedDisplayRows(aList, courses, expandAllGrades);
         var displayRows = display.Assignments;
@@ -69,7 +72,9 @@ public static class FormattedTimetableExporter
             professors,
             rooms,
             expandAllGrades,
-            splitByGrade: true);
+            splitByGrade: true,
+            schedulePolicy,
+            lunchPeriodsByDay);
 
         foreach (var grade in AcademicLevels.AllGrades)
         {
@@ -89,7 +94,9 @@ public static class FormattedTimetableExporter
                 professors,
                 rooms,
                 expandAllGrades: false,
-                splitByGrade: true);
+                splitByGrade: true,
+                schedulePolicy,
+                lunchPeriodsByDay);
         }
 
         foreach (var professor in professors)
@@ -112,7 +119,9 @@ public static class FormattedTimetableExporter
                 professors,
                 rooms,
                 expandAllGrades: false,
-                splitByGrade: false);
+                splitByGrade: false,
+                schedulePolicy,
+                lunchPeriodsByDay);
         }
 
         foreach (var room in rooms ?? Array.Empty<Room>())
@@ -133,7 +142,9 @@ public static class FormattedTimetableExporter
                 professors,
                 rooms,
                 expandAllGrades: false,
-                splitByGrade: false);
+                splitByGrade: false,
+                schedulePolicy,
+                lunchPeriodsByDay);
         }
 
         WriteDataSheet(wb, aList);
@@ -274,10 +285,14 @@ public static class FormattedTimetableExporter
         IReadOnlyList<Professor> professors,
         IReadOnlyList<Room>? rooms,
         bool expandAllGrades,
-        bool splitByGrade)
+        bool splitByGrade,
+        SchedulePolicy schedulePolicy,
+        IReadOnlyDictionary<int, int> lunchPeriodsByDay)
     {
         var ws = wb.AddWorksheet(MakeUniqueSheetName(RemoveExamplePrefix(requestedSheetName), sheetNames));
-        WriteTimetableSheet(ws, RemoveExamplePrefix(timetableName), assignments, courses, professors, rooms, expandAllGrades, splitByGrade);
+        WriteTimetableSheet(
+            ws, RemoveExamplePrefix(timetableName), assignments, courses, professors,
+            rooms, expandAllGrades, splitByGrade, schedulePolicy, lunchPeriodsByDay);
     }
 
     private static void WriteTimetableSheet(
@@ -288,7 +303,9 @@ public static class FormattedTimetableExporter
         IReadOnlyList<Professor> professors,
         IReadOnlyList<Room>? rooms,
         bool expandAllGrades,
-        bool splitByGrade)
+        bool splitByGrade,
+        SchedulePolicy schedulePolicy,
+        IReadOnlyDictionary<int, int> lunchPeriodsByDay)
     {
         var cMap  = BuildCourseMap(assignments, courses);
         var pMap  = professors.ToDictionary(p => p.Id);
@@ -341,28 +358,18 @@ public static class FormattedTimetableExporter
         // period label columns
         WritePeriodLabels(ws, lastLabelCol);
 
-        // lunch row
-        var lunchRow = PeriodRow(SchedulePeriods.LunchPeriod);
-        var lunchRange = ws.Range(lunchRow, 1, lunchRow, totalCols).Merge();
-        lunchRange.Value = "점 심 시 간";
-        lunchRange.Style.Font.Bold = true;
-        lunchRange.Style.Font.FontSize = 11;
-        lunchRange.Style.Font.FontColor = TextMuted;
-        lunchRange.Style.Fill.BackgroundColor = LunchBg;
-        lunchRange.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-        lunchRange.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
-        ApplyHeaderBorder(lunchRange);
-
         // empty cell borders
         for (int d = 0; d < 5; d++)
             for (int sub = 0; sub < dayLayouts[d].SubColCount; sub++)
             {
                 int c2 = dayStart[d] + sub;
-                foreach (int p in ValidPeriods)
+                foreach (int p in SchedulePeriods.All)
                     ApplyGridBorder(ws.Cell(PeriodRow(p), c2).AsRange());
             }
 
         WriteCourses(ws, assignments, cMap, pMap, courses, dayStart, dayLayouts);
+        WriteLunchCells(
+            ws, dayStart, dayLayouts, schedulePolicy, lunchPeriodsByDay);
         WriteRemarks(ws, assignments, cMap, roomNameMap, dayStart, dayLayouts, totalCols);
         ApplyDayGroupBorders(ws, dayStart, dayLayouts);
         ApplyNightSeparator(ws, totalCols);
@@ -691,9 +698,38 @@ public static class FormattedTimetableExporter
         }
     }
 
-    private static string FormatPeriodLabel(int period) => period == 5
-        ? "점심\n13:00~14:00"
-        : $"{period}교시\n{SchedulePeriods.TimeRange(period)}";
+    private static void WriteLunchCells(
+        IXLWorksheet ws,
+        int[] dayStart,
+        IReadOnlyList<DayLayout> dayLayouts,
+        SchedulePolicy schedulePolicy,
+        IReadOnlyDictionary<int, int> lunchPeriodsByDay)
+    {
+        for (var day = 0; day < 5; day++)
+        {
+            for (var period = 1; period <= SchedulePeriods.LastPeriod; period++)
+            {
+                if (!SchedulePolicyRules.IsLunch(
+                        schedulePolicy, lunchPeriodsByDay, day, period))
+                    continue;
+
+                for (var sub = 0; sub < dayLayouts[day].SubColCount; sub++)
+                {
+                    var cell = ws.Cell(PeriodRow(period), dayStart[day] + sub);
+                    cell.Value = "점심";
+                    cell.Style.Font.Bold = true;
+                    cell.Style.Font.FontColor = TextMuted;
+                    cell.Style.Fill.BackgroundColor = LunchBg;
+                    cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
+                    cell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
+                    ApplyGridBorder(cell.AsRange());
+                }
+            }
+        }
+    }
+
+    private static string FormatPeriodLabel(int period) =>
+        $"{period}교시\n{SchedulePeriods.TimeRange(period)}";
 
     private static void SetColumnWidths(
         IXLWorksheet ws,
@@ -715,10 +751,9 @@ public static class FormattedTimetableExporter
         ws.Row(3).Height  = 6;   // spacer
         ws.Row(4).Height  = 22;  // day headers
         ws.Row(5).Height  = 14;  // grade sub-headers
-        ws.Row(PeriodRow(SchedulePeriods.LunchPeriod)).Height = 22;
         ws.Row(RemarksRow).Height = 54;
         ws.Row(LegendRow).Height = 18;
-        foreach (int p in ValidPeriods)
+        foreach (int p in SchedulePeriods.All)
             ws.Row(PeriodRow(p)).Height = 72;
     }
     private static string BuildCellText(string name, string section, string profStr, string rooms)

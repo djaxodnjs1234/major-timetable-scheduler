@@ -142,7 +142,10 @@ public partial class DataInputView : UserControl
 
         if (expander.FindName("UnavailableSlotsPicker") is TimeSlotPickerControl slotPicker)
         {
-            slotPicker.DataContext = new TimeSlotPickerViewModel(prof.UnavailableSlots, ProfessorUnavailablePeriods);
+            slotPicker.DataContext = new TimeSlotPickerViewModel(
+                prof.UnavailableSlots,
+                ProfessorUnavailablePeriods,
+                Vm.Workspace.SchedulePolicy);
         }
     }
 
@@ -190,7 +193,8 @@ public partial class DataInputView : UserControl
                 p => p.Id, p => p.Name,
                 course.CoteachProfs);
         }
-        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, course.IsFixed);
+        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(
+            item, course.IsFixed, Vm.Workspace.SchedulePolicy);
         RefreshCourseBlockStructureCombo(expander, item);
         RefreshSchoolFixedDependentControls(expander, item);
     }
@@ -250,7 +254,7 @@ public partial class DataInputView : UserControl
 
     private void OnIsFixedCheckChanged(object sender, RoutedEventArgs e)
     {
-        if (sender is not DependencyObject dep) return;
+        if (sender is not DependencyObject dep || Vm == null) return;
         var item = FindCourseGroupItem(dep);
         if (item == null) return;
         var expander = FindAncestor<Expander>(dep);
@@ -260,7 +264,8 @@ public partial class DataInputView : UserControl
             foreach (var section in item.Sections)
                 section.FixedSlots.Clear();
         }
-        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, item.Sections[0].IsFixed);
+        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(
+            item, item.Sections[0].IsFixed, Vm.Workspace.SchedulePolicy);
     }
 
     private void OnSchoolFixedCheckChanged(object sender, RoutedEventArgs e)
@@ -289,9 +294,12 @@ public partial class DataInputView : UserControl
         BindingOperations.GetBindingExpression(combo, ComboBox.SelectedItemProperty)?.UpdateTarget();
     }
 
-    private static void RebuildFixedSlotEditor(CourseGroupItem item)
+    private void RebuildFixedSlotEditor(CourseGroupItem item)
     {
-        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(item, item.Sections[0].IsFixed);
+        item.FixedSlotEditor = FixedSlotEditorViewModel.Build(
+            item,
+            item.Sections[0].IsFixed,
+            Vm?.Workspace.SchedulePolicy ?? SchedulePolicy.Default);
     }
 
     private static void RefreshFixedTimeCheckBox(Expander expander)
