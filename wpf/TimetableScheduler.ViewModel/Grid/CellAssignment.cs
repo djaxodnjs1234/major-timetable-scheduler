@@ -13,6 +13,8 @@ public sealed record CellAssignment(
     int HoursPerWeek,
     bool IsFixed)
 {
+    public const string ManualVisualOccurrenceAssignmentIdPrefix = "manual-visual-occurrence\u001f";
+
     public string AssignmentId { get; init; } = "";
     public string CourseKey { get; init; } = "";
     public bool ShowSectionLabel { get; init; } = true;
@@ -51,6 +53,10 @@ public sealed record CellAssignment(
     private string SchoolFixedTitlePrefix => SchoolFixedTargetGrade == SchoolFixedTimePolicy.AllGrades
         ? "[학교고정] "
         : "[학년고정] ";
+
+    public static bool IsManualVisualOccurrenceAssignmentId(string? assignmentId) =>
+        !string.IsNullOrWhiteSpace(assignmentId)
+        && assignmentId.StartsWith(ManualVisualOccurrenceAssignmentIdPrefix, StringComparison.Ordinal);
 
     public string ProfessorLine
     {

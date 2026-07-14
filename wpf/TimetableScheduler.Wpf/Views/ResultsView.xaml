@@ -119,9 +119,6 @@
                                                                                     <DataTrigger Binding="{Binding IsOccupied}" Value="False">
                                                                                         <Setter Property="Background" Value="#F8FAFC" />
                                                                                     </DataTrigger>
-                                                                                    <DataTrigger Binding="{Binding IsLunch}" Value="True">
-                                                                                        <Setter Property="Background" Value="#E2E8F0" />
-                                                                                    </DataTrigger>
                                                                                 </Style.Triggers>
                                                                             </Style>
                                                                         </Border.Style>

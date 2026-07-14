@@ -366,6 +366,9 @@ public static class DiverseSolver
         CpSolver solver,
         BuildResult build)
     {
+        if (build.SchedulePolicy.LunchMode == LunchPolicyMode.None)
+            return new Dictionary<int, int>();
+
         var staticLunch = SchedulePolicyRules.StaticLunchPeriod(build.SchedulePolicy);
         if (staticLunch.HasValue)
             return Enumerable.Range(0, Constants.Days)

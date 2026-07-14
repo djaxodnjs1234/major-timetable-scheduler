@@ -11,8 +11,6 @@ Allowed only when all conditions are true:
 - Same grade.
 - Same RowSpan.
 - Exactly two assignment endpoints.
-- No professor conflict, including coteaching professors.
-- No room conflict.
 - The source assignment is not already Cross-linked to another assignment.
 - The target assignment is not already Cross-linked to another assignment.
 - Same base `CourseId` with different sections is allowed when the assignment endpoints are distinct.
@@ -22,8 +20,6 @@ Blocked when any condition is true:
 - Three or more assignments would be linked.
 - RowSpan differs.
 - Grade differs.
-- Professor overlaps.
-- Room overlaps.
 - Either endpoint is already part of another ManualCrossLink.
 - The operation is a normal move, normal swap, or automatic validation path that is not explicitly creating or preserving a manual Cross link.
 
@@ -34,7 +30,7 @@ Blocked when any condition is true:
 - [ ] Drag move: dragging to a valid empty target moves the assignment.
 - [ ] Drag move: dragging to an invalid target is blocked without corrupting selection state.
 - [ ] Swap: valid source/target pair swaps assignments.
-- [ ] Swap: invalid swap is blocked by normal professor, room, grade, section, and time constraints.
+- [ ] Swap: physical range/third-block overlap is blocked; recordable constraint violations remain visible after the swap.
 - [ ] Cross: hover or click Cross creation uses the assignment endpoints, not only `CourseId`.
 - [ ] Cross: drag/drop Cross creation uses the same policy as click Cross creation.
 
@@ -42,8 +38,8 @@ Blocked when any condition is true:
 
 - [ ] Same grade, same RowSpan, different professor, different room, two endpoints only: Cross is allowed.
 - [ ] Same base `CourseId`, different section, different professor, different room: Cross is allowed.
-- [ ] Same professor or overlapping coteaching professor: Cross is blocked.
-- [ ] Same room: Cross is blocked.
+- [ ] Same professor or overlapping coteaching professor: Cross is allowed and the professor conflict remains visible.
+- [ ] Same room: Cross is allowed and the room conflict remains visible.
 - [ ] One-hour block with two-hour block: Cross is blocked.
 - [ ] Already Cross-linked source to third target: Cross is blocked.
 - [ ] Already Cross-linked target from third source: Cross is blocked.
@@ -53,10 +49,10 @@ Blocked when any condition is true:
 
 - [ ] Manual Cross may ignore `GradeConflict` only for the exact source-target assignment pair being Cross-linked.
 - [ ] Manual Cross may ignore `SectionConflict` only for the exact source-target assignment pair being Cross-linked.
-- [ ] General move keeps `GradeConflict` and `SectionConflict` blocking behavior.
-- [ ] Swap keeps `GradeConflict` and `SectionConflict` blocking behavior.
+- [ ] General move records non-physical conflicts instead of rolling the edit back.
+- [ ] Swap records non-physical conflicts instead of rolling the edit back.
 - [ ] Automatic solver validation keeps existing hard constraints.
-- [ ] Manual Cross exceptions do not suppress professor or room conflicts.
+- [ ] Manual Cross does not suppress professor or room conflicts from the right-side list, block badge, or connector overlay.
 
 ## Save, Restore, Reset
 
@@ -100,8 +96,8 @@ Blocked when any condition is true:
 5. Create a valid swap and verify both assignments move.
 6. Create a valid Cross between two same-grade, same-RowSpan, different-professor, different-room assignments.
 7. Create a valid same-base-CourseId Cross between distinct sections.
-8. Try professor conflict Cross and verify it is blocked.
-9. Try room conflict Cross and verify it is blocked.
+8. Create a professor-conflict Cross and verify the edit succeeds with a visible violation.
+9. Create a room-conflict Cross and verify the edit succeeds with a visible violation.
 10. Try different RowSpan Cross and verify it is blocked.
 11. Try third-assignment Cross and verify it is blocked.
 12. Save the timetable.

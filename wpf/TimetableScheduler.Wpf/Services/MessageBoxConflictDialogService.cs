@@ -159,6 +159,13 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         => ShowValidationResult(title, "제약조건 위반 Error가 남아 있습니다.", conflicts);
 
     public void ShowValidationResult(string title, string message, IReadOnlyList<ConflictItem> conflicts)
+        => ShowValidationResult(title, message, conflicts, Array.Empty<ValidationCheckItem>());
+
+    public void ShowValidationResult(
+        string title,
+        string message,
+        IReadOnlyList<ConflictItem> conflicts,
+        IReadOnlyList<ValidationCheckItem> checks)
     {
         var dialog = new Window
         {
@@ -187,11 +194,21 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         Grid.SetRow(header, 0);
         layout.Children.Add(header);
 
-        if (conflicts.Count > 0)
+        var body = new StackPanel();
+        if (checks.Count > 0)
+        {
+            body.Children.Add(BuildValidationCheckList(checks));
+        }
+        else if (conflicts.Count > 0)
         {
             var conflictList = BuildConflictList(conflicts, null);
-            Grid.SetRow(conflictList, 1);
-            layout.Children.Add(conflictList);
+            body.Children.Add(conflictList);
+        }
+
+        if (body.Children.Count > 0)
+        {
+            Grid.SetRow(body, 1);
+            layout.Children.Add(body);
         }
 
         var ok = new Button
@@ -207,6 +224,126 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         layout.Children.Add(ok);
         dialog.Content = layout;
         dialog.ShowDialog();
+    }
+
+    private ScrollViewer BuildValidationCheckList(IReadOnlyList<ValidationCheckItem> checks)
+    {
+        var items = new StackPanel();
+        foreach (var check in checks)
+            items.Children.Add(BuildValidationCheckRow(check));
+
+        return new ScrollViewer
+        {
+            MaxHeight = 460,
+            VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
+            HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
+            Content = items,
+        };
+    }
+
+    private Border BuildValidationCheckRow(ValidationCheckItem check)
+    {
+        var accent = check.IsNormal
+            ? Color.FromRgb(0x1B, 0x7F, 0x3A)
+            : check.ErrorCount > 0
+                ? Color.FromRgb(0xBA, 0x1A, 0x1A)
+                : Color.FromRgb(0xB7, 0x79, 0x1F);
+        var background = check.IsNormal
+            ? Color.FromRgb(0xF1, 0xFA, 0xF3)
+            : check.ErrorCount > 0
+                ? Color.FromRgb(0xFF, 0xF8, 0xF8)
+                : Color.FromRgb(0xFF, 0xF8, 0xE1);
+        var accentBrush = new SolidColorBrush(accent);
+
+        var header = new Grid();
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
+
+        var textPanel = new StackPanel();
+        textPanel.Children.Add(new TextBlock
+        {
+            Text = check.Name,
+            FontWeight = FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+        });
+        if (!string.IsNullOrWhiteSpace(check.Detail))
+        {
+            textPanel.Children.Add(new TextBlock
+            {
+                Text = check.Detail,
+                Foreground = Brushes.DimGray,
+                FontSize = 12,
+                Margin = new Thickness(0, 2, 0, 0),
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+
+        var status = new TextBlock
+        {
+            Text = check.StatusText,
+            Foreground = accentBrush,
+            FontWeight = FontWeights.Bold,
+            Margin = new Thickness(14, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Grid.SetColumn(status, 1);
+        header.Children.Add(textPanel);
+        header.Children.Add(status);
+
+        FrameworkElement child = check.IsNormal
+            ? header
+            : BuildValidationCheckExpander(check, header);
+
+        return new Border
+        {
+            Background = new SolidColorBrush(background),
+            BorderBrush = accentBrush,
+            BorderThickness = new Thickness(4, 1, 1, 1),
+            Padding = new Thickness(10, 7, 10, 7),
+            Margin = new Thickness(0, 0, 0, 6),
+            Child = child,
+        };
+    }
+
+    private Expander BuildValidationCheckExpander(ValidationCheckItem check, Grid header)
+    {
+        var details = new StackPanel
+        {
+            Margin = new Thickness(0, 8, 0, 0),
+        };
+
+        if (!string.IsNullOrWhiteSpace(check.Detail))
+        {
+            details.Children.Add(new TextBlock
+            {
+                Text = check.Detail,
+                Foreground = Brushes.DimGray,
+                Margin = new Thickness(0, 0, 0, 6),
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+
+        if (check.DetailConflicts.Count == 0)
+        {
+            details.Children.Add(new TextBlock
+            {
+                Text = "상세 위반 항목이 별도로 기록되지 않은 검증 항목입니다.",
+                Foreground = Brushes.DimGray,
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+        else
+        {
+            foreach (var conflict in check.DetailConflicts)
+                details.Children.Add(BuildConflictBlock(conflict, null));
+        }
+
+        return new Expander
+        {
+            Header = header,
+            Content = details,
+            IsExpanded = false,
+        };
     }
 
     private ScrollViewer BuildConflictList(
@@ -271,8 +408,18 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
             if (course == null)
                 return;
 
+            var location = ResolveConflictLocation(conflict, assignment, selectedContext);
             var day = selectedContext?.Day ?? assignment.Day;
             var period = selectedContext?.Period ?? assignment.Period;
+            if (location.StartPeriod <= location.EndPeriod)
+            {
+                AddLine(
+                    role,
+                    $"{DayName(location.Day)} {FormatPeriodRange(location.StartPeriod, location.EndPeriod)} / {course.Name} {course.SectionLabel}분반",
+                    GradeToBrushConverter.BrushFor(course.Grade),
+                    FontWeights.SemiBold);
+                return;
+            }
             AddLine(
                 role,
                 $"{course.Name} {course.SectionLabel}분반 / {DayName(day)} {period}교시",
@@ -330,6 +477,34 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         string.IsNullOrWhiteSpace(assignment.AssignmentId)
             ? string.Join("\u001f", assignment.CourseId, assignment.Day, assignment.Period, assignment.RoomId)
             : assignment.AssignmentId;
+
+    private static (int Day, int StartPeriod, int EndPeriod) ResolveConflictLocation(
+        ConflictItem conflict,
+        SolutionAssignment assignment,
+        ConflictSelectionContext? selectedContext)
+    {
+        var day = selectedContext?.Day ?? assignment.Day;
+        var identity = AssignmentIdentity(assignment);
+        var periods = (conflict.Assignments ?? Array.Empty<SolutionAssignment>())
+            .Where(row => row.Day == day && string.Equals(AssignmentIdentity(row), identity, StringComparison.Ordinal))
+            .Select(row => row.Period)
+            .Distinct()
+            .OrderBy(period => period)
+            .ToList();
+
+        if (periods.Count == 0)
+        {
+            var period = selectedContext?.Period ?? assignment.Period;
+            return (day, period, period);
+        }
+
+        return (day, periods[0], periods[^1]);
+    }
+
+    private static string FormatPeriodRange(int startPeriod, int endPeriod) =>
+        startPeriod == endPeriod
+            ? $"{startPeriod}교시"
+            : $"{startPeriod}~{endPeriod}교시";
 
     private static string DayName(int day) => day switch
     {

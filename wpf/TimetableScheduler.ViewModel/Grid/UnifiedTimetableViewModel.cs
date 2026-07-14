@@ -32,6 +32,11 @@ public enum ManualMoveCellState
 
 public sealed record UnifiedCellKey(int Day, int Period, int Grade, int SubColumnIdx);
 
+public sealed record ConflictConnector(
+    UnifiedCellKey Source,
+    UnifiedCellKey Target,
+    string Label);
+
 public sealed record EditCellState(ManualMoveCellState State, string Reason)
 {
     public bool CanMove => State is ManualMoveCellState.Movable or ManualMoveCellState.Warning;
@@ -68,6 +73,12 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
 
     public IReadOnlyDictionary<string, int> CrossParallelOrder { get; private set; } =
         new Dictionary<string, int>();
+
+    public IReadOnlyDictionary<UnifiedCellKey, string> ViolationLabels { get; private set; } =
+        new Dictionary<UnifiedCellKey, string>();
+
+    public IReadOnlyList<ConflictConnector> ConflictConnectors { get; private set; } =
+        Array.Empty<ConflictConnector>();
 
     public bool MergeOnlyStructuredBlocks { get; set; }
 
@@ -257,12 +268,18 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
             return (assignments, courses);
 
         var displayAssignments = assignments.ToList();
+        var explicitSchoolFixedCourseIds = assignments
+            .Select(a => a.CourseId)
+            .Distinct(StringComparer.Ordinal)
+            .Where(courseId => courses.Any(course =>
+                course.IsSchoolFixed &&
+                string.Equals(course.Id, courseId, StringComparison.Ordinal)))
+            .ToHashSet(StringComparer.Ordinal);
         var displayCourses = courses
-            .Where(course => !course.IsSchoolFixed)
+            .Where(course => !course.IsSchoolFixed || explicitSchoolFixedCourseIds.Contains(course.Id))
             .Select(CloneDisplayCourse)
             .ToList();
-        var normalCourseMap = courses
-            .Where(course => !course.IsSchoolFixed)
+        var normalCourseMap = displayCourses
             .GroupBy(course => course.Id, StringComparer.Ordinal)
             .ToDictionary(group => group.Key, group => group.First(), StringComparer.Ordinal);
         var visibleGradesByDay = Enumerable.Range(0, Constants.Days)
@@ -369,15 +386,25 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
             .Where(c => c.Course.Id == assignment.CourseId)
             .ToList();
         if (candidates.Count == 0) return "";
-        if (candidates.Count == 1) return assignment.CourseId;
+        if (candidates.Count == 1)
+            return AppendManualVisualOccurrenceKey(assignment.CourseId, assignment);
 
         var resolved = ResolveCourseForAssignment(assignment, courses);
         var resolvedIndex = courses
             .Select((Course, Index) => new { Course, Index })
             .FirstOrDefault(c => ReferenceEquals(c.Course, resolved))?.Index ?? 0;
         var roomKey = NormalizeRoomId(assignment.RoomId);
-        return string.Join("\u001f", assignment.CourseId, resolvedIndex, roomKey);
+        return AppendManualVisualOccurrenceKey(
+            string.Join("\u001f", assignment.CourseId, resolvedIndex, roomKey),
+            assignment);
     }
+
+    private static string AppendManualVisualOccurrenceKey(
+        string baseCourseKey,
+        SolutionAssignment assignment) =>
+        CellAssignment.IsManualVisualOccurrenceAssignmentId(assignment.AssignmentId)
+            ? string.Join("\u001f", baseCourseKey, "visual", assignment.AssignmentId)
+            : baseCourseKey;
 
     private static Course ResolveCourseForAssignment(
         SolutionAssignment assignment,
@@ -628,6 +655,15 @@ public sealed partial class UnifiedTimetableViewModel : ObservableObject
                 _lastRooms,
                 SchedulePolicy,
                 LunchPeriodsByDay);
+    }
+
+    public void SetConflictVisuals(
+        IReadOnlyDictionary<UnifiedCellKey, string> labels,
+        IReadOnlyList<ConflictConnector> connectors)
+    {
+        ViolationLabels = labels;
+        ConflictConnectors = connectors;
+        Rebuilt?.Invoke(this, EventArgs.Empty);
     }
 
     private static Dictionary<string, string>? BuildProfessorNameMap(IReadOnlyList<Professor>? professors) =>

@@ -56,10 +56,10 @@ public class LunchPolicyExportTests
             const int mondayColumn = 2;
             const int tuesdayColumn = 3;
 
-            Assert.Equal("점심", sheet.Cell(period4Row, mondayColumn).GetString());
+            Assert.Equal("", sheet.Cell(period4Row, mondayColumn).GetString());
             Assert.Contains("Period 5 class", sheet.Cell(period5Row, mondayColumn).GetString());
             Assert.Contains("Period 4 class", sheet.Cell(period4Row, tuesdayColumn).GetString());
-            Assert.Equal("점심", sheet.Cell(period5Row, tuesdayColumn).GetString());
+            Assert.Equal("", sheet.Cell(period5Row, tuesdayColumn).GetString());
             Assert.Equal(72, sheet.Row(period4Row).Height);
             Assert.Equal(72, sheet.Row(period5Row).Height);
             Assert.False(IsMerged(sheet, period4Row, mondayColumn));

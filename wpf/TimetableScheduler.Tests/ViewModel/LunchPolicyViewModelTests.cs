@@ -42,6 +42,24 @@ public class LunchPolicyViewModelTests
         Assert.Contains(new TimeSlot(0, 5), target);
     }
 
+    [Theory]
+    [InlineData(LunchPolicyMode.None)]
+    [InlineData(LunchPolicyMode.BanPeriod4)]
+    [InlineData(LunchPolicyMode.BanPeriod5)]
+    [InlineData(LunchPolicyMode.BanOneOfPeriods4And5)]
+    public void FixedTwoHourEditor_IgnoresLunchPolicyStartRestrictions(
+        LunchPolicyMode mode)
+    {
+        var entry = new BlockSlotEntry
+        {
+            BlockSize = 2,
+            IsGraduate = false,
+            SchedulePolicy = new SchedulePolicy { LunchMode = mode },
+        };
+
+        Assert.Equal(new[] { 1, 2, 3, 4, 5, 6, 7, 8 }, entry.PeriodOptions.Select(option => option.Period));
+    }
+
     [Fact]
     public void DataInputSelection_UpdatesPolicyBeforeGeneration()
     {
@@ -55,6 +73,8 @@ public class LunchPolicyViewModelTests
         Assert.Equal(LunchPolicyMode.BanPeriod4, workspace.SchedulePolicy.LunchMode);
         Assert.False(viewModel.IsSolveComplete);
         Assert.Contains("점심시간 조건이 변경", viewModel.StatusMessage);
+        Assert.Contains(viewModel.LunchPolicyOptions, option =>
+            option.Mode == LunchPolicyMode.None);
     }
 
     [Fact]
@@ -171,7 +191,7 @@ public class LunchPolicyViewModelTests
 
             using var workbook = new ClosedXML.Excel.XLWorkbook(path);
             var sheet = workbook.Worksheet("통합 시간표");
-            Assert.Equal("점심", sheet.Cell(9, 2).GetString());
+            Assert.Equal("", sheet.Cell(9, 2).GetString());
             Assert.Contains("A", sheet.Cell(10, 2).GetString());
         }
         finally
@@ -181,7 +201,7 @@ public class LunchPolicyViewModelTests
     }
 
     [Fact]
-    public void ManualEdit_MoveValidationUsesTheSavedLunchChoiceForTargetDay()
+    public void ManualEdit_AllowsMoveIntoSavedLunchCell_WithoutShowingLunchViolation()
     {
         var snapshot = new AppData(
             Courses(),
@@ -230,8 +250,25 @@ public class LunchPolicyViewModelTests
             targetGrade: source.Grade,
             targetSubColumnIdx: 0);
 
-        Assert.False(lunchTarget);
+        Assert.True(lunchTarget);
         Assert.True(openTarget);
+
+        var moved = viewModel.HandleDropMove(
+            source.Day,
+            source.Period,
+            source.Grade,
+            source.SubColumnIdx,
+            source.Assignment,
+            targetDay: 0,
+            targetPeriod: 4,
+            targetGrade: source.Grade,
+            targetSubColumnIdx: 0);
+
+        Assert.True(moved);
+        Assert.DoesNotContain(viewModel.Conflicts, item =>
+            item.Conflict.Type == ConflictType.LunchConflict);
+        Assert.Empty(viewModel.Grid.ViolationLabels);
+        Assert.True(viewModel.ValidateBeforeExport());
     }
 
     private static List<Course> Courses() =>

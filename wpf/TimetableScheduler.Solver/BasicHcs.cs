@@ -144,6 +144,9 @@ public static class BasicHcs
         SchedulePolicy schedulePolicy)
     {
         var lunchBanVars = new LunchVarMap();
+        if (schedulePolicy.LunchMode == LunchPolicyMode.None)
+            return lunchBanVars;
+
         var staticLunch = SchedulePolicyRules.StaticLunchPeriod(schedulePolicy);
         if (staticLunch.HasValue)
         {
@@ -203,7 +206,7 @@ public static class BasicHcs
                     model.Add(infeasible == 0);
                     model.Add(infeasible == 1);
                 }
-                else if (schedulePolicy.LunchMode == LunchPolicyMode.BanOneOfPeriods4And5
+                else if (SchedulePolicyRules.UsesFlexibleLunch(schedulePolicy)
                     && lunchBanVars.TryGetValue((slot.Day, slot.Period), out var lunchBan))
                 {
                     model.Add(lunchBan == 0);

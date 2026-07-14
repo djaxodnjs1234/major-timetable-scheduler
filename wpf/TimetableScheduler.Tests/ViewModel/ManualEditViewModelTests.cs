@@ -21,10 +21,27 @@ public class ManualEditViewModelTests : IDisposable
     {
         public bool ResponseToReturn { get; set; } = true;
         public List<IReadOnlyList<ConflictItem>> Calls { get; } = new();
+        public List<IReadOnlyList<ValidationCheckItem>> ValidationCheckCalls { get; } = new();
         public bool ConfirmDespiteConflicts(IReadOnlyList<ConflictItem> newConflicts)
         {
             Calls.Add(newConflicts);
             return ResponseToReturn;
+        }
+
+        public void ShowValidationResult(string title, string message, IReadOnlyList<ConflictItem> conflicts)
+        {
+            Calls.Add(conflicts);
+            ValidationCheckCalls.Add(Array.Empty<ValidationCheckItem>());
+        }
+
+        public void ShowValidationResult(
+            string title,
+            string message,
+            IReadOnlyList<ConflictItem> conflicts,
+            IReadOnlyList<ValidationCheckItem> checks)
+        {
+            Calls.Add(conflicts);
+            ValidationCheckCalls.Add(checks);
         }
     }
 
@@ -67,6 +84,40 @@ public class ManualEditViewModelTests : IDisposable
         int startPeriod,
         string roomId) =>
         string.Join("\u001f", "occ", courseId, section, professorId, name, courseIndex, day, startPeriod, roomId);
+
+    [Fact]
+    public void ValidateAll_ShowsPerConstraintCheckRows()
+    {
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "충돌", Grade = 2, HoursPerWeek = 1, ProfessorId = "P1" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 0, 1, "R1")));
+
+        vm.ValidateAllCommand.Execute(null);
+
+        var checks = Assert.Single(_dialog.ValidationCheckCalls);
+        var roomCheck = Assert.Single(checks, check => check.Name == "강의실 중복");
+        var professorCheck = Assert.Single(checks, check => check.Name == "교수 중복");
+        Assert.Equal(ValidationCheckTier.Critical, roomCheck.Tier);
+        Assert.Equal(ValidationCheckTier.Critical, professorCheck.Tier);
+        Assert.False(roomCheck.IsNormal);
+        Assert.True(roomCheck.ErrorCount > 0);
+        Assert.Contains(roomCheck.DetailConflicts, conflict => conflict.Type == ConflictType.RoomConflict);
+        Assert.False(professorCheck.IsNormal);
+        Assert.True(professorCheck.ErrorCount > 0);
+        Assert.Contains(professorCheck.DetailConflicts, conflict => conflict.Type == ConflictType.ProfessorConflict);
+        Assert.Contains(checks, check => check.Name == "교수 불가능 시간");
+        Assert.Contains(checks, check => check.Name == "과목 불가 강의실");
+        Assert.DoesNotContain(checks, check => check.Name == "학위과정 시간대");
+        Assert.DoesNotContain(checks, check => check.Name == "교수 불가 강의실");
+        Assert.DoesNotContain(checks, check => check.Name == "교수 강의실 일관성");
+        Assert.DoesNotContain(checks, check => check.Name == "점심시간 배치");
+        Assert.DoesNotContain(checks, check => check.Name == "고정 시간 위반");
+        Assert.DoesNotContain(checks, check => check.Name == "고정 강의실 위반");
+        Assert.DoesNotContain(checks, check => check.Name == "블록 시작 교시");
+        Assert.Contains(checks, check => check.IsNormal);
+    }
 
     private SavedTimetableRecord MakeSavedRecordWithManualCross(
         string id,
@@ -6239,7 +6290,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void ForceMove_FixedSelectedCourse_MovesAndKeepsFixedTimeError()
+    public void FixedSelectedCourse_MovesAndShowsOriginalFixedTimeWarning()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         _ws.UpdateCourse(new Course
@@ -6261,9 +6312,14 @@ public class ManualEditViewModelTests : IDisposable
 
         vm.HandleCellClick(1, 1, 2, 0, null);
 
-        Assert.Contains("강제 이동", vm.StatusMessage);
         Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "X-01");
-        Assert.Contains(vm.Conflicts, c => c.Severity == ConflictSeverity.Error);
+        var panelItem = Assert.Single(vm.ConflictGroups.Where(c => c.Type == ConflictType.FixedTimeViolation));
+        var detail = Assert.Single(panelItem.DetailConflicts);
+        Assert.Equal(ConflictSeverity.Warning, detail.Severity);
+        Assert.Contains("원래 고정시간", detail.Description);
+        Assert.Contains("월 1~2교시", detail.Description);
+        Assert.Contains("현재 위치: 화 1~2교시", detail.Description);
+        Assert.True(vm.ValidateBeforeExport());
     }
 
     [Fact]
@@ -6570,6 +6626,94 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Single(vm.WorkingCrossLinks);
         Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "X-01");
         Assert.True(vm.UndoCommand.CanExecute(null));
+    }
+
+    [Fact]
+    public void ManualEdit_MondayMorningAndFridayAfternoonTargetsStayMovable()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(new SolutionAssignment("X-01", 2, 1, "R1")));
+        var selectedCell = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+
+        vm.SelectCell(
+            selectedCell.Day,
+            selectedCell.Period,
+            selectedCell.Grade,
+            selectedCell.SubColumnIdx,
+            selectedCell.Assignment);
+
+        Assert.Equal(
+            TimetableScheduler.ViewModel.Grid.ManualMoveCellState.Movable,
+            vm.Grid.EditStates[new TimetableScheduler.ViewModel.Grid.UnifiedCellKey(0, 1, 2, 0)].State);
+        Assert.Equal(
+            TimetableScheduler.ViewModel.Grid.ManualMoveCellState.Movable,
+            vm.Grid.EditStates[new TimetableScheduler.ViewModel.Grid.UnifiedCellKey(4, 6, 2, 0)].State);
+
+        vm.SelectCell(4, 6, 2, 0, selectedCell.Assignment);
+
+        Assert.False(vm.HasWarningReasons);
+        Assert.False(vm.HasAnyConstraintReasons);
+    }
+
+    [Fact]
+    public void ManualCross_AllowsDifferentDurations()
+    {
+        _ws.AddCourse(new Course
+        {
+            Id = "B-02",
+            Name = "TwoHour",
+            Grade = 2,
+            HoursPerWeek = 2,
+            ProfessorId = "P2",
+            Section = 2,
+            BlockStructure = new List<int> { 2 },
+        });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "P2" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("B-02", 1, 1, "R2"),
+            new SolutionAssignment("B-02", 1, 2, "R2")));
+        var selectedCell = vm.Grid.Cells.Single(c => c.Day == 0 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        var targetCell = vm.Grid.Cells.Single(c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "B-02");
+        vm.SelectCell(0, 1, 2, selectedCell.SubColumnIdx, selectedCell.Assignment);
+
+        var hover = vm.EvaluateCrossHover(1, 1, 2, targetCell.SubColumnIdx, targetCell.Assignment);
+        vm.HandleCrossAddRequested(1, 1, 2, targetCell.SubColumnIdx, targetCell.Assignment);
+
+        Assert.True(hover.CanCreate, hover.Reason);
+        var link = Assert.Single(vm.WorkingCrossLinks);
+        Assert.Equal(1, link.RowSpanA);
+        Assert.Equal(2, link.RowSpanB);
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "X-01");
+        Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "B-02" && c.Assignment.RowSpan == 2);
+    }
+
+    [Fact]
+    public void ManualCross_AllowsThreeOrMoreLinkedAssignments()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.AddCourse(new Course { Id = "Y-01", Name = "Y", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2", Section = 2 });
+        _ws.AddCourse(new Course { Id = "Z-01", Name = "Z", Grade = 2, HoursPerWeek = 1, ProfessorId = "P3", Section = 3 });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "P2" });
+        _ws.AddProfessor(new Professor { Id = "P3", Name = "P3" });
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("Y-01", 1, 1, "R2"),
+            new SolutionAssignment("Z-01", 2, 1, "R3")));
+        var x = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+        var y = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "Y-01");
+        var z = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "Z-01");
+
+        vm.SelectCell(x.Day, x.Period, x.Grade, x.SubColumnIdx, x.Assignment);
+        vm.HandleCrossAddRequested(y.Day, y.Period, y.Grade, y.SubColumnIdx, y.Assignment);
+        var movedX = vm.Grid.Cells.Single(c => c.Assignment.CourseId == "X-01");
+        vm.SelectCell(movedX.Day, movedX.Period, movedX.Grade, movedX.SubColumnIdx, movedX.Assignment);
+        vm.HandleCrossAddRequested(z.Day, z.Period, z.Grade, z.SubColumnIdx, z.Assignment);
+
+        Assert.Equal(2, vm.WorkingCrossLinks.Count);
+        Assert.Contains(vm.WorkingCrossLinks, link => link.MatchesPair("X-01", "Y-01"));
+        Assert.Contains(vm.WorkingCrossLinks, link => link.MatchesPair("X-01", "Z-01"));
     }
 
     [Fact]

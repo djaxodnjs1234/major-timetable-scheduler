@@ -15,10 +15,17 @@ public class LunchPolicyTests
     [Fact]
     public void DerivedTwoHourStarts_FollowEachLunchMode()
     {
+        var none = new SchedulePolicy { LunchMode = LunchPolicyMode.None };
         var ban5 = new SchedulePolicy { LunchMode = LunchPolicyMode.BanPeriod5 };
         var ban4 = new SchedulePolicy { LunchMode = LunchPolicyMode.BanPeriod4 };
         var flexible = new SchedulePolicy { LunchMode = LunchPolicyMode.BanOneOfPeriods4And5 };
 
+        Assert.Equal(
+            new[] { 1, 3, 5, 7 },
+            SchedulePolicyRules.PossibleBlockStarts(
+                none,
+                SchedulePolicyRules.CandidateDaytimePeriods(none),
+                2));
         Assert.Equal(
             new[] { 1, 3, 6, 8 },
             SchedulePolicyRules.PossibleBlockStarts(
@@ -37,6 +44,36 @@ public class LunchPolicyTests
                 flexible,
                 SchedulePolicyRules.CandidateDaytimePeriods(flexible),
                 2));
+    }
+
+    [Fact]
+    public void NoLunchMode_AllowsFixedClassesAtPeriods4And5()
+    {
+        var courses = new[]
+        {
+            FixedCourse("A-01", 1, "P1", "R1", day: 0, period: 4),
+            FixedCourse("B-01", 2, "P2", "R2", day: 0, period: 5),
+        };
+        var result = DiverseSolver.Solve(
+            courses,
+            new[]
+            {
+                new Professor { Id = "P1", Name = "P1" },
+                new Professor { Id = "P2", Name = "P2" },
+            },
+            new[]
+            {
+                new Room { Id = "R1", Name = "R1" },
+                new Room { Id = "R2", Name = "R2" },
+            },
+            OneSolution,
+            schedulePolicy: new SchedulePolicy { LunchMode = LunchPolicyMode.None });
+
+        Assert.True(result.Status is "OPTIMAL" or "FEASIBLE", result.Status);
+        var solution = Assert.Single(result.Solutions);
+        Assert.Contains(solution, assignment => assignment.Period == 4);
+        Assert.Contains(solution, assignment => assignment.Period == 5);
+        Assert.Empty(solution.LunchPeriodsByDay);
     }
 
     [Fact]

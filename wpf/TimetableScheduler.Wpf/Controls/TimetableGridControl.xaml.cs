@@ -11,14 +11,12 @@ namespace TimetableScheduler.Wpf.Controls;
 public partial class TimetableGridControl : UserControl
 {
     private static readonly Brush EmptyBg = Brushes.White;
-    private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xF7, 0xF7, 0xF7));
     private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
     private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xEC, 0xEF, 0xF3));
     private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8));
 
     static TimetableGridControl()
     {
-        LunchBg.Freeze();
         HeaderBg.Freeze();
         CellBorder.Freeze();
         DayBoundaryBorder.Freeze();
@@ -134,22 +132,6 @@ public partial class TimetableGridControl : UserControl
             foreach (var p in vm.Periods)
             {
                 int row = BodyRowForPeriod(p);
-
-                if (vm.CellAt(d, p).IsLunch)
-                {
-                    for (int sub = 0; sub < layout.DayWidths[d]; sub++)
-                    {
-                        BodyGrid.Children.Add(MakeCell(
-                            "점심",
-                            row,
-                            layout.DayStart[d] + sub,
-                            1,
-                            LunchBg,
-                            9,
-                            FontWeights.Normal));
-                    }
-                    continue;
-                }
 
                 var placements = layout.Placements
                     .Where(a => a.Day == d && a.Period == p)

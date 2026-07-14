@@ -19,7 +19,6 @@ public static class FormattedTimetableExporter
     private static readonly XLColor TitleBg      = XLColor.FromHtml("#6F879F");
     private static readonly XLColor DayHeaderBg  = XLColor.FromHtml("#E6EEF6");
     private static readonly XLColor GradeHeaderBg = XLColor.FromHtml("#F8FAFC");
-    private static readonly XLColor LunchBg      = XLColor.FromHtml("#F7F9FC");
     private static readonly XLColor TextDark     = XLColor.FromHtml("#1F2937");
     private static readonly XLColor TextMuted    = XLColor.FromHtml("#4B5563");
     private static readonly XLColor GridLine     = XLColor.FromHtml("#E5EAF0");
@@ -368,8 +367,6 @@ public static class FormattedTimetableExporter
             }
 
         WriteCourses(ws, assignments, cMap, pMap, courses, dayStart, dayLayouts);
-        WriteLunchCells(
-            ws, dayStart, dayLayouts, schedulePolicy, lunchPeriodsByDay);
         WriteRemarks(ws, assignments, cMap, roomNameMap, dayStart, dayLayouts, totalCols);
         ApplyDayGroupBorders(ws, dayStart, dayLayouts);
         ApplyNightSeparator(ws, totalCols);
@@ -695,36 +692,6 @@ public static class FormattedTimetableExporter
             right.Style.Alignment.Vertical   = XLAlignmentVerticalValues.Center;
             right.Style.Alignment.WrapText   = true;
             ApplyHeaderBorder(right.AsRange());
-        }
-    }
-
-    private static void WriteLunchCells(
-        IXLWorksheet ws,
-        int[] dayStart,
-        IReadOnlyList<DayLayout> dayLayouts,
-        SchedulePolicy schedulePolicy,
-        IReadOnlyDictionary<int, int> lunchPeriodsByDay)
-    {
-        for (var day = 0; day < 5; day++)
-        {
-            for (var period = 1; period <= SchedulePeriods.LastPeriod; period++)
-            {
-                if (!SchedulePolicyRules.IsLunch(
-                        schedulePolicy, lunchPeriodsByDay, day, period))
-                    continue;
-
-                for (var sub = 0; sub < dayLayouts[day].SubColCount; sub++)
-                {
-                    var cell = ws.Cell(PeriodRow(period), dayStart[day] + sub);
-                    cell.Value = "점심";
-                    cell.Style.Font.Bold = true;
-                    cell.Style.Font.FontColor = TextMuted;
-                    cell.Style.Fill.BackgroundColor = LunchBg;
-                    cell.Style.Alignment.Horizontal = XLAlignmentHorizontalValues.Center;
-                    cell.Style.Alignment.Vertical = XLAlignmentVerticalValues.Center;
-                    ApplyGridBorder(cell.AsRange());
-                }
-            }
         }
     }
 

@@ -231,7 +231,7 @@ public static class BlockHcs
                     c1.Grade, allowGraduateDaytimeOverflow, schedulePolicy);
                 foreach (var ((d, sp), v1) in sv1)
                 {
-                    if (schedulePolicy.LunchMode == LunchPolicyMode.BanOneOfPeriods4And5)
+                    if (SchedulePolicyRules.UsesFlexibleLunch(schedulePolicy))
                     {
                         foreach (var lunchPeriod in new[]
                                  {

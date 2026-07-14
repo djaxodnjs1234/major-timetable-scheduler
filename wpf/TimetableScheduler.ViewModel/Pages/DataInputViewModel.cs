@@ -202,6 +202,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     public IReadOnlyList<LunchPolicyOption> LunchPolicyOptions { get; } =
         new[]
         {
+            new LunchPolicyOption(LunchPolicyMode.None, "점심시간 고려 안 함"),
             new LunchPolicyOption(LunchPolicyMode.BanPeriod4, "4교시 점심 (12:00~13:00)"),
             new LunchPolicyOption(LunchPolicyMode.BanPeriod5, "5교시 점심 (13:00~14:00)"),
             new LunchPolicyOption(

@@ -2,6 +2,7 @@ namespace TimetableScheduler.Domain;
 
 public enum LunchPolicyMode
 {
+    None,
     BanPeriod4,
     BanPeriod5,
     BanOneOfPeriods4And5,
@@ -22,6 +23,7 @@ public static class SchedulePolicyRules
     public static IReadOnlySet<int> HardBlockedPeriods(SchedulePolicy policy) =>
         policy.LunchMode switch
         {
+            LunchPolicyMode.None => new HashSet<int>(),
             LunchPolicyMode.BanPeriod4 => new HashSet<int> { FirstLunchCandidate },
             LunchPolicyMode.BanPeriod5 => new HashSet<int> { SecondLunchCandidate },
             LunchPolicyMode.BanOneOfPeriods4And5 => new HashSet<int>(),
@@ -43,12 +45,16 @@ public static class SchedulePolicyRules
     public static bool IsLunchCandidate(int period) =>
         period is FirstLunchCandidate or SecondLunchCandidate;
 
+    public static bool UsesFlexibleLunch(SchedulePolicy policy) =>
+        policy.LunchMode == LunchPolicyMode.BanOneOfPeriods4And5;
+
     public static bool IsStaticallyBlocked(SchedulePolicy policy, int period) =>
         HardBlockedPeriods(policy).Contains(period);
 
     public static int? StaticLunchPeriod(SchedulePolicy policy) =>
         policy.LunchMode switch
         {
+            LunchPolicyMode.None => null,
             LunchPolicyMode.BanPeriod4 => FirstLunchCandidate,
             LunchPolicyMode.BanPeriod5 => SecondLunchCandidate,
             LunchPolicyMode.BanOneOfPeriods4And5 => null,
@@ -71,6 +77,9 @@ public static class SchedulePolicyRules
         int day,
         int period)
     {
+        if (policy.LunchMode == LunchPolicyMode.None)
+            return false;
+
         var staticLunch = StaticLunchPeriod(policy);
         if (staticLunch.HasValue)
             return period == staticLunch.Value;
@@ -115,7 +124,7 @@ public static class SchedulePolicyRules
         if (blockLength <= 0)
             return Array.Empty<int>();
 
-        if (policy.LunchMode != LunchPolicyMode.BanOneOfPeriods4And5)
+        if (!UsesFlexibleLunch(policy))
             return StartsForAllowedPeriods(academicPeriods, blockLength);
 
         var starts = new HashSet<int>();

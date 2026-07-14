@@ -119,6 +119,79 @@ public class UnifiedTimetableControlIdentityTests
     }
 
     [Fact]
+    public void CrossLinkedCell_DoesNotShowMoveStateRedOverlay()
+    {
+        RunSta(() =>
+        {
+            EnsureApplicationResources();
+            var vm = BuildDuplicateCourseViewModel();
+            var crossCell = vm.Cells.Single(c => c.Assignment.AssignmentId == "B");
+            var crossKey = UnifiedTimetableViewModel.BuildManualCrossDisplayKey(
+                crossCell.Assignment,
+                crossCell.Day,
+                crossCell.Period);
+            vm.SetCrossLinkLabels(new Dictionary<string, string> { [crossKey] = "크로스 상대" });
+            vm.SetEditState(
+                null,
+                new Dictionary<UnifiedCellKey, EditCellState>
+                {
+                    [new(crossCell.Day, crossCell.Period, crossCell.Grade, crossCell.SubColumnIdx)] =
+                        new(ManualMoveCellState.Blocked, "테스트 차단"),
+                });
+
+            var view = ShowUnifiedGrid(vm);
+            try
+            {
+                var crossBorder = AssignmentBorder(view, "B");
+                var crossRow = Grid.GetRow(crossBorder);
+                var crossColumn = Grid.GetColumn(crossBorder);
+
+                Assert.DoesNotContain(MoveStateRedOverlays(view), overlay =>
+                    Grid.GetRow(overlay) == crossRow
+                    && Grid.GetColumn(overlay) == crossColumn);
+            }
+            finally
+            {
+                Window.GetWindow(view)?.Close();
+            }
+        });
+    }
+
+    [Fact]
+    public void OccupiedBlockedCell_DoesNotShowMoveStateRedOverlay()
+    {
+        RunSta(() =>
+        {
+            EnsureApplicationResources();
+            var vm = BuildDuplicateCourseViewModel();
+            var targetCell = vm.Cells.Single(c => c.Assignment.AssignmentId == "B");
+            vm.SetEditState(
+                null,
+                new Dictionary<UnifiedCellKey, EditCellState>
+                {
+                    [new(targetCell.Day, targetCell.Period, targetCell.Grade, targetCell.SubColumnIdx)] =
+                        new(ManualMoveCellState.Blocked, "테스트 차단"),
+                });
+
+            var view = ShowUnifiedGrid(vm);
+            try
+            {
+                var targetBorder = AssignmentBorder(view, "B");
+                var targetRow = Grid.GetRow(targetBorder);
+                var targetColumn = Grid.GetColumn(targetBorder);
+
+                Assert.DoesNotContain(MoveStateRedOverlays(view), overlay =>
+                    Grid.GetRow(overlay) == targetRow
+                    && Grid.GetColumn(overlay) == targetColumn);
+            }
+            finally
+            {
+                Window.GetWindow(view)?.Close();
+            }
+        });
+    }
+
+    [Fact]
     public void SwapBadgeClick_ClearsHoverBadgeAfterRequest()
     {
         RunSta(() =>
@@ -269,6 +342,15 @@ public class UnifiedTimetableControlIdentityTests
     private static List<Button> HoverBadges(DependencyObject root) =>
         FindDescendants<Button>(root)
             .Where(button => Equals(button.Content, "+") || Equals(button.Content, "⇄"))
+            .ToList();
+
+    private static List<Border> MoveStateRedOverlays(DependencyObject root) =>
+        FindDescendants<Border>(root)
+            .Where(border =>
+                !border.IsHitTestVisible
+                && border.Background is SolidColorBrush brush
+                && (brush.Color == Color.FromRgb(0xFF, 0xEB, 0xEE)
+                    || brush.Color == Color.FromRgb(0xFD, 0xE7, 0xE9)))
             .ToList();
 
     private static void RunSta(Action action)

@@ -111,14 +111,24 @@ public sealed partial class TimetableGridViewModel : ObservableObject
             .Where(c => c.Id == assignment.CourseId)
             .ToList();
         if (candidates.Count == 0) return "";
-        if (candidates.Count == 1) return assignment.CourseId;
+        if (candidates.Count == 1)
+            return AppendManualVisualOccurrenceKey(assignment.CourseId, assignment);
 
         var resolved = ResolveCourseForAssignment(assignment, courses);
         var resolvedIndex = courses
             .Select((Course, Index) => new { Course, Index })
             .FirstOrDefault(c => ReferenceEquals(c.Course, resolved))?.Index ?? 0;
-        return string.Join("\u001f", assignment.CourseId, resolvedIndex, NormalizeRoomId(assignment.RoomId));
+        return AppendManualVisualOccurrenceKey(
+            string.Join("\u001f", assignment.CourseId, resolvedIndex, NormalizeRoomId(assignment.RoomId)),
+            assignment);
     }
+
+    private static string AppendManualVisualOccurrenceKey(
+        string baseCourseKey,
+        SolutionAssignment assignment) =>
+        CellAssignment.IsManualVisualOccurrenceAssignmentId(assignment.AssignmentId)
+            ? string.Join("\u001f", baseCourseKey, "visual", assignment.AssignmentId)
+            : baseCourseKey;
 
     private static Course ResolveCourseForAssignment(
         SolutionAssignment assignment,

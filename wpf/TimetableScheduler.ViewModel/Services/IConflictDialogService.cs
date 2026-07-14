@@ -18,7 +18,38 @@ public interface IConflictDialogService
 
     void ShowValidationResult(string title, string message, IReadOnlyList<ConflictItem> conflicts) { }
 
+    void ShowValidationResult(
+        string title,
+        string message,
+        IReadOnlyList<ConflictItem> conflicts,
+        IReadOnlyList<ValidationCheckItem> checks) =>
+        ShowValidationResult(title, message, conflicts);
+
     bool ConfirmDiscardChanges() => true;
+}
+
+public enum ValidationCheckTier
+{
+    Critical = 1,
+    Important = 2,
+    Advisory = 3,
+}
+
+public sealed record ValidationCheckItem(
+    string Name,
+    ValidationCheckTier Tier,
+    bool IsNormal,
+    int ErrorCount,
+    int WarningCount,
+    string Detail = "",
+    IReadOnlyList<ConflictItem>? Conflicts = null)
+{
+    public IReadOnlyList<ConflictItem> DetailConflicts => Conflicts ?? Array.Empty<ConflictItem>();
+
+    public string TierTitle => "전체 검증";
+
+    public string StatusText =>
+        IsNormal ? "정상" : ErrorCount > 0 ? "비정상" : "주의";
 }
 
 public sealed record ConflictSelectionContext(
@@ -34,6 +65,12 @@ public sealed class NullConflictDialogService : IConflictDialogService
     public void ShowBlockingConflicts(string title, IReadOnlyList<ConflictItem> conflicts) { }
 
     public void ShowValidationResult(string title, string message, IReadOnlyList<ConflictItem> conflicts) { }
+
+    public void ShowValidationResult(
+        string title,
+        string message,
+        IReadOnlyList<ConflictItem> conflicts,
+        IReadOnlyList<ValidationCheckItem> checks) { }
 
     public bool ConfirmDiscardChanges() => true;
 }

@@ -3,15 +3,18 @@
 ## Goal
 
 Implement the lunch-policy rules from `docs/웹이전_제약조건및솔버동작_설계문서.md`
-in the WPF product before any web migration work. The WPF solver, validation,
-manual editing, saved timetable snapshots, rendering, and Excel export must all
-use the same policy and the same per-day lunch decisions.
+in the WPF product before any web migration work. The generation solver,
+validation, saved timetable snapshots, rendering, and Excel export must use the
+same policy and per-day lunch decisions. Manual editing intentionally becomes
+permissive and may temporarily violate selected scheduling constraints while
+showing every resulting violation.
 
 ## Scope Decisions
 
 - Change only the WPF implementation and shared WPF documentation. Do not add or
   modify web application code.
-- Support the three required modes:
+- Support four modes:
+  - `NONE`: no lunch period is blocked.
   - `BAN_4`: period 4 is lunch and cannot contain a class.
   - `BAN_5`: period 5 is lunch and cannot contain a class.
   - `BAN_AT_LEAST_ONE_OF_4_5`: exactly one of periods 4 and 5 is lunch for the
@@ -20,12 +23,10 @@ use the same policy and the same per-day lunch decisions.
   not interpret it as a separate lunch choice per professor, grade, or course.
 - Keep `BAN_5` as the default for existing databases and saved timetable
   snapshots so current WPF behavior remains compatible.
-- Do not expose `NONE` in this change. It is optional in the reference document
-  and can be added as a separate product decision later.
 - Treat the policy as one setting per WPF database/workspace. Do not implement
   the complete web `ConstraintSettings` contract as part of this change.
-- Preserve the solver-selected lunch period per day during manual editing. A
-  manual edit may not silently change the generated lunch decision.
+- Preserve the solver-selected lunch period per day during manual editing, but
+  allow a manual move into that cell and report it as a visible violation.
 - Do not delete or rewrite fixed slots when the user changes the policy. Keep
   the input and report a policy-specific validation error so the user can fix it.
 - Let the user choose the lunch policy in the WPF input screen before starting
@@ -33,10 +34,17 @@ use the same policy and the same per-day lunch decisions.
   setting.
 - Render periods 4 and 5 with the same row height, borders, and individual cell
   structure as periods 1 and 2. Do not merge lunch cells across the week, a day,
-  grades, or parallel sub-columns. Mark the actual lunch cells with `점심` while
-  keeping the normal period and time labels.
+  grades, or parallel sub-columns. Keep generated lunch cells visually empty;
+  do not draw a line or write a lunch label.
 - Update the existing Excel export in manual edit. Do not restore or add Excel
   export to the saved-timetable selection screen.
+- Allow manual moves, room changes, Cross, swap, and fixed-course moves that
+  create lunch, professor, room, unavailable-time, or fixed-time violations.
+  Keep save/export validation strict and list every violation on the right.
+- Block only physical impossibilities such as leaving the timetable range or
+  overlapping another represented block without an intentional Cross.
+- Show compact red violation labels on affected blocks and readable red
+  connectors between block pairs that participate in the same violation.
 
 ## Current WPF Assumptions To Replace
 
@@ -107,7 +115,7 @@ Keep:
      must load as `BAN_5`.
    - Include the policy in `SavedTimetableRecord.SnapshotJson`. Older snapshot
      JSON without the new field must still resolve as `BAN_5`.
-   - Verify: repository and snapshot round-trip tests preserve all three modes,
+   - Verify: repository and snapshot round-trip tests preserve all four modes,
      while legacy database and legacy snapshot tests load `BAN_5` without data
      loss.
 
@@ -190,11 +198,11 @@ Keep:
      cross placement, full validation, and two-hour-start validation with the
      shared helper.
    - Freeze the generated timetable's daily lunch map for the edit session.
-     Reject edits targeting the saved lunch cell even if the current global
-     workspace policy later changes.
+     Allow edits targeting the saved lunch cell, then retain a visible lunch
+     violation even if the current global workspace policy later changes.
    - Keep room, professor, grade, section, Cross, retake, fixed-time, and
      academic-band conflict checks active on the open candidate period.
-   - Verify: manual-edit tests cover all three modes, both flexible daily choices,
+   - Verify: manual-edit tests cover all four modes, both flexible daily choices,
      block placement around periods 4/5, undo/redo, save/copy/reopen, and
      independence from later global policy changes.
 
@@ -203,16 +211,15 @@ Keep:
      of deriving `IsLunch` from `Period == 5`.
    - Remove special lunch-row heights and render every period row with the same
      sizing rules as ordinary class rows.
-   - For `BAN_4` and `BAN_5`, keep the normal period/time label and mark each
-     configured day/grade/sub-column cell as lunch without merging cells.
-   - For flexible mode, keep normal period/time labels and mark only the
-     solver-selected cells for each day. The other candidate period remains a
-     normal class cell. Do not merge cells within a day or across the week.
+   - For every mode, keep the normal period/time label and ordinary empty-cell
+     appearance. Preserve lunch only as schedule metadata, not a visual row or
+     label. Do not merge cells within a day or across the week.
    - Update result-card mini previews so `MiniPreviewCell.IsLunch` works per day;
      do not hide an entire row in flexible mode.
    - Pass the policy and daily lunch map into `FormattedTimetableExporter`.
      Give every period the ordinary row height and preserve every visible cell.
-     Write `점심` into the selected cells instead of merging a lunch range.
+     Leave an unused generated lunch cell blank, and never overwrite a manually
+     placed class with a lunch label.
    - Update the existing manual-edit Excel export to use the session's saved
      policy/lunch map. Do not add another export entry point.
    - Verify: WPF control tests and ClosedXML tests cover `BAN_4`, `BAN_5`, mixed
@@ -241,6 +248,22 @@ Keep:
      `period == 5`, `period != 5`, or the legacy global two-hour-start list.
      Constants that describe period numbering or time labels may remain.
 
+9. Make manual editing permissive and visualize violations.
+   - Split validation into physical blockers and recordable constraint
+     violations for move/drop, staged placement, room replacement, fixed-course
+     movement, Cross, and swap.
+   - Populate target states for every period covered by 1-, 2-, and 3-hour
+     blocks. Use blocked red only for physical impossibilities and warning red
+     for allowed targets that create violations.
+   - Recompute the right-side conflict list after every accepted edit.
+   - Add tiny lower-right red summaries such as `교수 중복` and `강의실 중복`
+     to every affected block.
+   - Draw red connectors between pairs of blocks involved in relational
+     violations, routing them so labels and course titles remain readable.
+   - Verify lunch moves, fixed-course moves, conflict-producing room changes,
+     Cross/swap availability, 2-/3-hour target completeness, badges,
+     connectors, undo/redo, and strict save validation.
+
 ## Expected Main File Groups
 
 - Domain and persistence: `TimetableScheduler.Domain/SchedulePeriods.cs`, new
@@ -260,18 +283,31 @@ Keep:
 
 - The selected WPF lunch policy is persisted and included in generation and
   saved timetable snapshots.
-- All solver phases, input validation, conflict detection, and manual editing
-  enforce the same policy.
+- All solver phases and input validation enforce the selected generation policy;
+  manual editing records policy violations without blocking the edit.
 - Flexible mode keeps exactly one of periods 4 and 5 empty for the whole
   timetable on every day, and its solver choice survives ranking and saving.
 - WPF previews, full timetables, reopened saved timetables, manual edit, and
   Excel exports display the same lunch cells.
-- Legacy databases and saved timetables continue to behave as `BAN_5`.
-- Both test projects pass and the WPF solution builds successfully.
+- Legacy databases and saved timetables continue to behave as `BAN_5`, while
+  new workspaces may explicitly choose `NONE`.
+- The relevant policy/manual-edit regression groups pass and the WPF product
+  builds successfully; unrelated environment/baseline failures are recorded.
 
-## Approval Gate
+## Verification Result
 
-Do not start production-code implementation until the user reviews this complete
-scope and explicitly approves proceeding. After approval, implement the plan as
-one coordinated change and return only for a genuine new product decision or an
-external blocker.
+- WPF production build: passed with 0 warnings and 0 errors.
+- Focused solver, lunch-policy, persistence, Excel, round-trip, and permissive
+  manual-edit regression group: 152 passed, 0 failed.
+- Dedicated manual freedom tests cover lunch/fixed moves, room and professor
+  collisions, blocked-room selection, Cross, swap, multi-hour blocked targets,
+  violation labels, red connectors, and strict export validation.
+- Full core suite: 661 passed and 73 failed. Remaining failures are not hidden:
+  nine require the absent real workbook, several pre-existing saved/manual
+  snapshot assertions fail independently, and legacy tests still assert the
+  superseded block/confirm/revert behavior requested to be removed here.
+- WPF source-level tests passed where runnable. Five STA UI tests fail during
+  `UserControl` initialization because this environment reports an invalid WPF
+  font-cache URI; the production WPF project itself builds successfully.
+- Production-code audit found no raw period-5 lunch decision and no dedicated
+  lunch row, merge, label, or Excel overwrite path in the timetable renderers.

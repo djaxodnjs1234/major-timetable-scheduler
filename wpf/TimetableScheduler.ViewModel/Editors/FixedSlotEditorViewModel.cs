@@ -29,9 +29,11 @@ public sealed partial class BlockSlotEntry : ObservableObject
     {
         var allowedPeriods = isGraduate
             ? Constants.NightPeriods
-            : SchedulePolicyRules.CandidateDaytimePeriods(schedulePolicy);
-        var starts = SchedulePolicyRules.PossibleBlockStarts(
-            schedulePolicy, allowedPeriods, blockSize);
+            : SchedulePeriods.Daytime;
+        var allowed = allowedPeriods.ToHashSet();
+        var starts = allowedPeriods
+            .Where(start => Enumerable.Range(start, blockSize).All(allowed.Contains))
+            .ToArray();
         return starts.Select(start => new TimePeriodOption(start, FormatRange(start, blockSize))).ToList();
     }
 

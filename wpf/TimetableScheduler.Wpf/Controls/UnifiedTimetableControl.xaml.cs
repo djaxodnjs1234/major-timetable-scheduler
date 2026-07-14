@@ -18,7 +18,6 @@ public partial class UnifiedTimetableControl : UserControl
     internal const double CardTitleLineHeight = 13;
     internal const double CardMetaLineHeight = 10;
     private static readonly Brush EmptyBg = Brushes.White;
-    private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xF7, 0xF7, 0xF7));
     private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
     private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xEC, 0xEF, 0xF3));
     private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8));
@@ -26,8 +25,8 @@ public partial class UnifiedTimetableControl : UserControl
     private static readonly Brush CourseTitleText = new SolidColorBrush(Color.FromRgb(0x11, 0x18, 0x27));
     private static readonly Brush CourseMetaText = new SolidColorBrush(Color.FromRgb(0x4B, 0x55, 0x63));
     private static readonly Brush MoveAllowedBg = new SolidColorBrush(Color.FromRgb(0xE8, 0xF5, 0xE9));
-    private static readonly Brush MoveWarningBg = new SolidColorBrush(Color.FromRgb(0xFF, 0xF8, 0xE1));
-    private static readonly Brush MoveBlockedBg = new SolidColorBrush(Color.FromRgb(0xFD, 0xE7, 0xE9));
+    private static readonly Brush MoveWarningBg = new SolidColorBrush(Color.FromRgb(0xFF, 0xEB, 0xEE));
+    private static readonly Brush MoveBlockedBg = new SolidColorBrush(Color.FromRgb(0xFF, 0xEB, 0xEE));
     private static readonly Brush MoveBlockedBorder = new SolidColorBrush(Color.FromRgb(0xBA, 0x1A, 0x1A));
     private static readonly Brush SelectedBorder = new SolidColorBrush(Color.FromRgb(0x00, 0x5F, 0xB8));
 
@@ -41,7 +40,6 @@ public partial class UnifiedTimetableControl : UserControl
 
     static UnifiedTimetableControl()
     {
-        LunchBg.Freeze();
         HeaderBg.Freeze();
         CellBorder.Freeze();
         DayBoundaryBorder.Freeze();
@@ -281,6 +279,7 @@ public partial class UnifiedTimetableControl : UserControl
         // Period rows + cells
         // Track which (row, col) are covered by row spans
         var covered = new HashSet<(int Row, int Col)>();
+        var blockBorders = new Dictionary<UnifiedCellKey, Border>();
 
         int totalDayCols = vm.DayGroups.Sum(dg => dg.TotalWidth);
 
@@ -297,14 +296,6 @@ public partial class UnifiedTimetableControl : UserControl
                 int sub = startCol;
                 foreach (var col in dg.Grades)
                 {
-                    if (vm.IsLunch(dg.Day, p))
-                    {
-                        for (var k = 0; k < col.Width; k++)
-                            AddBorder("점심", row, sub + k, 1, 1, LunchBg, 9, FontWeights.Normal);
-                        sub += col.Width;
-                        continue;
-                    }
-
                     if (col.Grade is not int g)
                     {
                         AddBorder("", row, sub, 1, col.Width, EmptyBg, 0, FontWeights.Normal);
@@ -338,11 +329,13 @@ public partial class UnifiedTimetableControl : UserControl
                                 match.Assignment,
                                 dg.Day,
                                 p);
+                            var crossLabel = vm.CrossLinkLabels.GetValueOrDefault(crossDisplayKey);
                             var border = MakeChipBorder(
                                 match.Assignment,
                                 bg,
-                                vm.CrossLinkLabels.GetValueOrDefault(crossDisplayKey));
+                                crossLabel);
                             var isSelected = vm.SelectedCell == new UnifiedCellKey(dg.Day, p, g, k);
+                            var isCrossLinkedCell = !string.IsNullOrWhiteSpace(crossLabel);
                             border.Tag = (dg.Day, p, g, k, match.Assignment);
                             border.AllowDrop = EnableDragDropMove;
                             border.PreviewMouseLeftButtonDown += OnDragSourceMouseDown;
@@ -361,16 +354,23 @@ public partial class UnifiedTimetableControl : UserControl
                             if (match.Assignment.RowSpan > 1)
                                 Grid.SetRowSpan(border, match.Assignment.RowSpan);
                             RootGrid.Children.Add(border);
+                            var cellKey = new UnifiedCellKey(dg.Day, p, g, k);
+                            blockBorders[cellKey] = border;
                             if (!isSelected
+                                && !isCrossLinkedCell
                                 && vm.EditStates.TryGetValue(new UnifiedCellKey(dg.Day, p, g, k), out var moveState)
-                                && moveState.State is ManualMoveCellState.Movable
-                                    or ManualMoveCellState.Warning
-                                    or ManualMoveCellState.Blocked)
+                                && moveState.State == ManualMoveCellState.Movable)
                             {
                                 AddMoveStateOverlay(row, targetCol, match.Assignment.RowSpan, moveState);
                             }
                             if (isSelected)
                                 AddSelectedOverlay(row, targetCol, match.Assignment.RowSpan);
+                            if (vm.ViolationLabels.TryGetValue(cellKey, out var violationLabel))
+                                AddViolationBadge(
+                                    row,
+                                    targetCol,
+                                    match.Assignment.RowSpan,
+                                    violationLabel);
                             for (int dr = 1; dr < match.Assignment.RowSpan; dr++)
                                 covered.Add((row + dr, targetCol));
                         }
@@ -381,6 +381,97 @@ public partial class UnifiedTimetableControl : UserControl
         }
 
         AddNightSeparatorLine(NightSeparatorRow, 2 + totalDayCols);
+        AddConflictConnectorOverlay(vm, blockBorders);
+    }
+
+    private void AddViolationBadge(int row, int column, int rowSpan, string label)
+    {
+        var badge = new Border
+        {
+            HorizontalAlignment = HorizontalAlignment.Right,
+            VerticalAlignment = VerticalAlignment.Bottom,
+            Margin = new Thickness(2),
+            Padding = new Thickness(2, 0, 2, 0),
+            CornerRadius = new CornerRadius(2),
+            Background = new SolidColorBrush(Color.FromArgb(220, 255, 255, 255)),
+            IsHitTestVisible = false,
+            Child = new TextBlock
+            {
+                Text = label,
+                Foreground = MoveBlockedBorder,
+                FontSize = 8,
+                FontWeight = FontWeights.SemiBold,
+                TextWrapping = TextWrapping.Wrap,
+                MaxWidth = Math.Max(36, DayColumnWidth - 8),
+                TextAlignment = TextAlignment.Right,
+            },
+        };
+        Grid.SetRow(badge, row);
+        Grid.SetColumn(badge, column);
+        if (rowSpan > 1)
+            Grid.SetRowSpan(badge, rowSpan);
+        Panel.SetZIndex(badge, 70);
+        RootGrid.Children.Add(badge);
+    }
+
+    private void AddConflictConnectorOverlay(
+        UnifiedTimetableViewModel vm,
+        IReadOnlyDictionary<UnifiedCellKey, Border> blockBorders)
+    {
+        if (vm.ConflictConnectors.Count == 0)
+            return;
+
+        var canvas = new Canvas
+        {
+            IsHitTestVisible = false,
+            ClipToBounds = false,
+        };
+        Grid.SetRow(canvas, 0);
+        Grid.SetColumn(canvas, 0);
+        Grid.SetRowSpan(canvas, RootGrid.RowDefinitions.Count);
+        Grid.SetColumnSpan(canvas, RootGrid.ColumnDefinitions.Count);
+        Panel.SetZIndex(canvas, 55);
+        RootGrid.Children.Add(canvas);
+
+        Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
+        {
+            if (!RootGrid.Children.Contains(canvas))
+                return;
+
+            foreach (var connector in vm.ConflictConnectors)
+            {
+                if (!blockBorders.TryGetValue(connector.Source, out var source)
+                    || !blockBorders.TryGetValue(connector.Target, out var target)
+                    || source.ActualWidth <= 0
+                    || target.ActualWidth <= 0)
+                    continue;
+
+                var start = source.TranslatePoint(
+                    new Point(source.ActualWidth - 5, source.ActualHeight - 7),
+                    canvas);
+                var end = target.TranslatePoint(
+                    new Point(target.ActualWidth - 5, target.ActualHeight - 7),
+                    canvas);
+                var horizontalOffset = Math.Clamp(Math.Abs(end.X - start.X) * 0.25, 16, 50);
+                var lift = Math.Clamp(Math.Abs(end.Y - start.Y) * 0.18 + 12, 12, 38);
+                var direction = end.X >= start.X ? 1 : -1;
+                var pathFigure = new PathFigure { StartPoint = start, IsClosed = false };
+                pathFigure.Segments.Add(new BezierSegment(
+                    new Point(start.X + horizontalOffset * direction, start.Y - lift),
+                    new Point(end.X - horizontalOffset * direction, end.Y - lift),
+                    end,
+                    true));
+                var geometry = new PathGeometry(new[] { pathFigure });
+                canvas.Children.Add(new System.Windows.Shapes.Path
+                {
+                    Data = geometry,
+                    Stroke = MoveBlockedBorder,
+                    StrokeThickness = 1.25,
+                    Opacity = 0.72,
+                    ToolTip = connector.Label,
+                });
+            }
+        }));
     }
 
     private void AddSelectedOverlay(int row, int column, int rowSpan)
@@ -413,8 +504,15 @@ public partial class UnifiedTimetableControl : UserControl
         };
         var overlay = new Border
         {
-            BorderBrush = state.State == ManualMoveCellState.Blocked ? MoveBlockedBorder : Brushes.Transparent,
-            BorderThickness = state.State == ManualMoveCellState.Blocked ? new Thickness(2) : new Thickness(0),
+            BorderBrush = state.State is ManualMoveCellState.Blocked or ManualMoveCellState.Warning
+                ? MoveBlockedBorder
+                : Brushes.Transparent,
+            BorderThickness = state.State switch
+            {
+                ManualMoveCellState.Blocked => new Thickness(1),
+                ManualMoveCellState.Warning => new Thickness(1),
+                _ => new Thickness(0),
+            },
             Background = background,
             Opacity = 0.62,
             CornerRadius = new CornerRadius(5),
@@ -686,7 +784,10 @@ public partial class UnifiedTimetableControl : UserControl
         var bg = EmptyBg;
         var borderBrush = CellBorder;
         string? tooltip = null;
-        if (vm.EditStates.TryGetValue(new UnifiedCellKey(day, period, grade, subColumnIdx), out var state))
+        var cellKey = new UnifiedCellKey(day, period, grade, subColumnIdx);
+        var isDisplayOnlySubColumn = IsDisplayOnlyEmptySubColumn(vm, day, period, grade, subColumnIdx);
+        if (!isDisplayOnlySubColumn
+            && vm.EditStates.TryGetValue(cellKey, out var state))
         {
             bg = state.State switch
             {
@@ -695,14 +796,18 @@ public partial class UnifiedTimetableControl : UserControl
                 ManualMoveCellState.Blocked => MoveBlockedBg,
                 _ => EmptyBg,
             };
-            if (state.State == ManualMoveCellState.Blocked)
+            if (state.State is ManualMoveCellState.Blocked or ManualMoveCellState.Warning)
                 borderBrush = MoveBlockedBorder;
             tooltip = state.Reason;
         }
         var border = new Border
         {
             BorderBrush = borderBrush,
-            BorderThickness = new Thickness(0.5),
+            BorderThickness = !isDisplayOnlySubColumn
+                && vm.EditStates.TryGetValue(cellKey, out var editState)
+                && editState.State is ManualMoveCellState.Blocked or ManualMoveCellState.Warning
+                    ? new Thickness(1)
+                    : new Thickness(0.5),
             Background = bg,
             Tag = (day, period, grade, subColumnIdx, (CellAssignment?)null),
             Cursor = System.Windows.Input.Cursors.Hand,
@@ -713,6 +818,24 @@ public partial class UnifiedTimetableControl : UserControl
         border.Drop += OnCellDrop;
         border.MouseLeftButtonDown += OnCellClicked;
         return border;
+    }
+
+    private static bool IsDisplayOnlyEmptySubColumn(
+        UnifiedTimetableViewModel vm,
+        int day,
+        int period,
+        int grade,
+        int subColumnIdx)
+    {
+        if (subColumnIdx <= 0)
+            return false;
+
+        return !vm.Cells.Any(c =>
+            c.Day == day
+            && c.Grade == grade
+            && c.SubColumnIdx == subColumnIdx
+            && period >= c.Period
+            && period < c.Period + c.Assignment.RowSpan);
     }
 
     private void OnDragSourceMouseDown(object sender, System.Windows.Input.MouseButtonEventArgs e)
