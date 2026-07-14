@@ -53,16 +53,16 @@ public sealed class WorkspaceService
     {
         SchedulePolicy = data.SchedulePolicy;
         Courses.Clear();
-        foreach (var c in data.Courses) Courses.Add(c);
+        foreach (var c in data.Courses) Courses.Add(CloneCourse(c));
         Professors.Clear();
-        foreach (var p in data.Professors) Professors.Add(p);
+        foreach (var p in data.Professors) Professors.Add(CloneProfessor(p));
         Rooms.Clear();
-        foreach (var r in data.Rooms) Rooms.Add(r);
+        foreach (var r in data.Rooms) Rooms.Add(CloneRoom(r));
         _importedRoomIds.Clear();
         CrossGroups.Clear();
-        foreach (var g in data.CrossGroups) CrossGroups.Add(g);
+        foreach (var g in data.CrossGroups) CrossGroups.Add(CloneCrossGroup(g));
         RetakeScenarios.Clear();
-        foreach (var r in data.RetakeScenarios) RetakeScenarios.Add(r);
+        foreach (var r in data.RetakeScenarios) RetakeScenarios.Add(CloneRetakeScenario(r));
         RaiseChanged();
     }
 
@@ -302,19 +302,21 @@ public sealed class WorkspaceService
     public IReadOnlyList<Course> ExpandedCourses => Courses.ToList();
 
     public AppData Snapshot() => new(
-        Courses.ToList(),
-        Professors.ToList(), Rooms.ToList(),
-        CrossGroups.ToList(), RetakeScenarios.ToList())
+        Courses.Select(CloneCourse).ToList(),
+        Professors.Select(CloneProfessor).ToList(),
+        Rooms.Select(CloneRoom).ToList(),
+        CrossGroups.Select(CloneCrossGroup).ToList(),
+        RetakeScenarios.Select(CloneRetakeScenario).ToList())
     {
         SchedulePolicy = SchedulePolicy,
     };
 
     public AppData SchedulingSnapshot() => new(
         NormalizeCourseGroupsForScheduling(Courses),
-        Professors.ToList(),
-        Rooms.ToList(),
-        CrossGroups.ToList(),
-        RetakeScenarios.ToList())
+        Professors.Select(CloneProfessor).ToList(),
+        Rooms.Select(CloneRoom).ToList(),
+        CrossGroups.Select(CloneCrossGroup).ToList(),
+        RetakeScenarios.Select(CloneRetakeScenario).ToList())
     {
         SchedulePolicy = SchedulePolicy,
     };
@@ -370,6 +372,35 @@ public sealed class WorkspaceService
         CoteachProfs = new List<string>(src.CoteachProfs),
     };
 
+    private static Professor CloneProfessor(Professor src) => new()
+    {
+        Id = src.Id,
+        Name = src.Name,
+        UnavailableSlots = new List<TimeSlot>(src.UnavailableSlots),
+        UnavailableRooms = new List<string>(),
+    };
+
+    private static Room CloneRoom(Room src) => new()
+    {
+        Id = src.Id,
+        Name = src.Name,
+        IsLab = src.IsLab,
+        Capacity = src.Capacity,
+        IsImportedFromExcel = src.IsImportedFromExcel,
+    };
+
+    private static CrossGroup CloneCrossGroup(CrossGroup src) => new()
+    {
+        Id = src.Id,
+        BaseIds = new List<string>(src.BaseIds),
+    };
+
+    private static RetakeScenario CloneRetakeScenario(RetakeScenario src) => new()
+    {
+        CurrentGrade = src.CurrentGrade,
+        RetakeBaseId = src.RetakeBaseId,
+    };
+
     private bool IsProfessorInUse(string id)
     {
         if (Courses.Any(c =>
@@ -379,14 +410,13 @@ public sealed class WorkspaceService
 
         var professor = Professors.FirstOrDefault(p => string.Equals(p.Id, id, StringComparison.Ordinal));
         return professor != null
-            && (professor.UnavailableSlots.Count > 0 || professor.UnavailableRooms.Count > 0);
+            && professor.UnavailableSlots.Count > 0;
     }
 
     private bool IsRoomInUse(string id) =>
         Courses.Any(c =>
             c.FixedRooms.Contains(id, StringComparer.Ordinal)
-            || c.UnavailableRooms.Contains(id, StringComparer.Ordinal))
-        || Professors.Any(p => p.UnavailableRooms.Contains(id, StringComparer.Ordinal));
+            || c.UnavailableRooms.Contains(id, StringComparer.Ordinal));
 
     private bool IsCourseInUse(Course course)
     {

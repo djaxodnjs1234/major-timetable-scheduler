@@ -95,7 +95,7 @@ public class SqliteRepositoryTests : IDisposable
         var p = loaded.Professors[0];
         Assert.Equal("P1", p.Id);
         Assert.Equal(new TimeSlot(4, 7), p.UnavailableSlots[0]);
-        Assert.Equal(new[] { "R2" }, p.UnavailableRooms);
+        Assert.Empty(p.UnavailableRooms);
 
         Assert.Single(loaded.Rooms);
         Assert.Equal("R1", loaded.Rooms[0].Id);
@@ -147,7 +147,7 @@ public class SqliteRepositoryTests : IDisposable
 
         var professor = Assert.Single(repo.LoadAll().Professors);
         Assert.Equal("P1", professor.Id);
-        Assert.Equal(new[] { "R2" }, professor.UnavailableRooms);
+        Assert.Empty(professor.UnavailableRooms);
     }
 
     [Fact]

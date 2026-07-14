@@ -1402,7 +1402,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private IReadOnlyList<FixedRoomDemand> FixedRoomDemands(IReadOnlyList<Course> courses)
     {
         var roomIds = _workspace.Rooms.Select(room => room.Id).ToHashSet(StringComparer.Ordinal);
-        var professorMap = _workspace.Professors.ToDictionary(professor => professor.Id, StringComparer.Ordinal);
         var demands = new List<FixedRoomDemand>();
 
         foreach (var course in courses)
@@ -1414,11 +1413,9 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 continue;
             }
 
-            professorMap.TryGetValue(course.ProfessorId, out var professor);
             var candidateRoomIds = _workspace.Rooms
                 .Where(room =>
-                    !course.UnavailableRooms.Contains(room.Id) &&
-                    (professor == null || !professor.UnavailableRooms.Contains(room.Id)))
+                    !course.UnavailableRooms.Contains(room.Id))
                 .Select(room => room.Id)
                 .Distinct(StringComparer.Ordinal)
                 .ToList();
@@ -1614,7 +1611,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
         Id = src.Id,
         Name = src.Name,
         UnavailableSlots = new List<TimeSlot>(src.UnavailableSlots),
-        UnavailableRooms = new List<string>(src.UnavailableRooms),
+        UnavailableRooms = new List<string>(),
     };
 
     private static Room CloneRoom(Room src) => new()
@@ -1699,7 +1696,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             var items = CheckListBinder.Bind(
                 gradeGroup.ToList(),
                 entry => entry.Key,
-                entry => $"{entry.Value[0].Name} (분반 {entry.Value.Count}개, {entry.Value[0].HoursPerWeek}h)",
+                entry => $"{CrossCandidateCourseName(entry.Value)} (분반 {entry.Value.Count}개, {entry.Value[0].HoursPerWeek}h)",
                 _selectedCrossCandidateIds,
                 (id, isChecked) =>
                 {
@@ -1801,7 +1798,16 @@ public sealed partial class DataInputViewModel : PageViewModelBase
 
     private Dictionary<string, List<Course>> CourseBaseGroups() => _workspace.Courses
         .GroupBy(c => DomainHelpers.BaseId(c.Id))
+        .Where(g => !string.IsNullOrWhiteSpace(g.Key))
+        .Where(g => !string.IsNullOrWhiteSpace(CrossCandidateCourseName(g)))
+        .Where(g => IsCrossCandidateGrade(g.OrderBy(c => c.Section).First().Grade))
         .ToDictionary(g => g.Key, g => g.OrderBy(c => c.Section).ToList());
+
+    private static string CrossCandidateCourseName(IEnumerable<Course> courses) =>
+        courses.Select(c => c.Name?.Trim() ?? "").FirstOrDefault(name => name.Length > 0) ?? "";
+
+    private static bool IsCrossCandidateGrade(int grade) =>
+        AcademicLevels.AllGrades.Contains(grade);
 
     private static string DisplayName(string id, IReadOnlyDictionary<string, string> names) =>
         string.IsNullOrWhiteSpace(id) ? "-" : names.TryGetValue(id, out var name) ? name : id;
@@ -2234,13 +2240,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                 if (course.IsFixed && course.FixedSlots.Any(slot => professor.UnavailableSlots.Any(p => p.Day == slot.Day && p.Period == slot.Period)))
                     reasons.Add($"professor unavailable time conflict: {course.Name} / {professor.Name}");
 
-                var availableProfessorRooms = scheduleSnapshot.Rooms.Count(room =>
-                    !course.UnavailableRooms.Contains(room.Id) &&
-                    !professor.UnavailableRooms.Contains(room.Id) &&
-                    (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)));
-                if (scheduleSnapshot.Rooms.Count > 0 && availableProfessorRooms == 0)
-                    reasons.Add($"room capacity/type conflict: {course.Name} / {professor.Name} 조건을 만족하는 강의실이 없습니다");
-
                 if (!course.IsFixed)
                 {
                     var allowGraduateDaytimeOverflow =
@@ -2258,9 +2257,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
             }
         }
 
-        foreach (var prof in scheduleSnapshot.Professors)
-            if (scheduleSnapshot.Rooms.Count > 0 && prof.UnavailableRooms.Count >= scheduleSnapshot.Rooms.Count)
-                reasons.Add($"room capacity/type conflict: {prof.Name} 교수의 불가 강의실이 모든 강의실을 막고 있습니다");
         foreach (var course in scheduleSnapshot.Courses)
             if (scheduleSnapshot.Rooms.Count > 0 && course.UnavailableRooms.Count >= scheduleSnapshot.Rooms.Count)
                 reasons.Add($"room capacity/type conflict: {course.Name} 과목의 불가 강의실이 모든 강의실을 막고 있습니다");
@@ -2378,7 +2374,6 @@ public sealed partial class DataInputViewModel : PageViewModelBase
                     professor.Id,
                     professor.Name,
                     UnavailableSlots = professor.UnavailableSlots.OrderBy(slot => slot.Day).ThenBy(slot => slot.Period).ToList(),
-                    UnavailableRooms = professor.UnavailableRooms.OrderBy(id => id, StringComparer.Ordinal).ToList(),
                 }),
             Rooms = snapshot.Rooms
                 .OrderBy(room => room.Id, StringComparer.Ordinal)

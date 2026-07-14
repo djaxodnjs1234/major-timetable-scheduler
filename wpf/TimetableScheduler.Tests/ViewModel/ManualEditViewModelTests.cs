@@ -21,10 +21,17 @@ public class ManualEditViewModelTests : IDisposable
     {
         public bool ResponseToReturn { get; set; } = true;
         public List<IReadOnlyList<ConflictItem>> Calls { get; } = new();
+        public List<IReadOnlyList<ConflictItem>> SaveConflictCalls { get; } = new();
         public List<IReadOnlyList<ValidationCheckItem>> ValidationCheckCalls { get; } = new();
         public bool ConfirmDespiteConflicts(IReadOnlyList<ConflictItem> newConflicts)
         {
             Calls.Add(newConflicts);
+            return ResponseToReturn;
+        }
+
+        public bool ConfirmSaveDespiteConflicts(IReadOnlyList<ConflictItem> conflicts)
+        {
+            SaveConflictCalls.Add(conflicts);
             return ResponseToReturn;
         }
 
@@ -108,12 +115,12 @@ public class ManualEditViewModelTests : IDisposable
         Assert.True(professorCheck.ErrorCount > 0);
         Assert.Contains(professorCheck.DetailConflicts, conflict => conflict.Type == ConflictType.ProfessorConflict);
         Assert.Contains(checks, check => check.Name == "교수 불가능 시간");
-        Assert.Contains(checks, check => check.Name == "과목 불가 강의실");
-        Assert.DoesNotContain(checks, check => check.Name == "학위과정 시간대");
+        Assert.Contains(checks, check => check.Name == "고정 시간 위반");
+        Assert.Contains(checks, check => check.Name == "교수 강의실 일관성");
+        Assert.Contains(checks, check => check.Name == "시간대 위반");
+        Assert.DoesNotContain(checks, check => check.Name == "과목 불가 강의실");
         Assert.DoesNotContain(checks, check => check.Name == "교수 불가 강의실");
-        Assert.DoesNotContain(checks, check => check.Name == "교수 강의실 일관성");
         Assert.DoesNotContain(checks, check => check.Name == "점심시간 배치");
-        Assert.DoesNotContain(checks, check => check.Name == "고정 시간 위반");
         Assert.DoesNotContain(checks, check => check.Name == "고정 강의실 위반");
         Assert.DoesNotContain(checks, check => check.Name == "블록 시작 교시");
         Assert.Contains(checks, check => check.IsNormal);
@@ -1045,8 +1052,8 @@ public class ManualEditViewModelTests : IDisposable
         vm.SaveTimetableCommand.Execute(null);
 
         Assert.Contains(vm.Conflicts, c => c.Type == ConflictType.SectionConflict);
-        Assert.Contains("저장 차단", vm.StatusMessage);
-        Assert.DoesNotContain(_ws.SavedTimetables, t => t.Name == "분반중복저장차단");
+        Assert.Contains("저장 완료", vm.StatusMessage);
+        Assert.Contains(_ws.SavedTimetables, t => t.Name == "분반중복저장차단");
     }
 
     [Fact]
@@ -2359,7 +2366,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void SwapResultingInProfessorConflict_RecalculatesConflictsAndSaveBlocks()
+    public void SwapResultingInProfessorConflict_RecalculatesConflictsAndSaveCanProceed()
     {
         _ws.AddCourse(new Course { Id = "Y-01", Name = "대상", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
         _ws.AddCourse(new Course { Id = "Z-01", Name = "충돌", Grade = 3, HoursPerWeek = 1, ProfessorId = "P1" });
@@ -2378,8 +2385,8 @@ public class ManualEditViewModelTests : IDisposable
         Assert.Contains(vm.Conflicts, c => c.Type == ConflictType.ProfessorConflict && c.Severity == ConflictSeverity.Error);
         vm.SaveName = "스왑오류";
         vm.SaveTimetableCommand.Execute(null);
-        Assert.Contains("저장 차단", vm.StatusMessage);
-        Assert.DoesNotContain(_ws.SavedTimetables, t => t.Name == "스왑오류");
+        Assert.Contains("저장 완료", vm.StatusMessage);
+        Assert.Contains(_ws.SavedTimetables, t => t.Name == "스왑오류");
     }
 
         [Fact]
@@ -2910,7 +2917,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void SaveTimetable_Error_BlocksSaveAndRefreshesConflicts()
+    public void SaveTimetable_ErrorPromptsAndCancelDoesNotSave()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         _ws.AddCourse(new Course { Id = "Y-01", Name = "충돌", Grade = 3, HoursPerWeek = 1, ProfessorId = "P1" });
@@ -2918,11 +2925,14 @@ public class ManualEditViewModelTests : IDisposable
             new SolutionAssignment("X-01", 0, 1, "R1"),
             new SolutionAssignment("Y-01", 0, 1, "R2")));
         vm.SaveName = "오류저장";
+        _dialog.ResponseToReturn = false;
 
         vm.SaveTimetableCommand.Execute(null);
 
-        Assert.Contains("저장 차단", vm.StatusMessage);
+        Assert.Contains("저장을 취소", vm.StatusMessage);
         Assert.Contains(vm.Conflicts, c => c.Severity == ConflictSeverity.Error);
+        Assert.Single(_dialog.SaveConflictCalls);
+        Assert.Contains(_dialog.SaveConflictCalls[0], c => c.Type == ConflictType.ProfessorConflict);
         Assert.DoesNotContain(_ws.SavedTimetables, t => t.Name == "오류저장");
     }
 
@@ -3097,7 +3107,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void SaveTimetable_Hc20Error_BlocksSave()
+    public void SaveTimetable_Hc20Error_PromptsAndSavesWhenAccepted()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         vm.LoadFromSolution(MakeSolution(
@@ -3108,8 +3118,8 @@ public class ManualEditViewModelTests : IDisposable
         vm.SaveTimetableCommand.Execute(null);
 
         Assert.Contains(vm.Conflicts, c => c.Type == ConflictType.SameCourseSameDayConflict);
-        Assert.Contains("저장 차단", vm.StatusMessage);
-        Assert.DoesNotContain(_ws.SavedTimetables, t => t.Name == "HC20저장");
+        Assert.Contains("저장 완료", vm.StatusMessage);
+        Assert.Contains(_ws.SavedTimetables, t => t.Name == "HC20저장");
     }
 
     [Fact]
@@ -3131,7 +3141,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void ForceMove_Hc20CandidateMovesAndKeepsSaveBlocked()
+    public void ForceMove_Hc20CandidateMovesAndSaveCanProceed()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         vm.LoadFromSolution(MakeSolution(
@@ -3142,16 +3152,16 @@ public class ManualEditViewModelTests : IDisposable
 
         vm.HandleCellClick(0, 3, 2, 0, null);
 
-        Assert.Single(_dialog.Calls);
-        Assert.Contains(_dialog.Calls[0], c => c.Type == ConflictType.SameCourseSameDayConflict);
         Assert.Contains(vm.Grid.Cells, c => c.Assignment.CourseId == "X-01" && c.Day == 0 && c.Period == 3);
         Assert.Contains(vm.Conflicts, c => c.Type == ConflictType.SameCourseSameDayConflict);
 
         vm.SaveName = "HC20강제이동저장";
         vm.SaveTimetableCommand.Execute(null);
 
-        Assert.Contains("저장 차단", vm.StatusMessage);
-        Assert.DoesNotContain(_ws.SavedTimetables, t => t.Name == "HC20강제이동저장");
+        Assert.Contains("저장 완료", vm.StatusMessage);
+        Assert.Single(_dialog.SaveConflictCalls);
+        Assert.Contains(_dialog.SaveConflictCalls[0], c => c.Type == ConflictType.SameCourseSameDayConflict);
+        Assert.Contains(_ws.SavedTimetables, t => t.Name == "HC20강제이동저장");
     }
 
     [Fact]
@@ -3687,7 +3697,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void SaveTimetable_WithoutManualCrossLink_Hc11GradeOverlapBlocksSave()
+    public void SaveTimetable_WithoutManualCrossLink_Hc11GradeOverlapPromptsAndSaves()
     {
         _ws.AddCourse(new Course { Id = "Y-01", Name = "기타", Grade = 2, HoursPerWeek = 1, ProfessorId = "P2" });
         _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
@@ -3700,8 +3710,8 @@ public class ManualEditViewModelTests : IDisposable
         vm.SaveTimetableCommand.Execute(null);
 
         Assert.Contains(vm.Conflicts, c => c.Type == ConflictType.GradeConflict);
-        Assert.Contains("저장 차단", vm.StatusMessage);
-        Assert.DoesNotContain(_ws.SavedTimetables, t => t.Name == "크로스없는중복");
+        Assert.Contains("저장 완료", vm.StatusMessage);
+        Assert.Contains(_ws.SavedTimetables, t => t.Name == "크로스없는중복");
     }
 
     [Fact]
@@ -6226,7 +6236,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void ForceMove_ProfessorConflict_MovesAndSaveIsBlocked()
+    public void ForceMove_ProfessorConflict_MovesAndSaveCanProceed()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         _ws.AddCourse(new Course { Id = "Y-01", Name = "충돌", Grade = 3, HoursPerWeek = 1, ProfessorId = "P1" });
@@ -6239,12 +6249,12 @@ public class ManualEditViewModelTests : IDisposable
 
         vm.HandleCellClick(1, 1, 2, 0, null);
 
-        Assert.Contains("강제 이동", vm.StatusMessage);
+        Assert.Contains("이동 완료", vm.StatusMessage);
         Assert.Contains(vm.Conflicts, c => c.Severity == ConflictSeverity.Error);
         vm.SaveName = "교수충돌저장";
         vm.SaveTimetableCommand.Execute(null);
-        Assert.Contains("저장 차단", vm.StatusMessage);
-        Assert.DoesNotContain(_ws.SavedTimetables, t => t.Name == "교수충돌저장");
+        Assert.Contains("저장 완료", vm.StatusMessage);
+        Assert.Contains(_ws.SavedTimetables, t => t.Name == "교수충돌저장");
     }
 
     [Fact]

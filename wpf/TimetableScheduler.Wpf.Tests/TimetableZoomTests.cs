@@ -23,4 +23,20 @@ public class TimetableZoomTests
         Assert.Equal(1.0, zoom.Scale);
         Assert.Equal("100%", zoom.DisplayPercent);
     }
+
+    [Fact]
+    public void SharedZoom_UsesOneInstanceAcrossScreens()
+    {
+        TimetableZoom.Shared.Reset();
+
+        var firstScreenZoom = TimetableZoom.Shared;
+        var secondScreenZoom = TimetableZoom.Shared;
+
+        firstScreenZoom.ZoomIn();
+
+        Assert.Same(firstScreenZoom, secondScreenZoom);
+        Assert.Equal(1.1, secondScreenZoom.Scale);
+
+        TimetableZoom.Shared.Reset();
+    }
 }

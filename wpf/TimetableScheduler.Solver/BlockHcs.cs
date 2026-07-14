@@ -130,27 +130,6 @@ public static class BlockHcs
         }
     }
 
-    public static void AddHc21_ProfRoomEligibility(
-        CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms,
-        Dictionary<string, Professor> profMap)
-    {
-        foreach (var c in courses)
-        {
-            if (c.FixedRooms.Count > 0) continue;
-            if (!profMap.TryGetValue(c.ProfessorId, out var prof)) continue;
-
-            var unavailable = prof.UnavailableRooms.ToHashSet();
-
-            foreach (var r in rooms)
-            {
-                if (unavailable.Contains(r.Id))
-                    for (int d = 0; d < Constants.Days; d++)
-                        foreach (var p in Constants.Periods)
-                            model.Add(x[(c.Id, d, p, r.Id)] == 0);
-            }
-        }
-    }
-
     public static void AddHc22_AutoCourseRoomConsistent(
         CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms)
     {

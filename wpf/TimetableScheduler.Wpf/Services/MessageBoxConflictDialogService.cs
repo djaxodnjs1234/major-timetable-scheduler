@@ -102,6 +102,80 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         }
     }
 
+    public bool ConfirmSaveDespiteConflicts(IReadOnlyList<ConflictItem> conflicts)
+    {
+        var dialog = new Window
+        {
+            Title = "저장 경고",
+            WindowStartupLocation = WindowStartupLocation.CenterScreen,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            ResizeMode = ResizeMode.NoResize,
+        };
+
+        var layout = new Grid
+        {
+            Margin = new Thickness(16),
+            MinWidth = 420,
+            MaxWidth = 680,
+        };
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var header = new TextBlock
+        {
+            Text = $"현재 제약조건 위반 {conflicts.Count}건이 있습니다. 그래도 저장하시겠습니까?",
+            Margin = new Thickness(0, 0, 0, 10),
+            TextWrapping = TextWrapping.Wrap,
+        };
+        Grid.SetRow(header, 0);
+        layout.Children.Add(header);
+
+        var conflictList = BuildConflictList(conflicts, null);
+        Grid.SetRow(conflictList, 1);
+        layout.Children.Add(conflictList);
+
+        var footer = new StackPanel();
+        footer.Children.Add(new TextBlock
+        {
+            Text = "[저장] 위반 사항을 포함한 현재 시간표를 저장합니다.\n[취소] 저장하지 않고 수동편집 화면으로 돌아갑니다.",
+            Margin = new Thickness(0, 8, 0, 14),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        var save = false;
+        AddButton("저장", true);
+        AddButton("취소", false);
+        footer.Children.Add(buttons);
+        Grid.SetRow(footer, 2);
+        layout.Children.Add(footer);
+        dialog.Content = layout;
+        dialog.ShowDialog();
+        return save;
+
+        void AddButton(string content, bool value)
+        {
+            var button = new Button
+            {
+                Content = content,
+                MinWidth = 80,
+                Margin = new Thickness(6, 0, 0, 0),
+                Padding = new Thickness(10, 4, 10, 4),
+            };
+            button.Click += (_, _) =>
+            {
+                save = value;
+                dialog.DialogResult = true;
+            };
+            buttons.Children.Add(button);
+        }
+    }
+
     public bool ConfirmDiscardChanges()
     {
         var dialog = new Window
@@ -529,7 +603,6 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         ConflictType.FixedTimeViolation => "고정 시간 위반",
         ConflictType.BlockStartViolation => "블록 시작 교시",
         ConflictType.SameCourseSameDayConflict => "같은 요일 중복 배치",
-        ConflictType.ProfUnavailableRoomViolation => "교수 불가 강의실",
         ConflictType.ProfRoomInconsistent => "교수 강의실 일관성",
         ConflictType.AcademicLevelTimeBandViolation => "학위과정 시간대 위반",
         _ => "제약조건 위반",

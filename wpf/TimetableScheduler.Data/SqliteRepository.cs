@@ -44,6 +44,7 @@ public sealed class SqliteRepository
         MigrateCourseUnavailableRooms(conn);
         MigrateSchoolFixedCourseFields(conn);
         MigrateProfessorUnavailableRooms(conn);
+        ClearDeprecatedProfessorUnavailableRooms(conn);
         MigrateLegacyProfessorRoomWhitelistRemoved(conn);
         MigrateRoomMetadata(conn);
         MigrateCoursePkIfNeeded(conn);
@@ -105,6 +106,16 @@ public sealed class SqliteRepository
             .Select(row => (string)row.name);
         if (columns.Contains("UnavailableRoomsJson")) return;
         conn.Execute("ALTER TABLE Professors ADD COLUMN UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]'");
+    }
+
+    private static void ClearDeprecatedProfessorUnavailableRooms(SqliteConnection conn)
+    {
+        var columns = conn.Query("PRAGMA table_info(Professors)")
+            .Select(row => (string)row.name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!columns.Contains("UnavailableRoomsJson")) return;
+
+        conn.Execute("UPDATE Professors SET UnavailableRoomsJson = '[]' WHERE UnavailableRoomsJson <> '[]'");
     }
 
     private static void MigrateLegacyProfessorRoomWhitelistRemoved(SqliteConnection conn)
@@ -476,14 +487,14 @@ public sealed class SqliteRepository
         Id = r.Id,
         Name = r.Name,
         UnavailableSlots = JsonSerializer.Deserialize<List<TimeSlot>>(r.UnavailableSlotsJson) ?? new(),
-        UnavailableRooms = JsonSerializer.Deserialize<List<string>>(r.UnavailableRoomsJson) ?? new(),
+        UnavailableRooms = new(),
     };
 
     private static object FromProf(Professor p) => new
     {
         p.Id, p.Name,
         UnavailableSlotsJson = JsonSerializer.Serialize(p.UnavailableSlots),
-        UnavailableRoomsJson = JsonSerializer.Serialize(p.UnavailableRooms),
+        UnavailableRoomsJson = "[]",
     };
 
     private static CrossGroup ToCross(CrossRow r) => new()

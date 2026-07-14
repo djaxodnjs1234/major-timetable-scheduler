@@ -1312,6 +1312,34 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void CrossManager_HidesBlankCandidateItems()
+    {
+        AddTwoSectionCourse("A");
+        AddTwoSectionCourse("BLANK_NAME", course => course.Name = " ");
+        AddTwoSectionCourse("FIRST_BLANK", course =>
+        {
+            if (course.Section == 1)
+                course.Name = " ";
+            else
+                course.Name = "Visible";
+        });
+        AddTwoSectionCourse("NO_GRADE", course => course.Grade = 0);
+        AddTwoSectionCourse("UNKNOWN_GRADE", course => course.Grade = 9);
+        _workspace.AddCourse(MakeCourse(" -01", 1));
+        _workspace.AddCourse(MakeCourse(" -02", 2));
+
+        var vm = MakeVm();
+
+        Assert.DoesNotContain(vm.CrossCandidateItems, item => string.IsNullOrWhiteSpace(item.Id));
+        Assert.DoesNotContain(vm.CrossCandidateItems, item => string.IsNullOrWhiteSpace(item.Display));
+        Assert.DoesNotContain(vm.CrossCandidateGradeGroups, group => string.IsNullOrWhiteSpace(group.Header));
+        Assert.DoesNotContain(vm.CrossCandidateItems, item => item.Id == "BLANK_NAME");
+        Assert.DoesNotContain(vm.CrossCandidateItems, item => item.Id == "NO_GRADE");
+        Assert.DoesNotContain(vm.CrossCandidateItems, item => item.Id == "UNKNOWN_GRADE");
+        Assert.Contains(vm.CrossCandidateItems, item => item.Id == "FIRST_BLANK" && item.Display.StartsWith("Visible "));
+    }
+
+    [Fact]
     public void CrossManager_KeepsSelectedCandidatesEnabledAfterTwoSelections()
     {
         AddTwoSectionCourse("A");

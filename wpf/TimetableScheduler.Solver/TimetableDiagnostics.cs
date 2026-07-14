@@ -993,8 +993,7 @@ public static class TimetableDiagnostics
     {
         return rooms.Where(room =>
             !course.UnavailableRooms.Contains(room.Id) &&
-            (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)) &&
-            (professor == null || !professor.UnavailableRooms.Contains(room.Id)))
+            (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)))
             .ToList();
     }
 
@@ -1005,8 +1004,7 @@ public static class TimetableDiagnostics
     {
         return rooms.Where(room =>
             !course.UnavailableRooms.Contains(room.Id) &&
-            (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)) &&
-            professors.All(professor => !professor.UnavailableRooms.Contains(room.Id)))
+            (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)))
             .ToList();
     }
 

@@ -106,7 +106,7 @@ public class SolverService
             Id = source.Id,
             Name = source.Name,
             UnavailableSlots = source.UnavailableSlots.ToList(),
-            UnavailableRooms = source.UnavailableRooms.ToList(),
+            UnavailableRooms = new List<string>(),
         };
 
     private static Room CloneRoom(Room source) =>

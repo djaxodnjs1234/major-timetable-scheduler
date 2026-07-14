@@ -34,7 +34,7 @@ public partial class ManualEditView : UserControl
     internal static Action<Exception> ShowExportFailureMessage { get; set; } = ShowExportFailureMessageCore;
     internal static Action ShowAutoOpenFailureMessage { get; set; } = ShowAutoOpenFailureMessageCore;
 
-    public TimetableZoom Zoom { get; } = new();
+    public TimetableZoom Zoom { get; } = TimetableZoom.Shared;
 
     public ManualEditView()
     {

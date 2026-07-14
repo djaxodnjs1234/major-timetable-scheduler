@@ -93,7 +93,6 @@ public static class ModelBuilder
             model, startVarsByBlock, courses, crosses, schedulePolicy,
             lunchBanVars, allowGraduateDaytimeOverflow);
         BlockHcs.AddHc20_BlockDaysDistinct(model, dayVarsByCourse);
-        BlockHcs.AddHc21_ProfRoomEligibility(model, x, courses, rooms, profMap);
         BlockHcs.AddHc22_AutoCourseRoomConsistent(model, x, courses, rooms);
 
         return new BuildResult

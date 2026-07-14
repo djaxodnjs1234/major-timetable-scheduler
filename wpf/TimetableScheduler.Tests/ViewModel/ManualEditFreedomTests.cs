@@ -829,6 +829,54 @@ public class ManualEditFreedomTests
     }
 
     [Fact]
+    public void DeleteSchoolFixedBlock_DoesNotMutateSourcePreviewSnapshot()
+    {
+        var fixedBlock = Course("FIX-01", 1, "P1");
+        fixedBlock.Name = "Fixed";
+        fixedBlock.IsFixed = true;
+        fixedBlock.IsSchoolFixed = true;
+        fixedBlock.SchoolFixedTargetGrade = SchoolFixedTimePolicy.AllGrades;
+        fixedBlock.FixedSlots = new List<TimeSlot> { new(0, 1) };
+        fixedBlock.BlockStructure = new List<int> { 1 };
+        var snapshot = new AppData(
+            new List<Course> { fixedBlock },
+            new List<Professor> { new() { Id = "P1", Name = "P1" } },
+            new List<Room> { new() { Id = "R1", Name = "R1" } },
+            new List<CrossGroup>(),
+            new List<RetakeScenario>());
+        var lunchPeriods = SchedulePolicyRules.StaticLunchPeriodsByDay(SchedulePolicy.Default, Constants.Days);
+        var viewModel = new ManualEditViewModel(
+            WorkspaceService.CreateSession(snapshot),
+            new NullConflictDialogService());
+        viewModel.LoadFromSnapshot(
+            snapshot,
+            new RankedSolution(
+                Array.Empty<SolutionAssignment>(),
+                new SolutionScore(0, 0, 0, 0),
+                lunchPeriods),
+            "manual freedom");
+        var source = viewModel.Grid.Cells.First(cell =>
+            cell.Assignment.IsSchoolFixed
+            && cell.Day == 0
+            && cell.Period == 1
+            && cell.Grade == 1);
+
+        viewModel.SelectCell(
+            source.Day,
+            source.Period,
+            source.Grade,
+            source.SubColumnIdx,
+            source.Assignment);
+        viewModel.DeleteSelectedBlockCommand.Execute(null);
+
+        Assert.DoesNotContain(viewModel.Grid.Cells, cell =>
+            cell.Assignment.IsSchoolFixed
+            && cell.Day == 0
+            && cell.Period == 1);
+        Assert.Equal(new[] { new TimeSlot(0, 1) }, snapshot.Courses.Single().FixedSlots);
+    }
+
+    [Fact]
     public void StageSelectedBlock_AllowsDisplayedGradeFixedBlock_ToMoveAsManualBlock()
     {
         var fixedBlock = Course("FIX-01", 1, "P1");

@@ -336,17 +336,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             .Where(c => !IsAllowedExistingManualCrossSectionConflict(c, _working))
             .Where(c => !IsExcludedManualEditConflict(c))
             .Select(ClassifyManualEditConflict)
-            .Where(c => !IsExcludedFullValidationConflict(c))
             .ToList();
-
-    private static bool IsExcludedFullValidationConflict(ConflictItem conflict) =>
-        conflict.Type is ConflictType.AcademicLevelTimeBandViolation
-            or ConflictType.ProfUnavailableRoomViolation
-            or ConflictType.ProfRoomInconsistent
-            or ConflictType.LunchConflict
-            or ConflictType.FixedTimeViolation
-            or ConflictType.FixedRoomViolation
-            or ConflictType.BlockStartViolation;
 
     private IReadOnlyList<ConflictItem> CollapseBlockConflicts(IEnumerable<ConflictItem> conflicts)
     {
@@ -497,9 +487,11 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
             ("교수 중복", ValidationCheckTier.Critical, new[] { ConflictType.ProfessorConflict }),
             ("분반 중복", ValidationCheckTier.Critical, new[] { ConflictType.SectionConflict }),
             ("학년 중복", ValidationCheckTier.Critical, new[] { ConflictType.GradeConflict }),
-            ("같은 과목 같은 요일", ValidationCheckTier.Critical, new[] { ConflictType.SameCourseSameDayConflict }),
-            ("교수 불가능 시간", ValidationCheckTier.Important, new[] { ConflictType.ProfUnavailable }),
-            ("과목 불가 강의실", ValidationCheckTier.Important, new[] { ConflictType.CourseUnavailableRoomViolation }),
+            ("같은 요일 중복", ValidationCheckTier.Critical, new[] { ConflictType.SameCourseSameDayConflict }),
+            ("교수 불가시간", ValidationCheckTier.Important, new[] { ConflictType.ProfUnavailable }),
+            ("고정시간 이탈", ValidationCheckTier.Important, new[] { ConflictType.FixedTimeViolation }),
+            ("강의실 불일치", ValidationCheckTier.Important, new[] { ConflictType.ProfRoomInconsistent }),
+            ("시간대 위반", ValidationCheckTier.Important, new[] { ConflictType.AcademicLevelTimeBandViolation }),
         };
 
     [RelayCommand]
@@ -1098,7 +1090,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     public void LoadFromSaved(SavedTimetableRecord record)
     {
-        _sessionData = SavedTimetableSnapshotResolver.Resolve(record.SnapshotJson);
+        _sessionData = CloneAppData(SavedTimetableSnapshotResolver.Resolve(record.SnapshotJson));
         var assignments = record.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
             .ToList();
@@ -1144,7 +1136,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         IReadOnlyList<SavedManualCrossLinkRow>? manualCrossLinks = null,
         string? savedTimetableId = null)
     {
-        _sessionData = snapshot;
+        _sessionData = CloneAppData(snapshot);
         EditingSavedTimetableId = savedTimetableId;
         LoadCore(
             solution,
@@ -1310,7 +1302,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     public void LoadFromSavedTimetable(SavedTimetableRecord timetable)
     {
-        _sessionData = SavedTimetableSnapshotResolver.Resolve(timetable.SnapshotJson);
+        _sessionData = CloneAppData(SavedTimetableSnapshotResolver.Resolve(timetable.SnapshotJson));
         EditingSavedTimetableId = timetable.Id;
         var assignments = timetable.Assignments
             .Select(r => new SolutionAssignment(r.CourseId, r.Day, r.Period, r.RoomId, r.AssignmentId ?? ""))
@@ -3239,7 +3231,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         Id = src.Id,
         Name = src.Name,
         UnavailableSlots = src.UnavailableSlots.ToList(),
-        UnavailableRooms = src.UnavailableRooms.ToList(),
+        UnavailableRooms = new List<string>(),
     };
 
     private static Room CloneRoom(Room src) => new()
@@ -3303,18 +3295,22 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         var errorCount = blockingConflicts.Count;
         if (errorCount == 0) return true;
 
-        _dialog.ShowBlockingConflicts(
-            blockTitle,
-            blockingConflicts
-                .Select(c => c.Conflict with { Description = BuildUserConflictDescription(c.Conflict) })
-                .ToList());
+        var saveConflicts = blockingConflicts
+            .Select(c => c.Conflict with { Description = BuildUserConflictDescription(c.Conflict) })
+            .ToList();
+
+        if (_dialog.ConfirmSaveDespiteConflicts(saveConflicts))
+        {
+            StatusMessage = $"저장 경고 확인: 제약조건 위반 Error {errorCount}건을 포함해 저장합니다.";
+            return true;
+        }
 
         var errorLines = blockingConflicts
             .SelectMany(c => c.Lines.Select(line => line.Text))
             .Where(text => !string.IsNullOrWhiteSpace(text));
         StatusMessage = string.Join(
             Environment.NewLine,
-            new[] { $"{blockTitle}: 제약조건 위반 Error {errorCount}건이 남아 있습니다." }.Concat(errorLines));
+            new[] { $"{blockTitle}: 제약조건 위반 Error {errorCount}건이 있어 저장을 취소했습니다." }.Concat(errorLines));
         return false;
     }
 
@@ -5546,7 +5542,6 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         ConflictType.FixedRoomViolation => "고정강의실 이탈",
         ConflictType.CourseUnavailableRoomViolation => "과목 불가강의실",
         ConflictType.BlockStartViolation => "블록 시작 위반",
-        ConflictType.ProfUnavailableRoomViolation => "교수 불가강의실",
         ConflictType.ProfRoomInconsistent => "강의실 불일치",
         ConflictType.SameCourseSameDayConflict => "같은 요일 중복",
         ConflictType.AcademicLevelTimeBandViolation => "시간대 위반",
@@ -5560,23 +5555,27 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         ConflictType.SectionConflict => 30,
         ConflictType.GradeConflict => 40,
         ConflictType.ProfUnavailable => 50,
-        ConflictType.CourseUnavailableRoomViolation => 60,
-        ConflictType.ProfUnavailableRoomViolation => 70,
-        ConflictType.ProfRoomInconsistent => 80,
-        ConflictType.SameCourseSameDayConflict => 90,
-        ConflictType.AcademicLevelTimeBandViolation => 100,
+        ConflictType.FixedTimeViolation => 60,
+        ConflictType.ProfRoomInconsistent => 70,
+        ConflictType.SameCourseSameDayConflict => 80,
+        ConflictType.AcademicLevelTimeBandViolation => 90,
         _ => 1000,
     };
 
-    private static bool IsHiddenManualEditConflictType(ConflictType type) =>
-        type is ConflictType.FixedRoomViolation
-            or ConflictType.LunchConflict
-            or ConflictType.BlockStartViolation;
+    private static bool IsManualEditDisplayConflictType(ConflictType type) =>
+        type is ConflictType.RoomConflict
+            or ConflictType.ProfessorConflict
+            or ConflictType.SectionConflict
+            or ConflictType.GradeConflict
+            or ConflictType.ProfUnavailable
+            or ConflictType.FixedTimeViolation
+            or ConflictType.ProfRoomInconsistent
+            or ConflictType.SameCourseSameDayConflict
+            or ConflictType.AcademicLevelTimeBandViolation;
 
     private bool IsExcludedManualEditConflict(ConflictItem conflict) =>
-        IsHiddenManualEditConflictType(conflict.Type)
-        || IsAllowedManualGraduateDaytimeConflict(conflict)
-        || conflict.Type == ConflictType.CourseUnavailableRoomViolation;
+        !IsManualEditDisplayConflictType(conflict.Type)
+        || IsAllowedManualGraduateDaytimeConflict(conflict);
 
     private IReadOnlyList<ConflictItem> GetManualEditVisibleConflicts(bool strictManualCrossValidation = false) =>
         CollapseBlockConflicts(DetectAllConflicts(_working, strictManualCrossValidation)
@@ -5822,7 +5821,6 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         ConflictType.FixedTimeViolation => BuildFixedTimeViolationDescription(conflict),
         ConflictType.FixedRoomViolation => BuildFixedRoomViolationDescription(conflict),
         ConflictType.CourseUnavailableRoomViolation => BuildCourseUnavailableRoomDescription(conflict),
-        ConflictType.ProfUnavailableRoomViolation => BuildProfessorRoomRestrictionDescription(conflict),
         ConflictType.ProfRoomInconsistent => BuildProfessorRoomInconsistentDescription(conflict),
         ConflictType.BlockStartViolation => BuildBlockStartViolationDescription(conflict),
         ConflictType.SameCourseSameDayConflict => BuildSameCourseSameDayDescription(conflict),
@@ -5831,20 +5829,19 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
     private static string ConflictDisplayLabel(ConflictType type) => type switch
     {
-        ConflictType.RoomConflict => "강의실 시간 중복",
-        ConflictType.ProfessorConflict => "교수 시간 중복",
-        ConflictType.ProfUnavailable => "교수 불가능 시간",
-        ConflictType.SectionConflict => "분반 시간 중복",
-        ConflictType.GradeConflict => "학년 시간 중복",
+        ConflictType.RoomConflict => "강의실 중복",
+        ConflictType.ProfessorConflict => "교수 중복",
+        ConflictType.ProfUnavailable => "교수 불가시간",
+        ConflictType.SectionConflict => "분반 중복",
+        ConflictType.GradeConflict => "학년 중복",
         ConflictType.LunchConflict => "점심시간 배치",
-        ConflictType.FixedTimeViolation => "고정 시간 위반",
+        ConflictType.FixedTimeViolation => "고정시간 이탈",
         ConflictType.FixedRoomViolation => "고정 강의실 위반",
         ConflictType.CourseUnavailableRoomViolation => "불가 강의실 위반",
         ConflictType.BlockStartViolation => "블록 시작 교시 위반",
-        ConflictType.SameCourseSameDayConflict => "같은 요일 중복 배치",
-        ConflictType.ProfUnavailableRoomViolation => "교수 불가 강의실",
-        ConflictType.ProfRoomInconsistent => "교수 강의실 일관성",
-        ConflictType.AcademicLevelTimeBandViolation => "학위과정 시간대 위반",
+        ConflictType.SameCourseSameDayConflict => "같은 요일 중복",
+        ConflictType.ProfRoomInconsistent => "강의실 불일치",
+        ConflictType.AcademicLevelTimeBandViolation => "시간대 위반",
         _ => "제약조건 위반",
     };
 
@@ -5996,17 +5993,6 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
 
         var unavailableRooms = string.Join(", ", course.UnavailableRooms.Select(RoomDisplayName));
         return $"{BuildConflictCourseLabel(course, assignment.CourseId)}은 사용할 수 없는 강의실에 배정되었습니다. 불가 강의실: {unavailableRooms}. 현재 강의실: {RoomDisplayName(assignment.RoomId)}";
-    }
-
-    private string BuildProfessorRoomRestrictionDescription(ConflictItem conflict)
-    {
-        var representative = ResolveRepresentativeConflictAssignment(conflict);
-        if (representative == null)
-            return SanitizeConflictDescription(conflict.Description);
-
-        var (assignment, course) = representative.Value;
-        var professorId = course?.ProfessorId ?? "";
-        return $"{BuildConflictCourseLabel(course, assignment.CourseId)}은 {ProfessorDisplayName(professorId)} 교수님의 사용할 수 없는 강의실에 배정되었습니다. 현재 강의실: {RoomDisplayName(assignment.RoomId)}";
     }
 
     private string BuildProfessorRoomInconsistentDescription(ConflictItem conflict)
@@ -8163,7 +8149,6 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     {
         ConflictType.FixedRoomViolation => BuildFixedRoomMoveWarning(c),
         ConflictType.CourseUnavailableRoomViolation => BuildCourseUnavailableRoomMoveWarning(c),
-        ConflictType.ProfUnavailableRoomViolation => BuildProfessorRoomRestrictionMoveWarning(c),
         ConflictType.ProfessorConflict => "해당 교수님의 다른 수업과 시간이 겹칩니다.",
         ConflictType.RoomConflict => "해당 강의실의 다른 수업과 시간이 겹칩니다.",
         ConflictType.GradeConflict => "같은 학년의 다른 수업과 시간이 겹칩니다.",
@@ -8192,14 +8177,6 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         if (representative?.Course == null)
             return "사용할 수 없는 강의실입니다.";
         return $"{BuildConflictCourseLabel(representative.Value.Course, representative.Value.Assignment.CourseId)}은 이 강의실을 사용할 수 없습니다.";
-    }
-
-    private string BuildProfessorRoomRestrictionMoveWarning(ConflictItem c)
-    {
-        var representative = ResolveRepresentativeConflictAssignment(c);
-        if (representative?.Course == null)
-            return "해당 교수님이 사용할 수 없는 강의실입니다.";
-        return $"{ProfessorDisplayName(representative.Value.Course.ProfessorId)} 교수님이 사용할 수 없는 강의실입니다.";
     }
 
     private static string DayName(int d) => d switch

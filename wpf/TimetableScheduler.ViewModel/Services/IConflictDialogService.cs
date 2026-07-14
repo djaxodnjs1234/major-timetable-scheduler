@@ -14,6 +14,9 @@ public interface IConflictDialogService
         IReadOnlyList<ConflictItem> newConflicts,
         ConflictSelectionContext? selection) => ConfirmDespiteConflicts(newConflicts);
 
+    bool ConfirmSaveDespiteConflicts(IReadOnlyList<ConflictItem> conflicts) =>
+        ConfirmDespiteConflicts(conflicts);
+
     void ShowBlockingConflicts(string title, IReadOnlyList<ConflictItem> conflicts) { }
 
     void ShowValidationResult(string title, string message, IReadOnlyList<ConflictItem> conflicts) { }
@@ -61,6 +64,8 @@ public sealed record ConflictSelectionContext(
 public sealed class NullConflictDialogService : IConflictDialogService
 {
     public bool ConfirmDespiteConflicts(IReadOnlyList<ConflictItem> _) => true;
+
+    public bool ConfirmSaveDespiteConflicts(IReadOnlyList<ConflictItem> conflicts) => true;
 
     public void ShowBlockingConflicts(string title, IReadOnlyList<ConflictItem> conflicts) { }
 

@@ -147,7 +147,7 @@ public class HcCoverageTests
     }
 
     [Fact]
-    public void HC21_ProfessorUnavailableAllRooms_IsInfeasible()
+    public void DeprecatedProfessorUnavailableRooms_AreIgnored()
     {
         var (courses, profs, rooms) = MakeBaseSetup();
         profs[0].UnavailableRooms = rooms.Select(r => r.Id).ToList();
@@ -155,7 +155,7 @@ public class HcCoverageTests
         var build = ModelBuilder.Build(courses, profs, rooms);
         var solver = new CpSolver();
 
-        Assert.Equal(CpSolverStatus.Infeasible, solver.Solve(build.Model));
+        Assert.NotEqual(CpSolverStatus.Infeasible, solver.Solve(build.Model));
     }
 
     [Fact]
