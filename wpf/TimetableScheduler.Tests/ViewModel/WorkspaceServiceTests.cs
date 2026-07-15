@@ -211,6 +211,53 @@ public class WorkspaceServiceTests : IDisposable
     }
 
     [Fact]
+    public void SnapshotsAndSessions_DoNotShareMutableCourseInstances()
+    {
+        var ws = new WorkspaceService(_repo);
+        ws.AddCourse(new Course
+        {
+            Id = "FIX-01",
+            Name = "Fixed",
+            Grade = 1,
+            HoursPerWeek = 1,
+            IsFixed = true,
+            FixedSlots = new List<TimeSlot> { new(0, 1) },
+            BlockStructure = new List<int> { 1 },
+        });
+
+        var snapshot = ws.Snapshot();
+        snapshot.Courses.Single().FixedSlots.Clear();
+
+        Assert.Equal(new[] { new TimeSlot(0, 1) }, ws.Courses.Single().FixedSlots);
+
+        var source = new AppData(
+            new List<Course>
+            {
+                new()
+                {
+                    Id = "SF-01",
+                    Name = "School Fixed",
+                    Grade = 0,
+                    HoursPerWeek = 1,
+                    IsFixed = true,
+                    FixedSlots = new List<TimeSlot> { new(1, 2) },
+                    IsSchoolFixed = true,
+                    SchoolFixedTargetGrade = SchoolFixedTimePolicy.AllGrades,
+                    BlockStructure = new List<int> { 1 },
+                },
+            },
+            new List<Professor>(),
+            new List<Room>(),
+            new List<CrossGroup>(),
+            new List<RetakeScenario>());
+        var session = WorkspaceService.CreateSession(source);
+
+        session.Courses.Single().FixedSlots.Clear();
+
+        Assert.Equal(new[] { new TimeSlot(1, 2) }, source.Courses.Single().FixedSlots);
+    }
+
+    [Fact]
     public void SaveTimetable_EmbedsWorkspaceSnapshot()
     {
         var ws = new WorkspaceService(_repo);

@@ -9,14 +9,21 @@ public sealed partial class TimetableGridViewModel : ObservableObject
 {
     public IReadOnlyList<int> Days { get; } = Enumerable.Range(0, Constants.Days).ToList();
     public IReadOnlyList<int> Periods { get; } = Constants.Periods;
+    public SchedulePolicy SchedulePolicy { get; private set; } = SchedulePolicy.Default;
+    public IReadOnlyDictionary<int, int> LunchPeriodsByDay { get; private set; } =
+        SchedulePolicyRules.StaticLunchPeriodsByDay(SchedulePolicy.Default, Constants.Days);
 
     public ObservableCollection<SlotCellViewModel> Cells { get; } = new();
+    public event EventHandler? Rebuilt;
 
     public TimetableGridViewModel()
     {
         for (int d = 0; d < Constants.Days; d++)
             foreach (var p in Constants.Periods)
-                Cells.Add(new SlotCellViewModel(d, p));
+                Cells.Add(new SlotCellViewModel(
+                    d,
+                    p,
+                    SchedulePolicyRules.IsLunch(SchedulePolicy, LunchPeriodsByDay, d, p)));
     }
 
     public SlotCellViewModel CellAt(int day, int period)
@@ -30,9 +37,22 @@ public sealed partial class TimetableGridViewModel : ObservableObject
         IReadOnlyList<Course> courses,
         Func<Course, string, bool>? accept = null,
         IReadOnlyList<Professor>? professors = null,
-        IReadOnlyList<Room>? rooms = null)
+        IReadOnlyList<Room>? rooms = null,
+        SchedulePolicy? schedulePolicy = null,
+        IReadOnlyDictionary<int, int>? lunchPeriodsByDay = null)
     {
-        foreach (var c in Cells) c.Clear();
+        SchedulePolicy = schedulePolicy ?? SchedulePolicy.Default;
+        LunchPeriodsByDay = lunchPeriodsByDay
+            ?? SchedulePolicyRules.StaticLunchPeriodsByDay(SchedulePolicy, Constants.Days);
+        foreach (var c in Cells)
+        {
+            c.Clear();
+            c.IsLunch = SchedulePolicyRules.IsLunch(
+                SchedulePolicy,
+                LunchPeriodsByDay,
+                c.Day,
+                c.Period);
+        }
 
         var assignmentCourseKeys = assignment
             .Select(a => (Assignment: a, CourseKey: BuildAssignmentCourseKey(a, courses)))
@@ -79,6 +99,8 @@ public sealed partial class TimetableGridViewModel : ObservableObject
                 c, slotRooms, rs, professorNames, roomNames,
                 showSectionLabel: multiSectionBaseIds.Contains(DomainHelpers.BaseId(c.Id))));
         }
+
+        Rebuilt?.Invoke(this, EventArgs.Empty);
     }
 
     private static string BuildAssignmentCourseKey(
@@ -89,14 +111,24 @@ public sealed partial class TimetableGridViewModel : ObservableObject
             .Where(c => c.Id == assignment.CourseId)
             .ToList();
         if (candidates.Count == 0) return "";
-        if (candidates.Count == 1) return assignment.CourseId;
+        if (candidates.Count == 1)
+            return AppendManualVisualOccurrenceKey(assignment.CourseId, assignment);
 
         var resolved = ResolveCourseForAssignment(assignment, courses);
         var resolvedIndex = courses
             .Select((Course, Index) => new { Course, Index })
             .FirstOrDefault(c => ReferenceEquals(c.Course, resolved))?.Index ?? 0;
-        return string.Join("\u001f", assignment.CourseId, resolvedIndex, NormalizeRoomId(assignment.RoomId));
+        return AppendManualVisualOccurrenceKey(
+            string.Join("\u001f", assignment.CourseId, resolvedIndex, NormalizeRoomId(assignment.RoomId)),
+            assignment);
     }
+
+    private static string AppendManualVisualOccurrenceKey(
+        string baseCourseKey,
+        SolutionAssignment assignment) =>
+        CellAssignment.IsManualVisualOccurrenceAssignmentId(assignment.AssignmentId)
+            ? string.Join("\u001f", baseCourseKey, "visual", assignment.AssignmentId)
+            : baseCourseKey;
 
     private static Course ResolveCourseForAssignment(
         SolutionAssignment assignment,

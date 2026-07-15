@@ -401,7 +401,7 @@ public class TimetableDiagnosticsTests
             new() { Id = "A-01", Name = "A", Grade = 1, HoursPerWeek = 2, ProfessorId = "P1", Section = 1, BlockStructure = new List<int> { 2 } },
             new() { Id = "A-02", Name = "A", Grade = 1, HoursPerWeek = 2, ProfessorId = "P1", Section = 2, BlockStructure = new List<int> { 2 } },
         };
-        var unavailableSlots = Constants.DaytimePeriods
+        var unavailableSlots = SchedulePolicyRules.CandidateDaytimePeriods(SchedulePolicy.Default)
             .SelectMany(period => Enumerable.Range(0, Constants.Days).Select(day => new TimeSlot(day, period)))
             .Where(slot =>
                 !(slot.Day == 0 && slot.Period is 1 or 2) &&

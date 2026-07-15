@@ -10,9 +10,11 @@ public sealed partial class BlockSlotEntry : ObservableObject
     public string BlockLabel { get; init; } = "";
     public int BlockSize { get; init; }
     public bool IsGraduate { get; init; }
+    public SchedulePolicy SchedulePolicy { get; init; } = SchedulePolicy.Default;
 
     public string[] DayOptions { get; } = { "월", "화", "수", "목", "금" };
-    public IReadOnlyList<TimePeriodOption> PeriodOptions => BuildPeriodOptions(BlockSize, IsGraduate);
+    public IReadOnlyList<TimePeriodOption> PeriodOptions =>
+        BuildPeriodOptions(BlockSize, IsGraduate, SchedulePolicy);
 
     [ObservableProperty] private int selectedDayIndex;
     [ObservableProperty] private int selectedPeriod = 1;
@@ -20,13 +22,18 @@ public sealed partial class BlockSlotEntry : ObservableObject
     public IEnumerable<TimeSlot> ToSlots() =>
         Enumerable.Range(0, BlockSize).Select(k => new TimeSlot(SelectedDayIndex, SelectedPeriod + k));
 
-    private static IReadOnlyList<TimePeriodOption> BuildPeriodOptions(int blockSize, bool isGraduate)
+    private static IReadOnlyList<TimePeriodOption> BuildPeriodOptions(
+        int blockSize,
+        bool isGraduate,
+        SchedulePolicy schedulePolicy)
     {
-        var allowedPeriods = isGraduate ? Constants.NightPeriods : Constants.DaytimePeriods;
-        var starts = allowedPeriods
-            .Where(start => Enumerable.Range(start, blockSize).All(allowedPeriods.Contains))
-            .Where(start => blockSize != 2 || Constants.Len2StartPeriods.Contains(start))
-            .ToArray();
+        var allowedPeriods = isGraduate
+            ? Constants.NightPeriods
+            : SchedulePolicyRules.CandidateDaytimePeriods(schedulePolicy);
+        var starts = SchedulePolicyRules.PossibleBlockStarts(
+            schedulePolicy,
+            allowedPeriods,
+            blockSize);
         return starts.Select(start => new TimePeriodOption(start, FormatRange(start, blockSize))).ToList();
     }
 
@@ -55,8 +62,12 @@ public sealed partial class FixedSlotEditorViewModel : ObservableObject
     public string BlockSummary { get; init; } = "";
     public List<SectionSlotEditor> SectionEditors { get; init; } = new();
 
-    public static FixedSlotEditorViewModel Build(CourseGroupItem item, bool isFixed)
+    public static FixedSlotEditorViewModel Build(
+        CourseGroupItem item,
+        bool isFixed,
+        SchedulePolicy? schedulePolicy = null)
     {
+        schedulePolicy ??= SchedulePolicy.Default;
         var rep = item.Sections[0];
         var blocks = rep.BlockStructure.Count > 0
             ? rep.BlockStructure
@@ -72,18 +83,20 @@ public sealed partial class FixedSlotEditorViewModel : ObservableObject
             var entries = new List<BlockSlotEntry>();
             for (int bi = 0; bi < blocks.Count; bi++)
             {
+                var existingPeriod = existingStarts.Count > bi && existingStarts[bi].HasValue
+                    ? existingStarts[bi]!.Value.Period
+                    : sec.Grade == AcademicLevels.GraduateGrade ? Constants.FirstNightPeriod : 1;
                 var entry = new BlockSlotEntry
                 {
                     BlockLabel = $"블록{bi + 1} ({blocks[bi]}교시)",
                     BlockSize = blocks[bi],
                     IsGraduate = sec.Grade == AcademicLevels.GraduateGrade,
+                    SchedulePolicy = schedulePolicy,
                     SelectedDayIndex = existingStarts.Count > bi && existingStarts[bi].HasValue
                         ? existingStarts[bi]!.Value.Day
                         : (si + bi) % 5,
-                    SelectedPeriod = existingStarts.Count > bi && existingStarts[bi].HasValue
-                        ? existingStarts[bi]!.Value.Period
-                        : sec.Grade == AcademicLevels.GraduateGrade ? Constants.FirstNightPeriod : 1,
                 };
+                entry.SelectedPeriod = CoerceSelectedPeriod(entry, existingPeriod);
                 entries.Add(entry);
             }
             var label = item.Sections.Count > 1
@@ -105,12 +118,19 @@ public sealed partial class FixedSlotEditorViewModel : ObservableObject
         if (!IsFixed)
         {
             foreach (var section in item.Sections)
+            {
+                if (!section.IsSchoolFixed)
+                    section.IsFixed = false;
                 section.FixedSlots.Clear();
+            }
             return;
         }
 
         for (int si = 0; si < Math.Min(item.Sections.Count, SectionEditors.Count); si++)
+        {
+            item.Sections[si].IsFixed = true;
             item.Sections[si].FixedSlots = SectionEditors[si].ToFixedSlots();
+        }
     }
 
     // Split flat FixedSlots list into (day, startPeriod) per block run
@@ -140,4 +160,13 @@ public sealed partial class FixedSlotEditorViewModel : ObservableObject
     private static readonly string[] SectionLetters = { "A", "B", "C", "D", "E", "F" };
     private static string SectionLetter(int sec) =>
         sec >= 1 && sec <= SectionLetters.Length ? SectionLetters[sec - 1] : sec.ToString();
+
+    private static int CoerceSelectedPeriod(BlockSlotEntry entry, int requestedPeriod)
+    {
+        var optionPeriods = entry.PeriodOptions.Select(option => option.Period).ToList();
+        if (optionPeriods.Count == 0 || optionPeriods.Contains(requestedPeriod))
+            return requestedPeriod;
+
+        return optionPeriods[0];
+    }
 }

@@ -254,9 +254,11 @@ public sealed class CodexUnsavedBackWarningTests : IDisposable
         {
             return Task.FromResult(new DiverseSolverResult(
                 "OPTIMAL",
-                new IReadOnlyList<SolutionAssignment>[]
+                new SolverSolution[]
                 {
-                    new[] { new SolutionAssignment("C-01", 0, 1, "R1") },
+                    new(
+                        new[] { new SolutionAssignment("C-01", 0, 1, "R1") },
+                        SchedulePolicyRules.StaticLunchPeriodsByDay(SchedulePolicy.Default, Constants.Days)),
                 },
                 null,
                 null,

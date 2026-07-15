@@ -9,6 +9,8 @@ public sealed class TimetableZoom : INotifyPropertyChanged
     public const double MaximumScale = 2.0;
     private const double Step = 0.1;
 
+    public static TimetableZoom Shared { get; } = new();
+
     private double _scale = 1.0;
 
     public double Scale

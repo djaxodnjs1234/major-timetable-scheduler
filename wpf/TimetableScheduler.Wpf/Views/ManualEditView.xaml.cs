@@ -21,6 +21,7 @@ namespace TimetableScheduler.Wpf.Views;
 public partial class ManualEditView : UserControl
 {
     private const int StagedBlocksPerRow = 4;
+    private const double StagedBlockPeriodHeight = 42.0;
 
     private enum ExportUnsavedChoice
     {
@@ -33,7 +34,7 @@ public partial class ManualEditView : UserControl
     internal static Action<Exception> ShowExportFailureMessage { get; set; } = ShowExportFailureMessageCore;
     internal static Action ShowAutoOpenFailureMessage { get; set; } = ShowAutoOpenFailureMessageCore;
 
-    public TimetableZoom Zoom { get; } = new();
+    public TimetableZoom Zoom { get; } = TimetableZoom.Shared;
 
     public ManualEditView()
     {
@@ -124,8 +125,9 @@ public partial class ManualEditView : UserControl
                 item.Assignment,
                 GradeToBrushConverter.BrushFor(item.Grade),
                 crossLabel: null);
+            ApplyCompactStagedCardStyle(card);
             card.Tag = item;
-            card.Height = Math.Max(GridControl.PeriodRowMinHeight, GridControl.PeriodRowMinHeight * Math.Max(1, item.RowSpan));
+            card.Height = Math.Max(36.0, StagedBlockPeriodHeight * Math.Max(1, item.RowSpan));
             card.Margin = new Thickness(0, 0, 6, 6);
             card.HorizontalAlignment = HorizontalAlignment.Stretch;
             card.Cursor = Cursors.Hand;
@@ -142,6 +144,47 @@ public partial class ManualEditView : UserControl
             Grid.SetColumn(card, currentColumn);
             currentRow.Children.Add(card);
             currentColumn++;
+        }
+    }
+
+    private static void ApplyCompactStagedCardStyle(DependencyObject element)
+    {
+        switch (element)
+        {
+            case TextBlock text:
+                if (text.FontSize >= 10)
+                {
+                    text.FontSize = 9;
+                    text.LineHeight = 11;
+                }
+                else
+                {
+                    text.FontSize = 6.5;
+                    text.LineHeight = 8;
+                }
+
+                text.Margin = new Thickness(0, 1, 0, 0);
+                break;
+            case StackPanel stack:
+                stack.Margin = new Thickness(3, 4, 3, 3);
+                foreach (UIElement child in stack.Children)
+                    ApplyCompactStagedCardStyle(child);
+                break;
+            case Panel panel:
+                foreach (UIElement child in panel.Children)
+                    ApplyCompactStagedCardStyle(child);
+                break;
+            case Border border:
+                if (border.Child != null)
+                    ApplyCompactStagedCardStyle(border.Child);
+                break;
+            case Decorator decorator:
+                if (decorator.Child != null)
+                    ApplyCompactStagedCardStyle(decorator.Child);
+                break;
+            case ContentControl contentControl when contentControl.Content is DependencyObject child:
+                ApplyCompactStagedCardStyle(child);
+                break;
         }
     }
 

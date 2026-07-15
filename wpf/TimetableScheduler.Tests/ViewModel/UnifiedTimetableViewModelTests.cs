@@ -529,6 +529,40 @@ public class UnifiedTimetableViewModelTests
     }
 
     [Fact]
+    public void Render_StructuredMergeMode_ManualVisualOccurrenceSeparatesSameCourseMixedBlocks()
+    {
+        var vm = new UnifiedTimetableViewModel { MergeOnlyStructuredBlocks = true };
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "DS-01",
+                Name = "Data Structures",
+                Grade = 2,
+                Section = 1,
+                ProfessorId = "P1",
+                HoursPerWeek = 3,
+                BlockStructure = new List<int> { 2, 1 },
+            },
+        };
+        var manualOneHourId = $"{CellAssignment.ManualVisualOccurrenceAssignmentIdPrefix}test";
+        var assignment = new List<SolutionAssignment>
+        {
+            new("DS-01", 0, 1, "R1"),
+            new("DS-01", 0, 2, "R1"),
+            new("DS-01", 0, 1, "R1", manualOneHourId),
+        };
+
+        vm.Render(assignment, courses);
+
+        var cells = vm.Cells.Where(c => c.Assignment.CourseId == "DS-01").ToList();
+        Assert.Equal(2, cells.Count);
+        Assert.Contains(cells, c => c.Period == 1 && c.Assignment.RowSpan == 2 && c.Assignment.AssignmentId == "");
+        Assert.Contains(cells, c => c.Period == 1 && c.Assignment.RowSpan == 1 && c.Assignment.AssignmentId == manualOneHourId);
+        Assert.Equal(2, vm.DayGroups[0].Grades.Single(g => g.Grade == 2).Width);
+    }
+
+    [Fact]
     public void Render_SameCourseConsecutivePeriodsDifferentRooms_NotMerged()
     {
         var vm = new UnifiedTimetableViewModel();

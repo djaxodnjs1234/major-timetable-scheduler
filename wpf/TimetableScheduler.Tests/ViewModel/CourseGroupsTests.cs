@@ -1312,6 +1312,34 @@ public class CourseGroupsTests : IDisposable
     }
 
     [Fact]
+    public void CrossManager_HidesBlankCandidateItems()
+    {
+        AddTwoSectionCourse("A");
+        AddTwoSectionCourse("BLANK_NAME", course => course.Name = " ");
+        AddTwoSectionCourse("FIRST_BLANK", course =>
+        {
+            if (course.Section == 1)
+                course.Name = " ";
+            else
+                course.Name = "Visible";
+        });
+        AddTwoSectionCourse("NO_GRADE", course => course.Grade = 0);
+        AddTwoSectionCourse("UNKNOWN_GRADE", course => course.Grade = 9);
+        _workspace.AddCourse(MakeCourse(" -01", 1));
+        _workspace.AddCourse(MakeCourse(" -02", 2));
+
+        var vm = MakeVm();
+
+        Assert.DoesNotContain(vm.CrossCandidateItems, item => string.IsNullOrWhiteSpace(item.Id));
+        Assert.DoesNotContain(vm.CrossCandidateItems, item => string.IsNullOrWhiteSpace(item.Display));
+        Assert.DoesNotContain(vm.CrossCandidateGradeGroups, group => string.IsNullOrWhiteSpace(group.Header));
+        Assert.DoesNotContain(vm.CrossCandidateItems, item => item.Id == "BLANK_NAME");
+        Assert.DoesNotContain(vm.CrossCandidateItems, item => item.Id == "NO_GRADE");
+        Assert.DoesNotContain(vm.CrossCandidateItems, item => item.Id == "UNKNOWN_GRADE");
+        Assert.Contains(vm.CrossCandidateItems, item => item.Id == "FIRST_BLANK" && item.Display.StartsWith("Visible "));
+    }
+
+    [Fact]
     public void CrossManager_KeepsSelectedCandidatesEnabledAfterTwoSelections()
     {
         AddTwoSectionCourse("A");
@@ -1660,9 +1688,39 @@ public class CourseGroupsTests : IDisposable
         await vm.SolveCommand.ExecuteAsync(null);
 
         Assert.Contains("GE-025", vm.StatusMessage);
-        Assert.Contains("수정 후보", vm.StatusMessage);
-        Assert.Contains("시간 고정", vm.StatusMessage);
+        Assert.Contains("너무 빡빡", vm.StatusMessage);
+        Assert.Contains("시간 고정 해제", vm.StatusMessage);
         Assert.DoesNotContain("detailed reason unavailable", vm.StatusMessage);
+    }
+
+    [Fact]
+    public async Task Solve_SystemSolverFailure_UsesDifferentMessageFromTightConstraintFallback()
+    {
+        _workspace.AddRoom(new Room { Id = "R1", Name = "강의실" });
+        _workspace.AddProfessor(new Professor { Id = "P1", Name = "교수1" });
+        _workspace.AddCourse(new Course
+        {
+            Id = "C-01",
+            Name = "과목1",
+            Grade = 1,
+            HoursPerWeek = 1,
+            ProfessorId = "P1",
+            Section = 1,
+            BlockStructure = new List<int> { 1 },
+        });
+        var vm = new DataInputViewModel(_workspace, new FixedStatusSolverService("MODEL_INVALID"))
+        {
+            TotalSolutions = 1,
+            UseSc01 = false,
+            UseSc02 = false,
+            UseSc03 = false,
+        };
+
+        await vm.SolveCommand.ExecuteAsync(null);
+
+        Assert.Contains("GE-023", vm.StatusMessage);
+        Assert.DoesNotContain("GE-025", vm.StatusMessage);
+        Assert.DoesNotContain("너무 빡빡", vm.StatusMessage);
     }
 
     [Fact]
@@ -1763,7 +1821,6 @@ public class CourseGroupsTests : IDisposable
         {
             Id = "P1",
             Name = "교수1",
-            UnavailableRooms = new List<string> { "R1" },
         });
         _workspace.AddCourse(new Course
         {
@@ -1773,6 +1830,7 @@ public class CourseGroupsTests : IDisposable
             HoursPerWeek = 1,
             ProfessorId = "P1",
             Section = 1,
+            UnavailableRooms = new List<string> { "R1" },
             BlockStructure = new List<int> { 1 },
         });
         var vm = new DataInputViewModel(_workspace, new SolverService())
@@ -1790,7 +1848,7 @@ public class CourseGroupsTests : IDisposable
         Assert.False(vm.IsSolveComplete);
         Assert.Empty(vm.RankedResults);
         Assert.Equal(0, completedCount);
-        Assert.Contains("IE-023", vm.StatusMessage);
+        Assert.Contains("IE-019", vm.StatusMessage);
         Assert.DoesNotContain("top", vm.StatusMessage);
     }
 
@@ -1895,7 +1953,7 @@ public class CourseGroupsTests : IDisposable
             await Task.Delay(TimeSpan.FromSeconds(30), cancellationToken);
             return new DiverseSolverResult(
                 "UNKNOWN",
-                Array.Empty<IReadOnlyList<SolutionAssignment>>(),
+                Array.Empty<SolverSolution>(),
                 null,
                 null,
                 null,
@@ -1913,7 +1971,25 @@ public class CourseGroupsTests : IDisposable
         {
             return Task.FromResult(new DiverseSolverResult(
                 "INFEASIBLE",
-                Array.Empty<IReadOnlyList<SolutionAssignment>>(),
+                Array.Empty<SolverSolution>(),
+                null,
+                null,
+                null,
+                0));
+        }
+    }
+
+    private sealed class FixedStatusSolverService(string status) : SolverService
+    {
+        public override Task<DiverseSolverResult> SolveAsync(
+            WorkspaceService workspace,
+            DiverseSolverOptions options,
+            IProgress<SolverProgress>? progress = null,
+            CancellationToken cancellationToken = default)
+        {
+            return Task.FromResult(new DiverseSolverResult(
+                status,
+                Array.Empty<SolverSolution>(),
                 null,
                 null,
                 null,

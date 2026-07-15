@@ -97,18 +97,9 @@
                                                             <ColumnDefinition Width="24" />
                                                             <ColumnDefinition Width="24" />
                                                         </Grid.ColumnDefinitions>
-                                                        <Border Grid.Column="0"
-                                                                Grid.ColumnSpan="5"
-                                                                Height="12"
-                                                                Margin="0"
-                                                                Background="#F8FAFC"
-                                                                BorderBrush="#E2E8F0"
-                                                                BorderThickness="1"
-                                                                Visibility="{Binding IsLunch, Converter={StaticResource BoolToVisibility}}" />
                                                         <ItemsControl Grid.Column="0"
                                                                       Grid.ColumnSpan="5"
-                                                                      ItemsSource="{Binding Cells}"
-                                                                      Visibility="{Binding IsLunch, Converter={StaticResource BoolToVisibility}, ConverterParameter=Inverse}">
+                                                                      ItemsSource="{Binding Cells}">
                                                             <ItemsControl.ItemsPanel>
                                                                 <ItemsPanelTemplate>
                                                                     <UniformGrid Columns="5" />
@@ -120,10 +111,10 @@
                                                                             Height="12"
                                                                              CornerRadius="1"
                                                                              BorderBrush="#E2E8F0"
-                                                                             BorderThickness="0.5"
-                                                                             Background="{Binding Density, Converter={StaticResource DensityToBrush}}">
+                                                                             BorderThickness="0.5">
                                                                         <Border.Style>
                                                                             <Style TargetType="Border">
+                                                                                <Setter Property="Background" Value="{Binding Density, Converter={StaticResource DensityToBrush}}" />
                                                                                 <Style.Triggers>
                                                                                     <DataTrigger Binding="{Binding IsOccupied}" Value="False">
                                                                                         <Setter Property="Background" Value="#F8FAFC" />

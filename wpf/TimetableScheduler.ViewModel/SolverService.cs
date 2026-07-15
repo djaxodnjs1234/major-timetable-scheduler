@@ -36,7 +36,7 @@ public class SolverService
                 return DiverseSolver.Solve(
                     schedulableCourses, snapshot.Professors, snapshot.Rooms,
                     options, snapshot.CrossGroups, snapshot.RetakeScenarios,
-                    progress, cancellationToken, schoolFixedCourses);
+                    progress, cancellationToken, schoolFixedCourses, snapshot.SchedulePolicy);
             }, cancellationToken).ConfigureAwait(false);
         }
         catch (OperationCanceledException) when (cancellationToken.IsCancellationRequested)
@@ -62,7 +62,7 @@ public class SolverService
     private static DiverseSolverResult Cancelled() =>
         new(
             "CANCELLED",
-            Array.Empty<IReadOnlyList<SolutionAssignment>>(),
+            Array.Empty<SolverSolution>(),
             null,
             null,
             null,
@@ -74,7 +74,10 @@ public class SolverService
             source.Professors.Select(CloneProfessor).ToList(),
             source.Rooms.Select(CloneRoom).ToList(),
             source.CrossGroups.Select(CloneCrossGroup).ToList(),
-            source.RetakeScenarios.Select(CloneRetakeScenario).ToList());
+            source.RetakeScenarios.Select(CloneRetakeScenario).ToList())
+        {
+            SchedulePolicy = source.SchedulePolicy,
+        };
 
     private static Course CloneCourse(Course source) =>
         new()
@@ -104,7 +107,7 @@ public class SolverService
             Id = source.Id,
             Name = source.Name,
             UnavailableSlots = source.UnavailableSlots.ToList(),
-            UnavailableRooms = source.UnavailableRooms.ToList(),
+            UnavailableRooms = new List<string>(),
         };
 
     private static Room CloneRoom(Room source) =>

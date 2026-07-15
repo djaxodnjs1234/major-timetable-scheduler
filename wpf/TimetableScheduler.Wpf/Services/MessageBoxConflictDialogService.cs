@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using TimetableScheduler.Domain;
 using TimetableScheduler.Solver;
 using TimetableScheduler.ViewModel;
 using TimetableScheduler.ViewModel.Services;
@@ -11,7 +12,6 @@ namespace TimetableScheduler.Wpf.Services;
 public sealed class MessageBoxConflictDialogService : IConflictDialogService
 {
     private readonly WorkspaceService _workspace;
-    private Window? _manualValidationReportWindow;
 
     public MessageBoxConflictDialogService(WorkspaceService workspace)
     {
@@ -103,6 +103,80 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         }
     }
 
+    public bool ConfirmSaveDespiteConflicts(IReadOnlyList<ConflictItem> conflicts)
+    {
+        var dialog = new Window
+        {
+            Title = "저장 경고",
+            WindowStartupLocation = WindowStartupLocation.CenterScreen,
+            SizeToContent = SizeToContent.WidthAndHeight,
+            ResizeMode = ResizeMode.NoResize,
+        };
+
+        var layout = new Grid
+        {
+            Margin = new Thickness(16),
+            MinWidth = 420,
+            MaxWidth = 680,
+        };
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
+
+        var header = new TextBlock
+        {
+            Text = $"현재 제약조건 위반 {conflicts.Count}건이 있습니다. 그래도 저장하시겠습니까?",
+            Margin = new Thickness(0, 0, 0, 10),
+            TextWrapping = TextWrapping.Wrap,
+        };
+        Grid.SetRow(header, 0);
+        layout.Children.Add(header);
+
+        var conflictList = BuildConflictList(conflicts, null);
+        Grid.SetRow(conflictList, 1);
+        layout.Children.Add(conflictList);
+
+        var footer = new StackPanel();
+        footer.Children.Add(new TextBlock
+        {
+            Text = "[저장] 위반 사항을 포함한 현재 시간표를 저장합니다.\n[취소] 저장하지 않고 수동편집 화면으로 돌아갑니다.",
+            Margin = new Thickness(0, 8, 0, 14),
+            TextWrapping = TextWrapping.Wrap,
+        });
+
+        var buttons = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+            HorizontalAlignment = HorizontalAlignment.Right,
+        };
+        var save = false;
+        AddButton("저장", true);
+        AddButton("취소", false);
+        footer.Children.Add(buttons);
+        Grid.SetRow(footer, 2);
+        layout.Children.Add(footer);
+        dialog.Content = layout;
+        dialog.ShowDialog();
+        return save;
+
+        void AddButton(string content, bool value)
+        {
+            var button = new Button
+            {
+                Content = content,
+                MinWidth = 80,
+                Margin = new Thickness(6, 0, 0, 0),
+                Padding = new Thickness(10, 4, 10, 4),
+            };
+            button.Click += (_, _) =>
+            {
+                save = value;
+                dialog.DialogResult = true;
+            };
+            buttons.Children.Add(button);
+        }
+    }
+
     public bool ConfirmDiscardChanges()
     {
         var dialog = new Window
@@ -160,6 +234,13 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         => ShowValidationResult(title, "제약조건 위반 Error가 남아 있습니다.", conflicts);
 
     public void ShowValidationResult(string title, string message, IReadOnlyList<ConflictItem> conflicts)
+        => ShowValidationResult(title, message, conflicts, Array.Empty<ValidationCheckItem>());
+
+    public void ShowValidationResult(
+        string title,
+        string message,
+        IReadOnlyList<ConflictItem> conflicts,
+        IReadOnlyList<ValidationCheckItem> checks)
     {
         var dialog = new Window
         {
@@ -188,11 +269,21 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         Grid.SetRow(header, 0);
         layout.Children.Add(header);
 
-        if (conflicts.Count > 0)
+        var body = new StackPanel();
+        if (checks.Count > 0)
+        {
+            body.Children.Add(BuildValidationCheckList(checks));
+        }
+        else if (conflicts.Count > 0)
         {
             var conflictList = BuildConflictList(conflicts, null);
-            Grid.SetRow(conflictList, 1);
-            layout.Children.Add(conflictList);
+            body.Children.Add(conflictList);
+        }
+
+        if (body.Children.Count > 0)
+        {
+            Grid.SetRow(body, 1);
+            layout.Children.Add(body);
         }
 
         var ok = new Button
@@ -210,196 +301,137 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         dialog.ShowDialog();
     }
 
-    public void ShowManualValidationReport(ManualValidationReport report)
+    private ScrollViewer BuildValidationCheckList(IReadOnlyList<ValidationCheckItem> checks)
     {
-        if (_manualValidationReportWindow == null)
-        {
-            _manualValidationReportWindow = new Window
-            {
-                Title = "전체 검증 결과",
-                WindowStartupLocation = WindowStartupLocation.CenterOwner,
-                Width = 760,
-                Height = 720,
-                MinWidth = 620,
-                MinHeight = 420,
-                ResizeMode = ResizeMode.CanResize,
-                Background = Brushes.White,
-                Owner = Application.Current?.MainWindow,
-            };
-            _manualValidationReportWindow.Closed += (_, _) => _manualValidationReportWindow = null;
-        }
-
-        _manualValidationReportWindow.Content = BuildManualValidationReportContent(report);
-        if (_manualValidationReportWindow.WindowState == WindowState.Minimized)
-            _manualValidationReportWindow.WindowState = WindowState.Normal;
-        if (!_manualValidationReportWindow.IsVisible)
-            _manualValidationReportWindow.Show();
-        _manualValidationReportWindow.Activate();
-    }
-
-    private FrameworkElement BuildManualValidationReportContent(ManualValidationReport report)
-    {
-        var layout = new Grid
-        {
-            Background = Brushes.White,
-            HorizontalAlignment = HorizontalAlignment.Stretch,
-            VerticalAlignment = VerticalAlignment.Stretch,
-        };
-        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-        layout.RowDefinitions.Add(new RowDefinition { Height = new GridLength(1, GridUnitType.Star) });
-        layout.RowDefinitions.Add(new RowDefinition { Height = GridLength.Auto });
-
-        var header = new StackPanel { Margin = new Thickness(16, 16, 16, 10) };
-        header.Children.Add(new TextBlock
-        {
-            Text = "전체 검증 결과",
-            FontSize = 16,
-            FontWeight = FontWeights.Bold,
-            Margin = new Thickness(0, 0, 0, 8),
-        });
-        header.Children.Add(new TextBlock
-        {
-            Text = BuildReportSummary(report),
-            TextWrapping = TextWrapping.Wrap,
-            LineHeight = 18,
-        });
-        header.Children.Add(new TextBlock
-        {
-            Text = BuildReportMessage(report),
-            FontWeight = FontWeights.SemiBold,
-            Margin = new Thickness(0, 8, 0, 0),
-            TextWrapping = TextWrapping.Wrap,
-        });
-        Grid.SetRow(header, 0);
-        layout.Children.Add(header);
-
         var items = new StackPanel();
-        foreach (var item in report.Items)
-            items.Children.Add(BuildReportItem(item));
-        var scroll = new ScrollViewer
+        foreach (var check in checks)
+            items.Children.Add(BuildValidationCheckRow(check));
+
+        return new ScrollViewer
         {
-            Margin = new Thickness(16, 0, 16, 0),
+            MaxHeight = 460,
             VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
             HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
             Content = items,
         };
-        Grid.SetRow(scroll, 1);
-        layout.Children.Add(scroll);
-
-        var close = new Button
-        {
-            Content = "닫기",
-            MinWidth = 80,
-            HorizontalAlignment = HorizontalAlignment.Right,
-            Margin = new Thickness(16, 12, 16, 16),
-            Padding = new Thickness(10, 4, 10, 4),
-        };
-        close.Click += (_, _) => _manualValidationReportWindow?.Close();
-        Grid.SetRow(close, 2);
-        layout.Children.Add(close);
-        return layout;
     }
 
-    private static string BuildReportSummary(ManualValidationReport report) =>
-        $"검사 항목: {report.TotalCount}개\n"
-        + $"정상: {report.PassedCount}개\n"
-        + $"주의: {report.WarningCount}개\n"
-        + $"오류: {report.FailedCount}개\n"
-        + $"검사 불가: {report.NotCheckedCount}개\n"
-        + $"제외: {report.ExcludedCount}개";
-
-    private static string BuildReportMessage(ManualValidationReport report)
+    private Border BuildValidationCheckRow(ValidationCheckItem check)
     {
-        if (report.FailedCount > 0)
-            return "저장할 수 없는 오류가 있습니다.";
-        if (report.WarningCount > 0)
-            return "저장은 가능하지만 주의가 필요한 항목이 있습니다.";
-        return "검사한 모든 항목에 이상이 없습니다.";
-    }
+        var accent = check.IsNormal
+            ? Color.FromRgb(0x1B, 0x7F, 0x3A)
+            : Color.FromRgb(0xBA, 0x1A, 0x1A);
+        var background = check.IsNormal
+            ? Color.FromRgb(0xF1, 0xFA, 0xF3)
+            : Color.FromRgb(0xFF, 0xF8, 0xF8);
+        var accentBrush = new SolidColorBrush(accent);
 
-    private FrameworkElement BuildReportItem(ManualValidationItem item)
-    {
-        var accent = item.Status switch
-        {
-            ManualValidationStatus.Passed => new SolidColorBrush(Color.FromRgb(0x2E, 0x7D, 0x32)),
-            ManualValidationStatus.Warning => new SolidColorBrush(Color.FromRgb(0xB7, 0x79, 0x1F)),
-            ManualValidationStatus.Failed => new SolidColorBrush(Color.FromRgb(0xBA, 0x1A, 0x1A)),
-            _ => new SolidColorBrush(Color.FromRgb(0x6B, 0x72, 0x80)),
-        };
-        var icon = item.Status switch
-        {
-            ManualValidationStatus.Passed => "✓",
-            ManualValidationStatus.Warning => "!",
-            ManualValidationStatus.Failed => "✕",
-            _ => "－",
-        };
-        var header = new StackPanel { Orientation = Orientation.Horizontal };
-        header.Children.Add(new TextBlock
-        {
-            Text = icon,
-            Foreground = accent,
-            FontWeight = FontWeights.Bold,
-            Width = 22,
-        });
-        header.Children.Add(new TextBlock
-        {
-            Text = item.DisplayName,
-            FontWeight = FontWeights.SemiBold,
-            MinWidth = 210,
-        });
-        header.Children.Add(new TextBlock
-        {
-            Text = item.Summary,
-            Foreground = accent,
-            FontWeight = FontWeights.SemiBold,
-        });
+        var header = new Grid();
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = new GridLength(1, GridUnitType.Star) });
+        header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
-        var body = new StackPanel { Margin = new Thickness(22, 6, 0, 0) };
-        if (!string.IsNullOrWhiteSpace(item.Reason))
+        var textPanel = new StackPanel();
+        var titlePanel = new StackPanel
         {
-            body.Children.Add(new TextBlock
+            Orientation = Orientation.Horizontal,
+        };
+        titlePanel.Children.Add(new TextBlock
+        {
+            Text = check.Name,
+            FontWeight = FontWeights.SemiBold,
+            TextWrapping = TextWrapping.Wrap,
+        });
+        if (!string.IsNullOrWhiteSpace(check.CountText))
+        {
+            titlePanel.Children.Add(new TextBlock
             {
-                Text = item.Reason,
+                Text = check.CountText,
+                Foreground = Brushes.Gray,
+                FontSize = 12,
+                Margin = new Thickness(8, 1, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+        }
+        textPanel.Children.Add(titlePanel);
+        if (!string.IsNullOrWhiteSpace(check.Detail))
+        {
+            textPanel.Children.Add(new TextBlock
+            {
+                Text = check.Detail,
+                Foreground = Brushes.DimGray,
+                FontSize = 12,
+                Margin = new Thickness(0, 2, 0, 0),
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+
+        var status = new TextBlock
+        {
+            Text = check.StatusText,
+            Foreground = accentBrush,
+            FontWeight = FontWeights.Bold,
+            Margin = new Thickness(14, 0, 0, 0),
+            VerticalAlignment = VerticalAlignment.Center,
+        };
+        Grid.SetColumn(status, 1);
+        header.Children.Add(textPanel);
+        if (check.IsNormal)
+            header.Children.Add(status);
+
+        FrameworkElement child = check.IsNormal
+            ? header
+            : BuildValidationCheckExpander(check, header);
+
+        return new Border
+        {
+            Background = new SolidColorBrush(background),
+            BorderBrush = accentBrush,
+            BorderThickness = new Thickness(4, 1, 1, 1),
+            Padding = new Thickness(10, 7, 10, 7),
+            Margin = new Thickness(0, 0, 0, 6),
+            ToolTip = string.IsNullOrWhiteSpace(check.Tooltip) ? null : check.Tooltip,
+            Child = child,
+        };
+    }
+
+    private Expander BuildValidationCheckExpander(ValidationCheckItem check, Grid header)
+    {
+        var details = new StackPanel
+        {
+            Margin = new Thickness(0, 8, 0, 0),
+        };
+
+        if (!string.IsNullOrWhiteSpace(check.Detail))
+        {
+            details.Children.Add(new TextBlock
+            {
+                Text = check.Detail,
+                Foreground = Brushes.DimGray,
+                Margin = new Thickness(0, 0, 0, 6),
+                TextWrapping = TextWrapping.Wrap,
+            });
+        }
+
+        if (check.DetailConflicts.Count == 0)
+        {
+            details.Children.Add(new TextBlock
+            {
+                Text = "상세 위반 항목이 별도로 기록되지 않은 검증 항목입니다.",
                 Foreground = Brushes.DimGray,
                 TextWrapping = TextWrapping.Wrap,
-                Margin = new Thickness(0, 0, 0, 6),
             });
         }
-        if (item.Details.Count > 0)
+        else
         {
-            var detailItems = new StackPanel();
-            var reportReasonLabel = ReportReasonLabel(item);
-            foreach (var conflict in item.Details)
-                detailItems.Children.Add(BuildConflictBlock(conflict, null, reportReasonLabel));
-            body.Children.Add(new ScrollViewer
-            {
-                MaxHeight = 260,
-                VerticalScrollBarVisibility = ScrollBarVisibility.Auto,
-                HorizontalScrollBarVisibility = ScrollBarVisibility.Disabled,
-                Content = detailItems,
-            });
-        }
-
-        if (item.Status == ManualValidationStatus.Passed)
-        {
-            return new Border
-            {
-                BorderBrush = new SolidColorBrush(Color.FromRgb(0xD1, 0xD5, 0xDB)),
-                BorderThickness = new Thickness(1),
-                Padding = new Thickness(10, 8, 10, 8),
-                Margin = new Thickness(0, 0, 0, 6),
-                Child = header,
-            };
+            foreach (var conflict in check.DetailConflicts)
+                details.Children.Add(BuildConflictBlock(conflict, null, locationFirst: true));
         }
 
         return new Expander
         {
             Header = header,
-            IsExpanded = item.Status is ManualValidationStatus.NotChecked or ManualValidationStatus.Excluded,
-            Margin = new Thickness(0, 0, 0, 6),
-            BorderBrush = new SolidColorBrush(Color.FromRgb(0xD1, 0xD5, 0xDB)),
-            BorderThickness = new Thickness(1),
-            Content = body,
+            Content = details,
+            IsExpanded = false,
         };
     }
 
@@ -420,25 +452,13 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         };
     }
 
-    private static string ReportReasonLabel(ManualValidationItem item)
-    {
-        var label = item.DisplayName.Trim();
-        return label.EndsWith(" 검증", StringComparison.Ordinal)
-            ? label[..^3]
-            : label;
-    }
-
     private Border BuildConflictBlock(
         ConflictItem conflict,
         ConflictSelectionContext? selection,
-        string? reasonLabelOverride = null)
+        bool locationFirst = false)
     {
-        var accent = conflict.Severity == ConflictSeverity.Warning
-            ? Color.FromRgb(0xB7, 0x79, 0x1F)
-            : Color.FromRgb(0xBA, 0x1A, 0x1A);
-        var bg = conflict.Severity == ConflictSeverity.Warning
-            ? Color.FromRgb(0xFF, 0xF8, 0xE1)
-            : Color.FromRgb(0xFF, 0xF8, 0xF8);
+        var accent = Color.FromRgb(0xBA, 0x1A, 0x1A);
+        var bg = Color.FromRgb(0xFF, 0xF8, 0xF8);
         var accentBrush = new SolidColorBrush(accent);
 
         var stack = new StackPanel();
@@ -452,35 +472,69 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
                 .Select(assignment => (SolutionAssignment?)assignment)
                 .FirstOrDefault();
 
-        if (selected is SolutionAssignment selectedAssignment)
-            AddCourseLine("선택한 수업:", selectedAssignment, selection);
+        if (locationFirst)
+        {
+            AddLine("위치:", BuildConflictLocationText(conflict, assignments, selection), accentBrush, FontWeights.SemiBold);
+            AddLine("사유:", BuildReasonLabel(conflict), accentBrush, FontWeights.SemiBold);
+            foreach (var line in conflict.Description.Split(
+                         new[] { "\r\n", "\n" },
+                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                AddLine("상세:", line, accentBrush, FontWeights.Normal);
+        }
+        else
+        {
+            if (selected is SolutionAssignment selectedAssignment)
+                AddCourseLine("선택한 수업:", selectedAssignment, selection, includeLocation: true);
 
-        foreach (var assignment in assignments.Where(assignment =>
-                     selected is not SolutionAssignment selectedRow
-                     || AssignmentIdentity(assignment) != AssignmentIdentity(selectedRow)))
-            AddCourseLine(selected == null ? "관련 수업:" : "충돌 상대:", assignment, null);
+            foreach (var assignment in assignments.Where(assignment =>
+                         selected is not SolutionAssignment selectedRow
+                         || AssignmentIdentity(assignment) != AssignmentIdentity(selectedRow)))
+                AddCourseLine(selected == null ? "관련 수업:" : "충돌 상대:", assignment, null, includeLocation: true);
 
-        AddLine("사유:", reasonLabelOverride ?? KoreanLabel(conflict.Type), accentBrush, FontWeights.SemiBold);
-        foreach (var line in conflict.Description.Split(
-                     new[] { "\r\n", "\n" },
-                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            AddLine("상세:", line, accentBrush, FontWeights.Normal);
+            AddLine("사유:", BuildReasonLabel(conflict), accentBrush, FontWeights.SemiBold);
+            foreach (var line in conflict.Description.Split(
+                         new[] { "\r\n", "\n" },
+                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                AddLine("상세:", line, accentBrush, FontWeights.Normal);
+        }
 
         void AddCourseLine(
             string role,
             SolutionAssignment assignment,
-            ConflictSelectionContext? selectedContext)
+            ConflictSelectionContext? selectedContext,
+            bool includeLocation)
         {
             var course = _workspace.ExpandedCourses.FirstOrDefault(c =>
                 string.Equals(c.Id, assignment.CourseId, StringComparison.Ordinal));
             if (course == null)
                 return;
 
+            var location = ResolveConflictLocation(conflict, assignment, selectedContext);
             var day = selectedContext?.Day ?? assignment.Day;
             var period = selectedContext?.Period ?? assignment.Period;
+            var courseText = $"{course.Name} {course.SectionLabel}분반";
+            if (!includeLocation)
+            {
+                AddLine(
+                    role,
+                    courseText,
+                    GradeToBrushConverter.BrushFor(course.Grade),
+                    FontWeights.SemiBold);
+                return;
+            }
+
+            if (location.StartPeriod <= location.EndPeriod)
+            {
+                AddLine(
+                    role,
+                    $"{DayName(location.Day)} {FormatPeriodRange(location.StartPeriod, location.EndPeriod)} / {courseText}",
+                    GradeToBrushConverter.BrushFor(course.Grade),
+                    FontWeights.SemiBold);
+                return;
+            }
             AddLine(
                 role,
-                $"{course.Name} {course.SectionLabel}분반 / {DayName(day)} {period}교시",
+                $"{courseText} / {DayName(day)} {period}교시",
                 GradeToBrushConverter.BrushFor(course.Grade),
                 FontWeights.SemiBold);
         }
@@ -536,6 +590,54 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
             ? string.Join("\u001f", assignment.CourseId, assignment.Day, assignment.Period, assignment.RoomId)
             : assignment.AssignmentId;
 
+    private static (int Day, int StartPeriod, int EndPeriod) ResolveConflictLocation(
+        ConflictItem conflict,
+        SolutionAssignment assignment,
+        ConflictSelectionContext? selectedContext)
+    {
+        var day = selectedContext?.Day ?? assignment.Day;
+        var identity = AssignmentIdentity(assignment);
+        var periods = (conflict.Assignments ?? Array.Empty<SolutionAssignment>())
+            .Where(row => row.Day == day && string.Equals(AssignmentIdentity(row), identity, StringComparison.Ordinal))
+            .Select(row => row.Period)
+            .Distinct()
+            .OrderBy(period => period)
+            .ToList();
+
+        if (periods.Count == 0)
+        {
+            var period = selectedContext?.Period ?? assignment.Period;
+            return (day, period, period);
+        }
+
+        return (day, periods[0], periods[^1]);
+    }
+
+    private static string BuildConflictLocationText(
+        ConflictItem conflict,
+        IReadOnlyList<SolutionAssignment> assignments,
+        ConflictSelectionContext? selection)
+    {
+        var locations = assignments
+            .Select(assignment => ResolveConflictLocation(conflict, assignment, selection))
+            .OrderBy(location => location.Day)
+            .ThenBy(location => location.StartPeriod)
+            .ThenBy(location => location.EndPeriod)
+            .Select(location => $"{DayName(location.Day)} {FormatPeriodRange(location.StartPeriod, location.EndPeriod)}")
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (locations.Count > 0)
+            return string.Join(", ", locations);
+
+        return $"{DayName(conflict.Day)} {conflict.Period}교시";
+    }
+
+    private static string FormatPeriodRange(int startPeriod, int endPeriod) =>
+        startPeriod == endPeriod
+            ? $"{startPeriod}교시"
+            : $"{startPeriod}~{endPeriod}교시";
+
     private static string DayName(int day) => day switch
     {
         0 => "월",
@@ -548,21 +650,95 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
 
     private static string KoreanLabel(ConflictType type) => type switch
     {
-        ConflictType.RoomConflict => "강의실 시간 중복",
-        ConflictType.ProfessorConflict => "교수 시간 중복",
+        ConflictType.RoomConflict => "강의실 중복",
+        ConflictType.ProfessorConflict => "교수 중복",
         ConflictType.ProfUnavailable => "교수 불가시간",
         ConflictType.LunchConflict => "점심시간 배치",
-        ConflictType.SectionConflict => "분반 시간 중복",
-        ConflictType.GradeConflict => "학년 시간 중복",
+        ConflictType.SectionConflict => "분반 중복",
+        ConflictType.GradeConflict => "학년 중복",
         ConflictType.FixedRoomViolation => "고정 강의실 위반",
         ConflictType.CourseUnavailableRoomViolation => "불가 강의실 위반",
-        ConflictType.FixedTimeViolation => "고정 시간 위반",
+        ConflictType.FixedTimeViolation => "고정시간 이탈",
         ConflictType.BlockStartViolation => "블록 시작 교시",
-        ConflictType.SameCourseSameDayConflict => "같은 요일 중복 배치",
-        ConflictType.ProfUnavailableRoomViolation => "교수 불가 강의실",
-        ConflictType.ProfRoomInconsistent => "교수 강의실 일관성",
-        ConflictType.AcademicLevelTimeBandViolation => "학위과정 시간대 위반",
-        ConflictType.RoomCapacityViolation => "강의실 정원 초과",
+        ConflictType.SameCourseSameDayConflict => "같은 요일 중복",
+        ConflictType.ProfRoomInconsistent => "강의실 불일치",
+        ConflictType.AcademicLevelTimeBandViolation => "시간대 위반",
+        ConflictType.RetakeConflict => "재수강생 고려",
+        ConflictType.CourseRoomInconsistent => "교과목별 동일 강의실",
         _ => "제약조건 위반",
     };
+
+    private string BuildReasonLabel(ConflictItem conflict)
+    {
+        var label = KoreanLabel(conflict.Type);
+        if (conflict.Type != ConflictType.FixedTimeViolation)
+            return label;
+
+        var fixedPosition = BuildOriginalFixedPositionText(conflict);
+        return string.IsNullOrWhiteSpace(fixedPosition)
+            ? label
+            : $"{label} / 원래 고정위치: {fixedPosition}";
+    }
+
+    private string BuildOriginalFixedPositionText(ConflictItem conflict)
+    {
+        foreach (var assignment in conflict.Assignments ?? Array.Empty<SolutionAssignment>())
+        {
+            var course = ResolveCourseForAssignment(assignment);
+            if (course?.FixedSlots.Count > 0)
+                return FormatFixedPositionSlots(course.FixedSlots);
+        }
+
+        return "";
+    }
+
+    private Course? ResolveCourseForAssignment(SolutionAssignment assignment)
+    {
+        var candidates = _workspace.ExpandedCourses
+            .Where(course => string.Equals(course.Id, assignment.CourseId, StringComparison.Ordinal))
+            .ToList();
+        return candidates.Count == 1
+            ? candidates[0]
+            : candidates.FirstOrDefault(course =>
+                course.FixedRooms.Any(room => string.Equals(room, assignment.RoomId, StringComparison.Ordinal)));
+    }
+
+    private static string FormatFixedPositionSlots(IEnumerable<TimeSlot> slots)
+    {
+        var labels = new List<string>();
+        foreach (var dayGroup in slots
+                     .GroupBy(slot => slot.Day)
+                     .OrderBy(group => group.Key))
+        {
+            var periods = dayGroup
+                .Select(slot => slot.Period)
+                .Distinct()
+                .OrderBy(period => period)
+                .ToList();
+            if (periods.Count == 0)
+                continue;
+
+            var start = periods[0];
+            var end = periods[0];
+            foreach (var period in periods.Skip(1))
+            {
+                if (period == end + 1)
+                {
+                    end = period;
+                    continue;
+                }
+
+                labels.Add($"{DayName(dayGroup.Key)} {FormatFixedPositionPeriodRange(start, end)}");
+                start = period;
+                end = period;
+            }
+
+            labels.Add($"{DayName(dayGroup.Key)} {FormatFixedPositionPeriodRange(start, end)}");
+        }
+
+        return string.Join(", ", labels);
+    }
+
+    private static string FormatFixedPositionPeriodRange(int startPeriod, int endPeriod) =>
+        startPeriod == endPeriod ? $"{startPeriod}시" : $"{startPeriod}~{endPeriod}시";
 }

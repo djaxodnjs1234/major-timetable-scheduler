@@ -86,7 +86,7 @@ public static class SoftConstraints
             {
                 var cells = new List<BoolVar>();
                 foreach (var c in profCourses)
-                    foreach (var p in Constants.ValidPeriods)
+                    foreach (var p in Constants.Periods)
                         foreach (var r in rooms)
                             cells.Add(x[(c.Id, d, p, r.Id)]);
                 var used = model.NewBoolVar($"sc02_used_{pid}_{d}");

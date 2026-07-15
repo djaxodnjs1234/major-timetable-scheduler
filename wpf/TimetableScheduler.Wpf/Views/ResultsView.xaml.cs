@@ -7,7 +7,7 @@ namespace TimetableScheduler.Wpf.Views;
 
 public partial class ResultsView : UserControl
 {
-    public TimetableZoom Zoom { get; } = new();
+    public TimetableZoom Zoom { get; } = TimetableZoom.Shared;
 
     public ResultsView() => InitializeComponent();
 

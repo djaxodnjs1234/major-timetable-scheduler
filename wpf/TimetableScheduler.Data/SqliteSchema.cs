@@ -50,12 +50,18 @@ CREATE TABLE IF NOT EXISTS RetakeScenarios (
     PRIMARY KEY (CurrentGrade, RetakeBaseId)
 );
 
+CREATE TABLE IF NOT EXISTS AppSettings (
+    Id                 INTEGER PRIMARY KEY CHECK (Id = 1),
+    SchedulePolicyJson TEXT NOT NULL
+);
+
 CREATE TABLE IF NOT EXISTS SavedTimetables (
     Id              TEXT PRIMARY KEY,
     Name            TEXT NOT NULL,
     CreatedAt       TEXT NOT NULL,
     AssignmentsJson TEXT NOT NULL,
-    SnapshotJson    TEXT
+    SnapshotJson    TEXT,
+    LunchPeriodsJson TEXT
 );
 
 CREATE TABLE IF NOT EXISTS SavedTimetableManualCrossLinks (

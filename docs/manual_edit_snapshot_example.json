@@ -1,0 +1,499 @@
+{
+  "id": "manual-session-2026-07-04-001",
+  "sourceGenerationId": "generation-2026-07-04-001",
+  "title": "2026-2 Computer Engineering Timetable - Manual Edit Copy",
+  "createdAt": "2026-07-04T15:20:00+09:00",
+  "updatedAt": "2026-07-04T15:35:00+09:00",
+  "status": "DRAFT",
+  "version": 3,
+  "metadata": {
+    "source": "GENERATED_RESULT",
+    "createdByUserId": "user-001",
+    "lastEditedByUserId": "user-001",
+    "notes": "This timetable is independent from the current master DB after generation."
+  },
+  "baseline": {
+    "courses": [
+      {
+        "id": "DATA-01",
+        "originalCourseId": "DATA-01",
+        "lifecycle": "UNCHANGED",
+        "name": "자료구조",
+        "grade": 2,
+        "section": 1,
+        "professorId": "P-KIM",
+        "coteachProfs": [],
+        "hoursPerWeek": 3,
+        "blockStructure": [2, 1],
+        "fixedRooms": [],
+        "unavailableRooms": [],
+        "isFixed": false,
+        "fixedSlots": [],
+        "isSchoolFixed": false
+      },
+      {
+        "id": "CAPSTONE-01",
+        "originalCourseId": "CAPSTONE-01",
+        "lifecycle": "UNCHANGED",
+        "name": "캡스톤디자인",
+        "grade": 4,
+        "section": 1,
+        "professorId": "P-LEE",
+        "coteachProfs": ["P-PARK"],
+        "hoursPerWeek": 2,
+        "blockStructure": [2],
+        "fixedRooms": ["D327", "D330"],
+        "unavailableRooms": [],
+        "isFixed": false,
+        "fixedSlots": [],
+        "isSchoolFixed": false
+      }
+    ],
+    "professors": [
+      {
+        "id": "P-KIM",
+        "originalProfessorId": "P-KIM",
+        "lifecycle": "UNCHANGED",
+        "name": "김교수",
+        "unavailableSlots": [
+          { "day": 0, "period": 1 },
+          { "day": 0, "period": 2 }
+        ],
+        "unavailableRooms": ["D440"]
+      },
+      {
+        "id": "P-LEE",
+        "originalProfessorId": "P-LEE",
+        "lifecycle": "UNCHANGED",
+        "name": "이교수",
+        "unavailableSlots": [],
+        "unavailableRooms": []
+      },
+      {
+        "id": "P-PARK",
+        "originalProfessorId": "P-PARK",
+        "lifecycle": "UNCHANGED",
+        "name": "박교수",
+        "unavailableSlots": [],
+        "unavailableRooms": []
+      }
+    ],
+    "rooms": [
+      {
+        "id": "D327",
+        "originalRoomId": "D327",
+        "lifecycle": "UNCHANGED",
+        "name": "D327",
+        "capacity": 40,
+        "isLab": false
+      },
+      {
+        "id": "D330",
+        "originalRoomId": "D330",
+        "lifecycle": "UNCHANGED",
+        "name": "D330",
+        "capacity": 40,
+        "isLab": false
+      },
+      {
+        "id": "D440",
+        "originalRoomId": "D440",
+        "lifecycle": "UNCHANGED",
+        "name": "D440",
+        "capacity": 45,
+        "isLab": true
+      }
+    ],
+    "assignments": [
+      {
+        "id": "row-001",
+        "occurrenceId": "occ-DATA-01-mon-3-D327",
+        "courseId": "DATA-01",
+        "day": 0,
+        "period": 3,
+        "roomId": "D327"
+      },
+      {
+        "id": "row-002",
+        "occurrenceId": "occ-DATA-01-mon-3-D327",
+        "courseId": "DATA-01",
+        "day": 0,
+        "period": 4,
+        "roomId": "D327"
+      },
+      {
+        "id": "row-003",
+        "occurrenceId": "occ-DATA-01-wed-6-D327",
+        "courseId": "DATA-01",
+        "day": 2,
+        "period": 6,
+        "roomId": "D327"
+      },
+      {
+        "id": "row-004",
+        "occurrenceId": "occ-CAPSTONE-01-thu-6-D327-D330",
+        "courseId": "CAPSTONE-01",
+        "day": 3,
+        "period": 6,
+        "roomId": "D327"
+      },
+      {
+        "id": "row-005",
+        "occurrenceId": "occ-CAPSTONE-01-thu-6-D327-D330",
+        "courseId": "CAPSTONE-01",
+        "day": 3,
+        "period": 6,
+        "roomId": "D330"
+      },
+      {
+        "id": "row-006",
+        "occurrenceId": "occ-CAPSTONE-01-thu-6-D327-D330",
+        "courseId": "CAPSTONE-01",
+        "day": 3,
+        "period": 7,
+        "roomId": "D327"
+      },
+      {
+        "id": "row-007",
+        "occurrenceId": "occ-CAPSTONE-01-thu-6-D327-D330",
+        "courseId": "CAPSTONE-01",
+        "day": 3,
+        "period": 7,
+        "roomId": "D330"
+      }
+    ],
+    "stagedBlocks": [],
+    "crossGroups": [],
+    "retakeScenarios": [],
+    "schedulePolicySnapshot": {
+      "days": 5,
+      "allPeriods": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+      "daytimePeriods": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+      "nightPeriods": [10, 11, 12, 13],
+      "lunchPolicy": {
+        "mode": "BAN_5",
+        "candidatePeriods": [4, 5],
+        "flexibleGranularity": "PER_DAY",
+        "requireExactlyOneFlexibleBan": true
+      },
+      "twoHourBlockStartPolicy": {
+        "mode": "DERIVE_FROM_ALLOWED_PERIOD_RUNS"
+      }
+    },
+    "constraintPolicySnapshot": {
+      "hard": {
+        "considerRetakeStudents": true,
+        "applySchoolFixedTimeBlocks": true,
+        "allowDerivedGraduateDaytimeOverflow": true
+      },
+      "soft": {
+        "sc01": {
+          "enabled": true,
+          "penalizedSlots": [
+            { "day": 0, "period": 1 },
+            { "day": 0, "period": 2 },
+            { "day": 0, "period": 3 },
+            { "day": 0, "period": 4 },
+            { "day": 4, "period": 6 },
+            { "day": 4, "period": 7 },
+            { "day": 4, "period": 8 },
+            { "day": 4, "period": 9 }
+          ],
+          "slackAbs": 0,
+          "displayWeight": 1
+        },
+        "sc02": {
+          "enabled": true,
+          "dayThreshold": 3,
+          "minCourses": 2,
+          "excludeFixed": true,
+          "excludeCoteach": true,
+          "slackAbs": 1,
+          "displayWeight": 1
+        },
+        "sc03": {
+          "enabled": true,
+          "penaltyByAbsDayGap": {
+            "0": 4,
+            "1": 1,
+            "2": 0,
+            "3": 4,
+            "4": 4,
+            "5": 4
+          },
+          "slackAbs": 0,
+          "displayWeight": 1
+        }
+      }
+    },
+    "displaySettings": {
+      "expandAllGrades": false,
+      "showRoomAdditionalInfo": true
+    }
+  },
+  "working": {
+    "courses": [
+      {
+        "id": "DATA-01",
+        "originalCourseId": "DATA-01",
+        "lifecycle": "UPDATED",
+        "name": "자료구조",
+        "grade": 2,
+        "section": 1,
+        "professorId": "P-CHOI",
+        "coteachProfs": [],
+        "hoursPerWeek": 3,
+        "blockStructure": [2, 1],
+        "fixedRooms": [],
+        "unavailableRooms": [],
+        "isFixed": false,
+        "fixedSlots": [],
+        "isSchoolFixed": false
+      },
+      {
+        "id": "CAPSTONE-01",
+        "originalCourseId": "CAPSTONE-01",
+        "lifecycle": "UNCHANGED",
+        "name": "캡스톤디자인",
+        "grade": 4,
+        "section": 1,
+        "professorId": "P-LEE",
+        "coteachProfs": ["P-PARK"],
+        "hoursPerWeek": 2,
+        "blockStructure": [2],
+        "fixedRooms": ["D327", "D330"],
+        "unavailableRooms": [],
+        "isFixed": false,
+        "fixedSlots": [],
+        "isSchoolFixed": false
+      },
+      {
+        "id": "manual-course-001",
+        "originalCourseId": null,
+        "lifecycle": "ADDED",
+        "name": "웹프로그래밍특강",
+        "grade": 3,
+        "section": 1,
+        "professorId": "P-CHOI",
+        "coteachProfs": ["P-KIM"],
+        "hoursPerWeek": 2,
+        "blockStructure": [2],
+        "fixedRooms": ["D440"],
+        "unavailableRooms": [],
+        "isFixed": false,
+        "fixedSlots": [],
+        "isSchoolFixed": false
+      }
+    ],
+    "professors": [
+      {
+        "id": "P-KIM",
+        "originalProfessorId": "P-KIM",
+        "lifecycle": "UNCHANGED",
+        "name": "김교수",
+        "unavailableSlots": [
+          { "day": 0, "period": 1 },
+          { "day": 0, "period": 2 }
+        ],
+        "unavailableRooms": ["D440"]
+      },
+      {
+        "id": "P-LEE",
+        "originalProfessorId": "P-LEE",
+        "lifecycle": "UNCHANGED",
+        "name": "이교수",
+        "unavailableSlots": [],
+        "unavailableRooms": []
+      },
+      {
+        "id": "P-PARK",
+        "originalProfessorId": "P-PARK",
+        "lifecycle": "UNCHANGED",
+        "name": "박교수",
+        "unavailableSlots": [],
+        "unavailableRooms": []
+      },
+      {
+        "id": "P-CHOI",
+        "originalProfessorId": null,
+        "lifecycle": "ADDED",
+        "name": "최교수",
+        "unavailableSlots": [
+          { "day": 4, "period": 6 },
+          { "day": 4, "period": 7 }
+        ],
+        "unavailableRooms": []
+      }
+    ],
+    "rooms": [
+      {
+        "id": "D327",
+        "originalRoomId": "D327",
+        "lifecycle": "UNCHANGED",
+        "name": "D327",
+        "capacity": 40,
+        "isLab": false
+      },
+      {
+        "id": "D330",
+        "originalRoomId": "D330",
+        "lifecycle": "UNCHANGED",
+        "name": "D330",
+        "capacity": 40,
+        "isLab": false
+      },
+      {
+        "id": "D440",
+        "originalRoomId": "D440",
+        "lifecycle": "UNCHANGED",
+        "name": "D440",
+        "capacity": 45,
+        "isLab": true
+      }
+    ],
+    "assignments": [
+      {
+        "id": "row-001",
+        "occurrenceId": "occ-DATA-01-mon-3-D327",
+        "courseId": "DATA-01",
+        "day": 0,
+        "period": 3,
+        "roomId": "D327"
+      },
+      {
+        "id": "row-002",
+        "occurrenceId": "occ-DATA-01-mon-3-D327",
+        "courseId": "DATA-01",
+        "day": 0,
+        "period": 4,
+        "roomId": "D327"
+      },
+      {
+        "id": "row-003",
+        "occurrenceId": "occ-DATA-01-wed-6-D327",
+        "courseId": "DATA-01",
+        "day": 2,
+        "period": 6,
+        "roomId": "D327"
+      },
+      {
+        "id": "row-004",
+        "occurrenceId": "occ-CAPSTONE-01-thu-6-D327-D330",
+        "courseId": "CAPSTONE-01",
+        "day": 3,
+        "period": 6,
+        "roomId": "D327"
+      },
+      {
+        "id": "row-005",
+        "occurrenceId": "occ-CAPSTONE-01-thu-6-D327-D330",
+        "courseId": "CAPSTONE-01",
+        "day": 3,
+        "period": 6,
+        "roomId": "D330"
+      },
+      {
+        "id": "row-006",
+        "occurrenceId": "occ-CAPSTONE-01-thu-6-D327-D330",
+        "courseId": "CAPSTONE-01",
+        "day": 3,
+        "period": 7,
+        "roomId": "D327"
+      },
+      {
+        "id": "row-007",
+        "occurrenceId": "occ-CAPSTONE-01-thu-6-D327-D330",
+        "courseId": "CAPSTONE-01",
+        "day": 3,
+        "period": 7,
+        "roomId": "D330"
+      },
+      {
+        "id": "row-008",
+        "occurrenceId": "occ-manual-course-001-tue-6-D440",
+        "courseId": "manual-course-001",
+        "day": 1,
+        "period": 6,
+        "roomId": "D440"
+      },
+      {
+        "id": "row-009",
+        "occurrenceId": "occ-manual-course-001-tue-6-D440",
+        "courseId": "manual-course-001",
+        "day": 1,
+        "period": 7,
+        "roomId": "D440"
+      }
+    ],
+    "stagedBlocks": [],
+    "crossGroups": [],
+    "retakeScenarios": [],
+    "schedulePolicySnapshot": {
+      "days": 5,
+      "allPeriods": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13],
+      "daytimePeriods": [1, 2, 3, 4, 5, 6, 7, 8, 9],
+      "nightPeriods": [10, 11, 12, 13],
+      "lunchPolicy": {
+        "mode": "BAN_5",
+        "candidatePeriods": [4, 5],
+        "flexibleGranularity": "PER_DAY",
+        "requireExactlyOneFlexibleBan": true
+      },
+      "twoHourBlockStartPolicy": {
+        "mode": "DERIVE_FROM_ALLOWED_PERIOD_RUNS"
+      }
+    },
+    "constraintPolicySnapshot": {
+      "hard": {
+        "considerRetakeStudents": true,
+        "applySchoolFixedTimeBlocks": true,
+        "allowDerivedGraduateDaytimeOverflow": true
+      },
+      "soft": {
+        "sc01": {
+          "enabled": true,
+          "penalizedSlots": [
+            { "day": 0, "period": 1 },
+            { "day": 0, "period": 2 },
+            { "day": 0, "period": 3 },
+            { "day": 0, "period": 4 },
+            { "day": 4, "period": 6 },
+            { "day": 4, "period": 7 },
+            { "day": 4, "period": 8 },
+            { "day": 4, "period": 9 }
+          ],
+          "slackAbs": 0,
+          "displayWeight": 1
+        },
+        "sc02": {
+          "enabled": true,
+          "dayThreshold": 3,
+          "minCourses": 2,
+          "excludeFixed": true,
+          "excludeCoteach": true,
+          "slackAbs": 1,
+          "displayWeight": 1
+        },
+        "sc03": {
+          "enabled": true,
+          "penaltyByAbsDayGap": {
+            "0": 4,
+            "1": 1,
+            "2": 0,
+            "3": 4,
+            "4": 4,
+            "5": 4
+          },
+          "slackAbs": 0,
+          "displayWeight": 1
+        }
+      }
+    },
+    "displaySettings": {
+      "expandAllGrades": false,
+      "showRoomAdditionalInfo": true
+    }
+  },
+  "undoStack": [],
+  "redoStack": []
+}

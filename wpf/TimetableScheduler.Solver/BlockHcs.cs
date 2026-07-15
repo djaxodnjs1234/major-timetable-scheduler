@@ -6,12 +6,19 @@ namespace TimetableScheduler.Solver;
 using XDict = Dictionary<(string CourseId, int Day, int Period, string RoomId), BoolVar>;
 using StartVarMap = Dictionary<(string CourseId, int BlockIdx), Dictionary<(int Day, int StartPeriod), BoolVar>>;
 using DayVarMap = Dictionary<string, List<IntVar>>;
+using LunchVarMap = Dictionary<(int Day, int Period), BoolVar>;
 
 public static class BlockHcs
 {
     public static (StartVarMap StartVarsByBlock, DayVarMap DayVarsByCourse)
         AddHc06_BlockSplit(
-            CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms)
+            CpModel model,
+            XDict x,
+            IReadOnlyList<Course> courses,
+            IReadOnlyList<Room> rooms,
+            SchedulePolicy schedulePolicy,
+            LunchVarMap lunchBanVars,
+            bool allowGraduateDaytimeOverflow)
     {
         var roomIds = rooms.Select(r => r.Id).ToList();
         var startVarsByBlock = new StartVarMap();
@@ -25,6 +32,8 @@ public static class BlockHcs
                 ? c.BlockStructure.ToList()
                 : new List<int> { c.HoursPerWeek };
             var fixedRids = c.FixedRooms.ToList();
+            var academicPeriods = AcademicLevelTimePolicy.AllowedPeriods(
+                c.Grade, allowGraduateDaytimeOverflow, schedulePolicy);
 
             var dayVars = new List<IntVar>();
             for (int i = 0; i < blocks.Count; i++)
@@ -34,13 +43,11 @@ public static class BlockHcs
                 dayVars.Add(dayVar);
 
                 var validStarts = new List<(int d, int sp)>();
+                var possibleStarts = SchedulePolicyRules.PossibleBlockStarts(
+                    schedulePolicy, academicPeriods, b);
                 for (int d = 0; d < Constants.Days; d++)
-                    foreach (var sp in Constants.ValidPeriods)
-                    {
-                        var blockPeriods = Enumerable.Range(sp, b).ToList();
-                        if (blockPeriods.All(bp => Constants.ValidPeriods.Contains(bp)))
-                            validStarts.Add((d, sp));
-                    }
+                    foreach (var sp in possibleStarts)
+                        validStarts.Add((d, sp));
 
                 if (validStarts.Count == 0)
                 {
@@ -58,6 +65,10 @@ public static class BlockHcs
 
                 foreach (var ((d, sp), svar) in startVars)
                 {
+                    foreach (var period in Enumerable.Range(sp, b))
+                        if (lunchBanVars.TryGetValue((d, period), out var lunchBan))
+                            model.Add(svar + lunchBan <= 1);
+
                     if (fixedRids.Count > 0)
                     {
                         foreach (var rid in fixedRids)
@@ -98,7 +109,7 @@ public static class BlockHcs
             if (c.FixedRooms.Count == 0) continue;
             var allowed = new HashSet<string>(c.FixedRooms);
             for (int d = 0; d < Constants.Days; d++)
-                foreach (var p in Constants.ValidPeriods)
+                foreach (var p in Constants.Periods)
                     foreach (var r in rooms)
                         if (!allowed.Contains(r.Id))
                             model.Add(x[(c.Id, d, p, r.Id)] == 0);
@@ -114,29 +125,8 @@ public static class BlockHcs
             if (c.UnavailableRooms.Count == 0) continue;
             foreach (var rid in c.UnavailableRooms.Where(roomIds.Contains))
                 for (int d = 0; d < Constants.Days; d++)
-                    foreach (var p in Constants.ValidPeriods)
+                    foreach (var p in Constants.Periods)
                         model.Add(x[(c.Id, d, p, rid)] == 0);
-        }
-    }
-
-    public static void AddHc21_ProfRoomEligibility(
-        CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms,
-        Dictionary<string, Professor> profMap)
-    {
-        foreach (var c in courses)
-        {
-            if (c.FixedRooms.Count > 0) continue;
-            if (!profMap.TryGetValue(c.ProfessorId, out var prof)) continue;
-
-            var unavailable = prof.UnavailableRooms.ToHashSet();
-
-            foreach (var r in rooms)
-            {
-                if (unavailable.Contains(r.Id))
-                    for (int d = 0; d < Constants.Days; d++)
-                        foreach (var p in Constants.ValidPeriods)
-                            model.Add(x[(c.Id, d, p, r.Id)] == 0);
-            }
         }
     }
 
@@ -154,7 +144,7 @@ public static class BlockHcs
 
             foreach (var section in sections)
                 for (int d = 0; d < Constants.Days; d++)
-                    foreach (var p in Constants.ValidPeriods)
+                    foreach (var p in Constants.Periods)
                         foreach (var room in rooms)
                             model.Add(x[(section.Id, d, p, room.Id)] <= sharedRoom[room.Id]);
         }
@@ -162,9 +152,13 @@ public static class BlockHcs
 
     public static void AddHc19_Len2StartPeriods(
         CpModel model, StartVarMap startVarsByBlock,
-        IReadOnlyList<Course> courses, IReadOnlyList<CrossGroup>? crosses = null)
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<CrossGroup>? crosses,
+        SchedulePolicy schedulePolicy,
+        LunchVarMap lunchBanVars,
+        bool allowGraduateDaytimeOverflow)
     {
-        // (1) length-2 blocks: start ∈ {1,3,6,8}
+        // (1) length-2 block starts are derived from the effective schedule policy.
         foreach (var c in courses)
         {
             if (c.IsFixed) continue;
@@ -175,8 +169,12 @@ public static class BlockHcs
             {
                 if (blocks[i] != 2) continue;
                 if (!startVarsByBlock.TryGetValue((c.Id, i), out var sv)) continue;
+                var academicPeriods = AcademicLevelTimePolicy.AllowedPeriods(
+                    c.Grade, allowGraduateDaytimeOverflow, schedulePolicy);
+                var allowedStarts = SchedulePolicyRules.PossibleBlockStarts(
+                    schedulePolicy, academicPeriods, 2).ToHashSet();
                 foreach (var ((_, sp), v) in sv)
-                    if (!Constants.Len2StartPeriods.Contains(sp))
+                    if (!allowedStarts.Contains(sp))
                         model.Add(v == 0);
             }
         }
@@ -208,23 +206,61 @@ public static class BlockHcs
                 if (blocks1[i] != 1) continue;
                 if (!startVarsByBlock.TryGetValue((c1.Id, i), out var sv1)) continue;
                 if (!startVarsByBlock.TryGetValue((c2.Id, i), out var sv2)) continue;
+                var academicPeriods = AcademicLevelTimePolicy.AllowedPeriods(
+                    c1.Grade, allowGraduateDaytimeOverflow, schedulePolicy);
                 foreach (var ((d, sp), v1) in sv1)
                 {
-                    int partnerSp;
-                    if (Constants.Len2StartPeriods.Contains(sp))
-                        partnerSp = sp + 1;
-                    else if (sp is 2 or 4 or 7 or 9 or 11 or 13)
-                        partnerSp = sp - 1;
+                    if (SchedulePolicyRules.UsesFlexibleLunch(schedulePolicy))
+                    {
+                        foreach (var lunchPeriod in new[]
+                                 {
+                                     SchedulePolicyRules.FirstLunchCandidate,
+                                     SchedulePolicyRules.SecondLunchCandidate,
+                                 })
+                        {
+                            var periodsForChoice = academicPeriods
+                                .Where(period => period != lunchPeriod)
+                                .ToArray();
+                            var partners = PairPartners(periodsForChoice);
+                            var lunchBan = lunchBanVars[(d, lunchPeriod)];
+                            if (partners.TryGetValue(sp, out var partnerSp)
+                                && sv2.TryGetValue((d, partnerSp), out var v2))
+                            {
+                                var partnerConstraint = model.Add(v2 == 1);
+                                partnerConstraint.OnlyEnforceIf(v1);
+                                partnerConstraint.OnlyEnforceIf(lunchBan);
+                            }
+                            else
+                            {
+                                model.Add(v1 + lunchBan <= 1);
+                            }
+                        }
+                    }
                     else
-                        continue;
-
-                    if (!sv2.TryGetValue((d, partnerSp), out var v2))
-                        model.Add(v1 == 0);
-                    else
-                        model.Add(v2 == 1).OnlyEnforceIf(v1);
+                    {
+                        var partners = PairPartners(academicPeriods);
+                        if (!partners.TryGetValue(sp, out var partnerSp)
+                            || !sv2.TryGetValue((d, partnerSp), out var v2))
+                            model.Add(v1 == 0);
+                        else
+                            model.Add(v2 == 1).OnlyEnforceIf(v1);
+                    }
                 }
             }
         }
+    }
+
+    private static IReadOnlyDictionary<int, int> PairPartners(IReadOnlyList<int> periods)
+    {
+        var periodSet = periods.ToHashSet();
+        var result = new Dictionary<int, int>();
+        foreach (var start in SchedulePolicyRules.DeriveTwoHourStarts(periods))
+        {
+            if (!periodSet.Contains(start + 1)) continue;
+            result[start] = start + 1;
+            result[start + 1] = start;
+        }
+        return result;
     }
 
     public static void AddHc20_BlockDaysDistinct(CpModel model, DayVarMap dayVarsByCourse)

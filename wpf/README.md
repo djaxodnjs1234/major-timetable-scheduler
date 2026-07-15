@@ -54,6 +54,8 @@ TimetableScheduler.Tests       xUnit 회귀 테스트
 | ViewModel | `TimetableGridViewModel`, `UnifiedTimetableViewModel` | 격자 VM (공유) |
 | ViewModel | `MainWindowViewModel`, 4개 Page VM | 네비게이션 + 페이지 |
 
+점심 정책은 시간표 생성 전에 `점심시간 고려 안 함`, `4교시 점심`, `5교시 점심`, `요일별 4·5교시 중 한 교시 점심` 중 하나를 선택한다. 마지막 모드에서는 솔버가 요일마다 정확히 한 교시를 점심으로 비우며, 그 선택은 결과·수동 편집·저장 시간표·엑셀에 함께 보존된다. 기존 데이터는 기본값인 `5교시 점심`으로 열린다. 화면과 엑셀에서는 점심 칸을 별도 줄이나 문구로 표시하지 않고 일반 빈칸으로 둔다.
+
 ## HC/SC 매핑 (Python 동일)
 
 | HC | 의미 | 위치 |
@@ -65,19 +67,19 @@ TimetableScheduler.Tests       xUnit 회귀 테스트
 | 06 | 블록 연속 + 다중방 동시 점유 | blocks |
 | 08 | 분반 중복 금지 (**y**) | basic |
 | 11 | 같은 학년 중복 (분반/Cross 제외, **y**) | basic |
-| 12 | 점심(5교시) 금지 | basic |
+| 12 | 선택한 점심 교시 금지(점심 미적용/4교시/5교시/요일별 4·5 중 하나) | basic |
 | 13 | `is_fixed` 과목 시간 슬롯 강제 (강의실 별도) | basic |
 | 14 | `fixed_rooms` 외 사용 금지 | blocks |
 | 15 | 같은 교수 분반 인접 | blocks |
 | 16 | Cross cyclic shift (**y**) | grouping |
 | 17 | 재수강 안전 분반 (**y**) | grouping |
 | 18 | SC-03으로 이동: 블록 페어 요일 차 선호 | soft |
-| 19 | 블록 시작 교시 ∈ {1,3,6,8} | blocks |
+| 19 | 점심 정책의 연속 가능 구간에서 2시간 블록 시작 교시 계산 | blocks |
 | 20 | 같은 과목 블록들 다른 요일 | blocks |
-| 21 | 자동 배정 과목의 교수 강의실 조건 | blocks |
+| 21 | 삭제됨: 교수 불가 강의실 미사용 | - |
 | 22 | 자동 배정 과목의 공통 강의실 | blocks |
 
-강의실 정책: 과목 `FixedRooms`가 있으면 과목 설정이 교수 강의실 조건보다 우선하며, 여러 방이면 모두 동시 점유한다. `FixedRooms`가 없는 자동 과목만 담당 교수의 허용/불가 강의실 조건을 따른다. 자동 배정 과목은 같은 과목의 모든 블록과 분반에서 공통 강의실을 사용하지만, 같은 교수의 서로 다른 과목을 한 방으로 강제하지는 않는다.
+강의실 정책: 과목 `FixedRooms`가 있으면 그 방을 사용하며, 여러 방이면 모두 동시 점유한다. `FixedRooms`가 없는 자동 과목은 과목 불가 강의실을 제외한 후보 중에서 배정된다. 자동 배정 과목은 같은 과목의 모든 블록과 분반에서 공통 강의실을 사용하지만, 같은 교수의 서로 다른 과목을 한 방으로 강제하지는 않는다.
 
 Cross 대응 분반이 공통 고정 강의실을 사용하면 같은 시간에 같은 방을 점유하게 되므로 Cross 추가를 차단한다(`IE-039`). 기존 저장 데이터에서 같은 조건은 생성 전 진단으로 표시한다(`GE-028`).
 
@@ -112,7 +114,7 @@ Cross 대응 분반이 공통 고정 강의실을 사용하면 같은 시간에 
 
 좌측 사이드바 (Resource Explorer) — 교수/교과목/강의실/솔버 nav.
 
-- **교수 깊은 편집**: 불가 강의실 체크리스트 + 불가 시간 5×9 토글 그리드
+- **교수 깊은 편집**: 불가 시간 5×9 토글 그리드
 - **교과목 깊은 편집**: IsFixed, 불가 강의실 체크리스트, FixedSlots 5×9, BlockStructure CSV, CoteachProfs 체크리스트
 - **강의실 깊은 편집**: 실습실 여부 + 허용 인원 수
 - **xlsx 가져오기** 버튼
@@ -131,13 +133,13 @@ Cross 대응 분반이 공통 고정 강의실을 사용하면 같은 시간에 
 
 ### 4번 화면 (수동 편집)
 
-통합 시간표 셀 클릭 → 우측 320px Inspector 활성화 → 강의실 드롭다운 변경 → Apply Changes. `ConflictDetector`가 HC-01/02/08/12 위반 카드 표시. 재솔버 호출은 없음 — 메모리상의 수정만.
+통합 시간표 셀 클릭 → 우측 Inspector 활성화 → 이동·강의실 변경·Swap·Cross를 적용한다. 시간 범위 이탈이나 다른 블록과의 물리적 겹침만 차단하고, 점심·고정시간·교수/강의실 중복 같은 제약 위반은 변경을 허용한 뒤 오른쪽 위반 목록과 블록 오른쪽 아래의 작은 빨간 글씨로 표시한다. 두 블록이 함께 일으킨 중복은 붉은 연결선으로 짝을 보여 준다. 재솔버 호출은 없으며 저장·엑셀 내보내기 직전 검증은 엄격하게 유지한다.
 
 ## 자동 임포트 / DB
 
 - exe 위치부터 위로 8단계까지 `개설강좌 편람.xlsx` 탐색 → 자동 임포트 (DB 비었을 때만)
 - 모든 CRUD는 즉시 SQLite 영속 (`WorkspaceService.Persist`)
-- List 필드 (FixedRooms, BlockStructure, FixedSlots, UnavailableSlots, Professor.UnavailableRooms, CoteachProfs, BaseIds)는 JSON 컬럼
+- List 필드 (FixedRooms, Course.UnavailableRooms, BlockStructure, FixedSlots, UnavailableSlots, CoteachProfs, BaseIds)는 JSON 컬럼
 
 ## Python ↔ C# 차이
 

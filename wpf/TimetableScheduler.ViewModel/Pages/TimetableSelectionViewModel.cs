@@ -94,7 +94,9 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
                 Array.Empty<SolutionAssignment>(),
                 Array.Empty<Course>(),
                 Array.Empty<Professor>(),
-                Array.Empty<Room>());
+                Array.Empty<Room>(),
+                SchedulePolicy.Default,
+                null);
             return;
         }
 
@@ -106,22 +108,39 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
             assignments,
             snapshot.Courses,
             snapshot.Professors,
-            snapshot.Rooms);
+            snapshot.Rooms,
+            snapshot.SchedulePolicy,
+            value.LunchPeriodsByDay);
     }
 
     private void RenderViews(
         IReadOnlyList<SolutionAssignment> assignments,
         IReadOnlyList<Course> courses,
         IReadOnlyList<Professor> professors,
-        IReadOnlyList<Room> rooms)
+        IReadOnlyList<Room> rooms,
+        SchedulePolicy schedulePolicy,
+        IReadOnlyDictionary<int, int>? lunchPeriodsByDay)
     {
-        Preview.Render(assignments, courses, professors, rooms);
+        Preview.Render(
+            assignments,
+            courses,
+            professors,
+            rooms,
+            schedulePolicy,
+            lunchPeriodsByDay);
 
         GradeViews.Clear();
         foreach (var g in AcademicLevels.AllGrades)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignments, courses, (c, _) => c.Grade == g, professors, rooms);
+            vm.Render(
+                assignments,
+                courses,
+                (c, _) => c.Grade == g,
+                professors,
+                rooms,
+                schedulePolicy,
+                lunchPeriodsByDay);
             GradeViews.Add(new NamedGridViewModel(g.ToString(), AcademicLevels.DisplayName(g), vm));
         }
 
@@ -129,7 +148,14 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         foreach (var r in rooms)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignments, courses, (_, rid) => rid == r.Id, professors, rooms);
+            vm.Render(
+                assignments,
+                courses,
+                (_, rid) => rid == r.Id,
+                professors,
+                rooms,
+                schedulePolicy,
+                lunchPeriodsByDay);
             RoomViews.Add(new NamedGridViewModel(r.Id, r.Name, vm));
         }
 
@@ -137,7 +163,14 @@ public sealed partial class TimetableSelectionViewModel : PageViewModelBase
         foreach (var p in professors)
         {
             var vm = new TimetableGridViewModel();
-            vm.Render(assignments, courses, (c, _) => IsCourseTaughtBy(c, p.Id), professors, rooms);
+            vm.Render(
+                assignments,
+                courses,
+                (c, _) => IsCourseTaughtBy(c, p.Id),
+                professors,
+                rooms,
+                schedulePolicy,
+                lunchPeriodsByDay);
             ProfessorViews.Add(new NamedGridViewModel(p.Id, p.Name, vm));
         }
     }

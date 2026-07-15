@@ -7,6 +7,7 @@ using XDict = Dictionary<(string CourseId, int Day, int Period, string RoomId), 
 using YDict = Dictionary<(string CourseId, int Day, int Period), BoolVar>;
 using StartVarMap = Dictionary<(string CourseId, int BlockIdx), Dictionary<(int Day, int StartPeriod), BoolVar>>;
 using DayVarMap = Dictionary<string, List<IntVar>>;
+using LunchVarMap = Dictionary<(int Day, int Period), BoolVar>;
 
 public sealed class BuildResult
 {
@@ -15,6 +16,8 @@ public sealed class BuildResult
     public required YDict Y { get; init; }
     public required StartVarMap StartVarsByBlock { get; init; }
     public required DayVarMap DayVarsByCourse { get; init; }
+    public required LunchVarMap LunchBanVars { get; init; }
+    public required SchedulePolicy SchedulePolicy { get; init; }
     public required IReadOnlyList<Course> Courses { get; init; }
     public required IReadOnlyList<Room> Rooms { get; init; }
 }
@@ -27,8 +30,10 @@ public static class ModelBuilder
         IReadOnlyList<Room> rooms,
         IReadOnlyList<CrossGroup>? crosses = null,
         IReadOnlyList<RetakeScenario>? retakes = null,
-        IReadOnlyList<Course>? schoolFixedCourses = null)
+        IReadOnlyList<Course>? schoolFixedCourses = null,
+        SchedulePolicy? schedulePolicy = null)
     {
+        schedulePolicy ??= SchedulePolicy.Default;
         ValidateCrossGroups(courses, crosses);
         var model = new CpModel();
         var profMap = professors.ToDictionary(p => p.Id);
@@ -56,26 +61,38 @@ public static class ModelBuilder
                 }
         }
 
-        BasicHcs.AddHc01_RoomSingle(model, x, courses, rooms);
-        BasicHcs.AddHc02_ProfSingle(model, y, courses);
+        BasicHcs.AddHc01_RoomSingle(model, x, courses, rooms, schedulePolicy);
+        BasicHcs.AddHc02_ProfSingle(model, y, courses, schedulePolicy);
         BasicHcs.AddHc03_ProfUnavailable(model, x, courses, rooms, profMap);
-        BasicHcs.AddHc04_Hours(model, x, courses, rooms);
+        BasicHcs.AddHc04_Hours(model, x, courses, rooms, schedulePolicy);
+        var lunchBanVars = BasicHcs.AddHc12_Lunch(model, x, courses, rooms, schedulePolicy);
+        var allowGraduateDaytimeOverflow =
+            AcademicLevelTimePolicy.AllowsGraduateDaytimeOverflow(courses, crosses);
         var (startVarsByBlock, dayVarsByCourse) =
-            BlockHcs.AddHc06_BlockSplit(model, x, courses, rooms);
-        BasicHcs.AddHc08_SectionNoOverlap(model, y, courses);
-        BasicHcs.AddHc11_GradeNoOverlap(model, y, courses, crosses);
-        BasicHcs.AddHc12_Lunch(model, x, courses, rooms);
+            BlockHcs.AddHc06_BlockSplit(
+                model, x, courses, rooms, schedulePolicy, lunchBanVars,
+                allowGraduateDaytimeOverflow);
+        BasicHcs.AddHc08_SectionNoOverlap(model, y, courses, schedulePolicy);
+        BasicHcs.AddHc11_GradeNoOverlap(model, y, courses, crosses, schedulePolicy);
         BasicHcs.AddHc13_Fixed(model, y, courses);
-        BasicHcs.AddHc24_SchoolFixedTimeBlocks(model, y, courses, schoolFixedCourses ?? Array.Empty<Course>());
-        BasicHcs.AddHc23_AcademicLevelTimeBands(model, x, y, courses, rooms, crosses);
+        BasicHcs.AddHc24_SchoolFixedTimeBlocks(
+            model,
+            y,
+            courses,
+            schoolFixedCourses ?? Array.Empty<Course>(),
+            schedulePolicy,
+            lunchBanVars);
+        BasicHcs.AddHc23_AcademicLevelTimeBands(
+            model, x, y, courses, rooms, crosses, schedulePolicy);
         BlockHcs.AddHc14_FixedRooms(model, x, courses, rooms);
         BlockHcs.AddHc14_UnavailableRooms(model, x, courses, rooms);
         BlockHcs.AddHc15_SectionBackToBack(model, startVarsByBlock, courses);
         GroupingHcs.AddHc16_Cross(model, y, courses, crosses);
         GroupingHcs.AddHc17_Retake(model, y, courses, retakes);
-        BlockHcs.AddHc19_Len2StartPeriods(model, startVarsByBlock, courses, crosses);
+        BlockHcs.AddHc19_Len2StartPeriods(
+            model, startVarsByBlock, courses, crosses, schedulePolicy,
+            lunchBanVars, allowGraduateDaytimeOverflow);
         BlockHcs.AddHc20_BlockDaysDistinct(model, dayVarsByCourse);
-        BlockHcs.AddHc21_ProfRoomEligibility(model, x, courses, rooms, profMap);
         BlockHcs.AddHc22_AutoCourseRoomConsistent(model, x, courses, rooms);
 
         return new BuildResult
@@ -85,6 +102,8 @@ public static class ModelBuilder
             Y = y,
             StartVarsByBlock = startVarsByBlock,
             DayVarsByCourse = dayVarsByCourse,
+            LunchBanVars = lunchBanVars,
+            SchedulePolicy = schedulePolicy,
             Courses = courses,
             Rooms = rooms,
         };

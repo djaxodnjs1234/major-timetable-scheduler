@@ -3,11 +3,18 @@ using TimetableScheduler.Solver;
 
 namespace TimetableScheduler.Scoring;
 
-public sealed record SolutionScore(double Sc01, double Sc02, double Sc03, double Sc04, double Total);
+public sealed record SolutionScore(double Sc01, double Sc02, double Sc03, double Sc04, double Total)
+{
+    public SolutionScore(double sc01, double sc02, double sc03, double total)
+        : this(sc01, sc02, sc03, 1.0, total)
+    {
+    }
+}
 
 public sealed record RankedSolution(
     IReadOnlyList<SolutionAssignment> Assignment,
-    SolutionScore Score);
+    SolutionScore Score,
+    IReadOnlyDictionary<int, int>? LunchPeriodsByDay = null);
 
 public static class SolutionScoring
 {
@@ -186,15 +193,31 @@ public static class SolutionScoring
     }
 
     public static IReadOnlyList<RankedSolution> Rank(
-        IReadOnlyList<IReadOnlyList<SolutionAssignment>> solutions,
+        IReadOnlyList<SolverSolution> solutions,
         IReadOnlyList<Course> courses,
         IReadOnlyList<Professor> professors,
         int topM = 10)
     {
         return solutions
-            .Select(a => new RankedSolution(a, Score(a, courses, professors)))
+            .Select(solution => new RankedSolution(
+                solution.Assignment,
+                Score(solution.Assignment, courses, professors),
+                solution.LunchPeriodsByDay))
             .OrderByDescending(r => r.Score.Total)
             .Take(topM)
             .ToList();
     }
+
+    public static IReadOnlyList<RankedSolution> Rank(
+        IReadOnlyList<IReadOnlyList<SolutionAssignment>> solutions,
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<Professor> professors,
+        int topM = 10) =>
+        solutions
+            .Select(assignment => new RankedSolution(
+                assignment,
+                Score(assignment, courses, professors)))
+            .OrderByDescending(result => result.Score.Total)
+            .Take(topM)
+            .ToList();
 }

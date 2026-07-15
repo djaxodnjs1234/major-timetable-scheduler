@@ -37,7 +37,7 @@ public class ModelBuilderSmokeTests
         {
             int total = 0;
             for (int d = 0; d < Constants.Days; d++)
-                foreach (var p in Constants.ValidPeriods)
+                foreach (var p in SchedulePolicyRules.CandidateInstructionalPeriods(SchedulePolicy.Default))
                     foreach (var r in rooms)
                         total += (int)solver.Value(build.X[(c.Id, d, p, r.Id)]);
             Assert.Equal(c.HoursPerWeek, total);
@@ -47,7 +47,11 @@ public class ModelBuilderSmokeTests
         foreach (var c in courses)
             for (int d = 0; d < Constants.Days; d++)
                 foreach (var r in rooms)
-                    Assert.Equal(0, solver.Value(build.X[(c.Id, d, Constants.LunchPeriod, r.Id)]));
+                    Assert.Equal(0, solver.Value(build.X[(
+                        c.Id,
+                        d,
+                        SchedulePolicyRules.SecondLunchCandidate,
+                        r.Id)]));
     }
 
     [Fact]
@@ -70,7 +74,7 @@ public class ModelBuilderSmokeTests
         var slotsA = new HashSet<(int, int)>();
         var slotsB = new HashSet<(int, int)>();
         for (int d = 0; d < Constants.Days; d++)
-            foreach (var p in Constants.ValidPeriods)
+            foreach (var p in SchedulePolicyRules.CandidateInstructionalPeriods(SchedulePolicy.Default))
             {
                 if (solver.Value(build.Y[("A-01", d, p)]) == 1) slotsA.Add((d, p));
                 if (solver.Value(build.Y[("B-01", d, p)]) == 1) slotsB.Add((d, p));
@@ -121,7 +125,7 @@ public class ModelBuilderSmokeTests
             {
                 Id = "P1",
                 Name = "P",
-                UnavailableSlots = Constants.ValidPeriods
+                UnavailableSlots = SchedulePolicyRules.CandidateInstructionalPeriods(SchedulePolicy.Default)
                     .SelectMany(p => Enumerable.Range(0, Constants.Days).Select(d => new TimeSlot(d, p)))
                     .Where(slot =>
                         !(slot.Day == 0 && slot.Period is 1 or 2) &&
@@ -176,7 +180,7 @@ public class ModelBuilderSmokeTests
     }
 
     [Fact]
-    public void Len2BlockStartsAt_1_3_6_or_8_HC19()
+    public void Len2BlockStartsAtAnyConsecutiveNonLunchPeriod_HC19()
     {
         var courses = new List<Course>
         {
@@ -196,9 +200,9 @@ public class ModelBuilderSmokeTests
         // Find the start period (smallest occupied period)
         int startPeriod = int.MaxValue;
         for (int d = 0; d < Constants.Days; d++)
-            foreach (var p in Constants.ValidPeriods)
+            foreach (var p in SchedulePolicyRules.CandidateInstructionalPeriods(SchedulePolicy.Default))
                 if (solver.Value(build.X[("X-01", d, p, "R1")]) == 1 && p < startPeriod)
                     startPeriod = p;
-        Assert.Contains(startPeriod, new[] { 1, 3, 6, 8 });
+        Assert.Contains(startPeriod, new[] { 1, 2, 3, 6, 7, 8 });
     }
 }

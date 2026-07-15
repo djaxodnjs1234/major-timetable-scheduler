@@ -53,7 +53,7 @@ public class TimeSlotPickerTests
     }
 
     [Fact]
-    public void FixedSlotEditor_LenTwoBlocksUseTimeRangesAndAllowedStarts()
+    public void FixedSlotEditor_LenTwoBlocksUsePolicyDerivedStartsAndTimeRanges()
     {
         var item = new CourseGroupItem
         {
@@ -67,7 +67,7 @@ public class TimeSlotPickerTests
         var vm = FixedSlotEditorViewModel.Build(item, isFixed: true);
         var firstBlock = vm.SectionEditors.Single().BlockEntries[0];
 
-        Assert.Equal(new[] { 1, 3, 6, 8 }, firstBlock.PeriodOptions.Select(o => o.Period));
+        Assert.Equal(new[] { 1, 2, 3, 6, 7, 8 }, firstBlock.PeriodOptions.Select(o => o.Period));
         Assert.Contains("09:00~11:00", firstBlock.PeriodOptions[0].Label);
     }
 
@@ -93,8 +93,35 @@ public class TimeSlotPickerTests
         var vm = FixedSlotEditorViewModel.Build(item, isFixed: true);
         var block = vm.SectionEditors.Single().BlockEntries.Single();
 
-        Assert.Equal(new[] { 10, 12 }, block.PeriodOptions.Select(option => option.Period));
+        Assert.Equal(new[] { 10, 11, 12 }, block.PeriodOptions.Select(option => option.Period));
         Assert.Equal(10, block.SelectedPeriod);
         Assert.Contains("18:00~20:00", block.PeriodOptions[0].Label);
+    }
+
+    [Fact]
+    public void FixedSlotEditor_ApplyUncheckedClearsFixedFlagAndSlots()
+    {
+        var item = new CourseGroupItem
+        {
+            BaseId = "X",
+            Sections = new List<Course>
+            {
+                new()
+                {
+                    Id = "X-01",
+                    HoursPerWeek = 1,
+                    BlockStructure = new List<int> { 1 },
+                    IsFixed = true,
+                    FixedSlots = new List<TimeSlot> { new(0, 1) },
+                },
+            },
+        };
+        var editor = FixedSlotEditorViewModel.Build(item, isFixed: true);
+
+        editor.IsFixed = false;
+        editor.ApplyTo(item);
+
+        Assert.False(item.Sections[0].IsFixed);
+        Assert.Empty(item.Sections[0].FixedSlots);
     }
 }

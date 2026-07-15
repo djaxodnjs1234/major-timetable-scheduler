@@ -11,14 +11,12 @@ namespace TimetableScheduler.Wpf.Controls;
 public partial class TimetableGridControl : UserControl
 {
     private static readonly Brush EmptyBg = Brushes.White;
-    private static readonly Brush LunchBg = new SolidColorBrush(Color.FromRgb(0xF7, 0xF7, 0xF7));
     private static readonly Brush HeaderBg = new SolidColorBrush(Color.FromRgb(0xF8, 0xF8, 0xF8));
     private static readonly Brush CellBorder = new SolidColorBrush(Color.FromRgb(0xEC, 0xEF, 0xF3));
     private static readonly Brush DayBoundaryBorder = new SolidColorBrush(Color.FromRgb(0x94, 0xA3, 0xB8));
 
     static TimetableGridControl()
     {
-        LunchBg.Freeze();
         HeaderBg.Freeze();
         CellBorder.Freeze();
         DayBoundaryBorder.Freeze();
@@ -36,13 +34,6 @@ public partial class TimetableGridControl : UserControl
             typeof(double),
             typeof(TimetableGridControl),
             new PropertyMetadata(64.0, OnLayoutMetricsChanged));
-
-    public static readonly DependencyProperty LunchRowMinHeightProperty =
-        DependencyProperty.Register(
-            nameof(LunchRowMinHeight),
-            typeof(double),
-            typeof(TimetableGridControl),
-            new PropertyMetadata(32.0, OnLayoutMetricsChanged));
 
     public static readonly DependencyProperty NightSeparatorThicknessProperty =
         DependencyProperty.Register(
@@ -62,12 +53,6 @@ public partial class TimetableGridControl : UserControl
     {
         get => (double)GetValue(PeriodRowMinHeightProperty);
         set => SetValue(PeriodRowMinHeightProperty, value);
-    }
-
-    public double LunchRowMinHeight
-    {
-        get => (double)GetValue(LunchRowMinHeightProperty);
-        set => SetValue(LunchRowMinHeightProperty, value);
     }
 
     public double NightSeparatorThickness
@@ -92,11 +77,13 @@ public partial class TimetableGridControl : UserControl
     {
         if (e.OldValue is TimetableGridViewModel oldVm)
         {
+            oldVm.Rebuilt -= OnGridRebuilt;
             foreach (var c in oldVm.Cells)
                 c.Items.CollectionChanged -= OnCellItemsChanged;
         }
         if (e.NewValue is TimetableGridViewModel newVm)
         {
+            newVm.Rebuilt += OnGridRebuilt;
             foreach (var c in newVm.Cells)
                 c.Items.CollectionChanged += OnCellItemsChanged;
         }
@@ -105,6 +92,8 @@ public partial class TimetableGridControl : UserControl
 
     private void OnCellItemsChanged(object? sender, NotifyCollectionChangedEventArgs e)
         => Rebuild();
+
+    private void OnGridRebuilt(object? sender, EventArgs e) => Rebuild();
 
     private void Rebuild()
     {
@@ -128,13 +117,9 @@ public partial class TimetableGridControl : UserControl
         foreach (var p in vm.Periods)
         {
             int row = BodyRowForPeriod(p);
-            var label = p == 5 ? "점심" : p.ToString();
-            BodyGrid.Children.Add(MakeLabel(label, row, 0, HeaderBg));
+            BodyGrid.Children.Add(MakeLabel(p.ToString(), row, 0, HeaderBg));
             BodyGrid.Children.Add(MakeLabel(SchedulePeriods.TimeRange(p), row, 1, HeaderBg));
         }
-        AddLunchBorder(
-            row: vm.Periods.TakeWhile(period => period != 5).Count(),
-            colSpan: 2 + layout.DayWidths.Sum());
         AddNightSeparatorLine(
             row: NightSeparatorRow,
             colSpan: 2 + layout.DayWidths.Sum());
@@ -147,11 +132,6 @@ public partial class TimetableGridControl : UserControl
             foreach (var p in vm.Periods)
             {
                 int row = BodyRowForPeriod(p);
-
-                if (p == 5)
-                {
-                    continue;
-                }
 
                 var placements = layout.Placements
                     .Where(a => a.Day == d && a.Period == p)
@@ -228,7 +208,7 @@ public partial class TimetableGridControl : UserControl
             BodyGrid.RowDefinitions.Add(new RowDefinition
             {
                 Height = new GridLength(1, GridUnitType.Star),
-                MinHeight = period == 5 ? LunchRowMinHeight : PeriodRowMinHeight,
+                MinHeight = PeriodRowMinHeight,
             });
         }
     }
@@ -337,29 +317,6 @@ public partial class TimetableGridControl : UserControl
         Grid.SetColumn(border, col);
         if (rowSpan > 1) Grid.SetRowSpan(border, rowSpan);
         return border;
-    }
-
-    private void AddLunchBorder(int row, int colSpan)
-    {
-        var border = new Border
-        {
-            BorderBrush = DayBoundaryBorder,
-            BorderThickness = new Thickness(0, 1, 0, 1),
-            Background = LunchBg,
-            Child = new TextBlock
-            {
-                Text = "점 심 시 간",
-                HorizontalAlignment = HorizontalAlignment.Center,
-                VerticalAlignment = VerticalAlignment.Center,
-                FontSize = 8,
-                FontWeight = FontWeights.Normal,
-            },
-        };
-        Grid.SetRow(border, row);
-        Grid.SetColumn(border, 0);
-        Grid.SetColumnSpan(border, colSpan);
-        Panel.SetZIndex(border, 30);
-        BodyGrid.Children.Add(border);
     }
 
     private void AddNightSeparatorLine(int row, int colSpan)

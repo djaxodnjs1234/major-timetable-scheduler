@@ -8,7 +8,7 @@ namespace TimetableScheduler.Wpf.Views;
 
 public partial class TimetableSelectionView : UserControl
 {
-    public TimetableZoom Zoom { get; } = new();
+    public TimetableZoom Zoom { get; } = TimetableZoom.Shared;
 
     public TimetableSelectionView() => InitializeComponent();
 

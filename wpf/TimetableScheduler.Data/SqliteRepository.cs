@@ -44,11 +44,13 @@ public sealed class SqliteRepository
         MigrateCourseUnavailableRooms(conn);
         MigrateSchoolFixedCourseFields(conn);
         MigrateProfessorUnavailableRooms(conn);
+        ClearDeprecatedProfessorUnavailableRooms(conn);
         MigrateLegacyProfessorRoomWhitelistRemoved(conn);
         MigrateRoomMetadata(conn);
         MigrateCourseExpectedEnrollment(conn);
         MigrateCoursePkIfNeeded(conn);
         MigrateSavedTimetableSnapshot(conn);
+        MigrateSavedTimetableLunchPeriods(conn);
         MigrateSavedManualCrossAssignmentIds(conn);
     }
 
@@ -79,6 +81,15 @@ public sealed class SqliteRepository
         conn.Execute("ALTER TABLE SavedTimetables ADD COLUMN SnapshotJson TEXT");
     }
 
+    private static void MigrateSavedTimetableLunchPeriods(SqliteConnection conn)
+    {
+        var columns = conn.Query("PRAGMA table_info(SavedTimetables)")
+            .Select(row => (string)row.name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (columns.Contains("LunchPeriodsJson")) return;
+        conn.Execute("ALTER TABLE SavedTimetables ADD COLUMN LunchPeriodsJson TEXT");
+    }
+
     private static void MigrateSavedManualCrossAssignmentIds(SqliteConnection conn)
     {
         var columns = conn.Query("PRAGMA table_info(SavedTimetableManualCrossLinks)")
@@ -96,6 +107,16 @@ public sealed class SqliteRepository
             .Select(row => (string)row.name);
         if (columns.Contains("UnavailableRoomsJson")) return;
         conn.Execute("ALTER TABLE Professors ADD COLUMN UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]'");
+    }
+
+    private static void ClearDeprecatedProfessorUnavailableRooms(SqliteConnection conn)
+    {
+        var columns = conn.Query("PRAGMA table_info(Professors)")
+            .Select(row => (string)row.name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!columns.Contains("UnavailableRoomsJson")) return;
+
+        conn.Execute("UPDATE Professors SET UnavailableRoomsJson = '[]' WHERE UnavailableRoomsJson <> '[]'");
     }
 
     private static void MigrateLegacyProfessorRoomWhitelistRemoved(SqliteConnection conn)
@@ -181,7 +202,14 @@ public sealed class SqliteRepository
         var retakes = conn.Query<RetakeScenario>(
             "SELECT CurrentGrade, RetakeBaseId FROM RetakeScenarios").ToList();
 
-        return new AppData(courses, profs, rooms, crosses, retakes);
+        var schedulePolicyJson = conn.QueryFirstOrDefault<string?>(
+            "SELECT SchedulePolicyJson FROM AppSettings WHERE Id = 1");
+        var schedulePolicy = DeserializeSchedulePolicy(schedulePolicyJson);
+
+        return new AppData(courses, profs, rooms, crosses, retakes)
+        {
+            SchedulePolicy = schedulePolicy,
+        };
     }
 
     public void SaveAll(AppData data)
@@ -219,7 +247,32 @@ public sealed class SqliteRepository
             conn.Execute("INSERT INTO RetakeScenarios (CurrentGrade,RetakeBaseId) VALUES (@CurrentGrade,@RetakeBaseId)",
                 r, tx);
 
+        conn.Execute(
+            @"INSERT INTO AppSettings (Id, SchedulePolicyJson)
+              VALUES (1, @SchedulePolicyJson)
+              ON CONFLICT(Id) DO UPDATE SET SchedulePolicyJson = excluded.SchedulePolicyJson",
+            new { SchedulePolicyJson = JsonSerializer.Serialize(data.SchedulePolicy) },
+            tx);
+
         tx.Commit();
+    }
+
+    private static SchedulePolicy DeserializeSchedulePolicy(string? json)
+    {
+        if (string.IsNullOrWhiteSpace(json))
+            return SchedulePolicy.Default;
+
+        try
+        {
+            var policy = JsonSerializer.Deserialize<SchedulePolicy>(json);
+            return policy != null && Enum.IsDefined(policy.LunchMode)
+                ? policy
+                : SchedulePolicy.Default;
+        }
+        catch (JsonException)
+        {
+            return SchedulePolicy.Default;
+        }
     }
 
     private sealed class SavedTimetableRow
@@ -229,6 +282,7 @@ public sealed class SqliteRepository
         public string CreatedAt { get; set; } = "";
         public string AssignmentsJson { get; set; } = "[]";
         public string? SnapshotJson { get; set; }
+        public string? LunchPeriodsJson { get; set; }
     }
 
     private sealed class SavedManualCrossLinkDbRow
@@ -286,7 +340,10 @@ public sealed class SqliteRepository
                 DateTime.Parse(r.CreatedAt),
                 JsonSerializer.Deserialize<List<TimetableAssignmentRow>>(r.AssignmentsJson) ?? new(),
                 crossLinks.TryGetValue(r.Id, out var links) ? links : Array.Empty<SavedManualCrossLinkRow>(),
-                r.SnapshotJson))
+                r.SnapshotJson,
+                string.IsNullOrWhiteSpace(r.LunchPeriodsJson)
+                    ? null
+                    : JsonSerializer.Deserialize<Dictionary<int, int>>(r.LunchPeriodsJson)))
             .ToList();
     }
 
@@ -295,8 +352,9 @@ public sealed class SqliteRepository
         using var conn = Open();
         using var tx = conn.BeginTransaction();
         conn.Execute(
-            @"INSERT OR REPLACE INTO SavedTimetables (Id, Name, CreatedAt, AssignmentsJson, SnapshotJson)
-              VALUES (@Id, @Name, @CreatedAt, @AssignmentsJson, @SnapshotJson)",
+            @"INSERT OR REPLACE INTO SavedTimetables
+              (Id, Name, CreatedAt, AssignmentsJson, SnapshotJson, LunchPeriodsJson)
+              VALUES (@Id, @Name, @CreatedAt, @AssignmentsJson, @SnapshotJson, @LunchPeriodsJson)",
             new
             {
                 t.Id,
@@ -304,6 +362,9 @@ public sealed class SqliteRepository
                 CreatedAt = t.CreatedAt.ToString("O"),
                 AssignmentsJson = JsonSerializer.Serialize(t.Assignments),
                 t.SnapshotJson,
+                LunchPeriodsJson = t.LunchPeriodsByDay == null
+                    ? null
+                    : JsonSerializer.Serialize(t.LunchPeriodsByDay),
             },
             tx);
 
@@ -438,14 +499,14 @@ public sealed class SqliteRepository
         Id = r.Id,
         Name = r.Name,
         UnavailableSlots = JsonSerializer.Deserialize<List<TimeSlot>>(r.UnavailableSlotsJson) ?? new(),
-        UnavailableRooms = JsonSerializer.Deserialize<List<string>>(r.UnavailableRoomsJson) ?? new(),
+        UnavailableRooms = new(),
     };
 
     private static object FromProf(Professor p) => new
     {
         p.Id, p.Name,
         UnavailableSlotsJson = JsonSerializer.Serialize(p.UnavailableSlots),
-        UnavailableRoomsJson = JsonSerializer.Serialize(p.UnavailableRooms),
+        UnavailableRoomsJson = "[]",
     };
 
     private static CrossGroup ToCross(CrossRow r) => new()

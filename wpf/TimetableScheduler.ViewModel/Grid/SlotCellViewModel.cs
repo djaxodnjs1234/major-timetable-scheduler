@@ -7,17 +7,20 @@ public sealed partial class SlotCellViewModel : ObservableObject
 {
     public int Day { get; }
     public int Period { get; }
-    public bool IsLunch => Period == 5;
+
+    [ObservableProperty]
+    private bool isLunch;
 
     public ObservableCollection<CellAssignment> Items { get; } = new();
 
     [ObservableProperty]
     private bool isOccupied;
 
-    public SlotCellViewModel(int day, int period)
+    public SlotCellViewModel(int day, int period, bool isLunch = false)
     {
         Day = day;
         Period = period;
+        IsLunch = isLunch;
     }
 
     public void Clear()

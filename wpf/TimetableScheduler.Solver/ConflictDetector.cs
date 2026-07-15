@@ -15,11 +15,11 @@ public enum ConflictType
     FixedRoomViolation,
     CourseUnavailableRoomViolation,
     BlockStartViolation,
-    ProfUnavailableRoomViolation,
     ProfRoomInconsistent,
     SameCourseSameDayConflict,
     AcademicLevelTimeBandViolation,
-    RoomCapacityViolation,
+    RetakeConflict,
+    CourseRoomInconsistent,
 }
 
 public sealed record ConflictItem(
@@ -39,20 +39,21 @@ public static class ConflictDetector
         IReadOnlyList<CrossGroup>? crosses = null,
         Func<string, string, int, int, bool>? isManualGradeOverlapAllowed = null,
         bool allowGraduateDaytimeOverflow = false,
-        IReadOnlyList<Room>? rooms = null)
+        SchedulePolicy? schedulePolicy = null,
+        IReadOnlyDictionary<int, int>? lunchPeriodsByDay = null)
     {
+        schedulePolicy ??= SchedulePolicy.Default;
+        lunchPeriodsByDay ??=
+            SchedulePolicyRules.StaticLunchPeriodsByDay(schedulePolicy, Constants.Days);
         var list = new List<ConflictItem>();
         var profMap = professors?.ToDictionary(p => p.Id) ?? new Dictionary<string, Professor>();
-        var roomMap = rooms?
-            .GroupBy(r => r.Id, StringComparer.Ordinal)
-            .ToDictionary(g => g.Key, g => g.First(), StringComparer.Ordinal)
-            ?? new Dictionary<string, Room>();
         var resolved = assignment
             .Select(a => (Assignment: a, Course: ResolveCourseForAssignment(a, courses)))
             .ToList();
 
-        // HC-12: lunch period (5) — never allowed
-        foreach (var a in assignment.Where(a => a.Period == Constants.LunchPeriod))
+        // HC-12: the configured or solver-selected lunch cell must stay empty.
+        foreach (var a in assignment.Where(a => SchedulePolicyRules.IsLunch(
+                     schedulePolicy, lunchPeriodsByDay, a.Day, a.Period)))
         {
             var name = ResolveCourseForAssignment(a, courses)?.Name ?? a.CourseId;
             list.Add(new ConflictItem(
@@ -66,9 +67,11 @@ public static class ConflictDetector
         // undergraduate courses use daytime only.
         foreach (var (a, course) in resolved)
         {
-            if (course == null || a.Period == Constants.LunchPeriod) continue;
+            if (course == null || SchedulePolicyRules.IsLunch(
+                    schedulePolicy, lunchPeriodsByDay, a.Day, a.Period)) continue;
             var allowedPeriods =
-                AcademicLevelTimePolicy.AllowedPeriods(course.Grade, allowGraduateDaytimeOverflow);
+                AcademicLevelTimePolicy.AllowedPeriods(
+                    course.Grade, allowGraduateDaytimeOverflow, schedulePolicy);
             if (allowedPeriods.Contains(a.Period)) continue;
 
             list.Add(new ConflictItem(
@@ -116,12 +119,38 @@ public static class ConflictDetector
         // HC-13: fixed courses must stay on their exact fixed slots.
         foreach (var c in courses.Where(c => c.IsFixed && !c.IsSchoolFixed))
         {
-            var actual = assignment
+            var courseAssignments = assignment
                 .Where(a => ReferenceEquals(ResolveCourseForAssignment(a, courses), c))
+                .ToList();
+            var actual = courseAssignments
                 .Select(a => new TimeSlot(a.Day, a.Period))
                 .Distinct()
                 .ToHashSet();
             var expected = c.FixedSlots.ToHashSet();
+            if (actual.SetEquals(expected))
+                continue;
+
+            var extraGroups = courseAssignments
+                .Where(a => !expected.Contains(new TimeSlot(a.Day, a.Period)))
+                .GroupBy(a => (a.Day, a.Period))
+                .OrderBy(g => g.Key.Day)
+                .ThenBy(g => g.Key.Period)
+                .ToList();
+            if (extraGroups.Count > 0)
+            {
+                foreach (var group in extraGroups)
+                {
+                    list.Add(new ConflictItem(
+                        ConflictType.FixedTimeViolation, ConflictSeverity.Error,
+                        $"{c.Name}({c.Id})은 고정 시간표를 벗어날 수 없습니다.",
+                        group.Key.Day,
+                        group.Key.Period,
+                        group.DistinctBy(AssignmentConflictIdentity).ToList()));
+                }
+
+                continue;
+            }
+
             if (!actual.SetEquals(expected))
             {
                 list.Add(new ConflictItem(
@@ -155,7 +184,8 @@ public static class ConflictDetector
             foreach (var pid in DomainHelpers.CourseProfIds(c))
             {
                 if (!profMap.TryGetValue(pid, out var prof)) continue;
-                if (a.Period == Constants.LunchPeriod) continue;
+                if (SchedulePolicyRules.IsLunch(
+                        schedulePolicy, lunchPeriodsByDay, a.Day, a.Period)) continue;
                 if (prof.UnavailableSlots.Contains(new TimeSlot(a.Day, a.Period)))
                 {
                     list.Add(new ConflictItem(
@@ -196,33 +226,7 @@ public static class ConflictDetector
                 new[] { a }));
         }
 
-        if (roomMap.Count > 0)
-        {
-            foreach (var occurrence in BuildCapacityOccurrences(resolved))
-            {
-                var (a, c) = occurrence;
-                if (c?.ExpectedEnrollment is not int enrollment || enrollment <= 0) continue;
-                if (!roomMap.TryGetValue(a.RoomId, out var room) || room.Capacity <= 0) continue;
-                if (enrollment <= room.Capacity) continue;
-
-                list.Add(new ConflictItem(
-                    ConflictType.RoomCapacityViolation,
-                    ConflictSeverity.Error,
-                    $"{c.Name}({c.Id})의 수강 인원은 {enrollment}명이고 {room.Name}의 수용 인원은 {room.Capacity}명입니다.",
-                    a.Day,
-                    a.Period,
-                    resolved
-                        .Where(x => x.Course != null
-                            && ReferenceEquals(x.Course, c)
-                            && x.Assignment.Day == a.Day
-                            && x.Assignment.RoomId == a.RoomId
-                            && x.Assignment.AssignmentId == a.AssignmentId)
-                        .Select(x => x.Assignment)
-                        .ToList()));
-            }
-        }
-
-        // HC-19: length-2 blocks must start at 1/3/6/8.
+        // HC-19: length-2 blocks must start at a consecutive non-lunch span.
         var runs = TimetableRuns.ComputeRuns(assignment);
         foreach (var c in courses)
         {
@@ -238,10 +242,18 @@ public static class ConflictDetector
                     .Where(a => a.CourseId == cid && a.Day == d && a.Period >= p && a.Period < p + len)
                     .FirstOrDefault(a => ReferenceEquals(ResolveCourseForAssignment(a, courses), c));
                 if (runAssignment == default) continue;
-                if (Constants.Len2StartPeriods.Contains(p)) continue;
+                var allowedPeriods = AcademicLevelTimePolicy.AllowedPeriods(
+                    c.Grade, allowGraduateDaytimeOverflow, schedulePolicy);
+                if (lunchPeriodsByDay.TryGetValue(d, out var lunchPeriod))
+                    allowedPeriods = allowedPeriods.Where(period => period != lunchPeriod).ToArray();
+                var allowedStarts = SchedulePolicyRules.PossibleBlockStarts(
+                    schedulePolicy,
+                    allowedPeriods,
+                    2);
+                if (allowedStarts.Contains(p)) continue;
                 list.Add(new ConflictItem(
                     ConflictType.BlockStartViolation, ConflictSeverity.Error,
-                    $"{c.Name}({c.Id})의 2시간 수업은 1, 3, 6, 8교시에만 시작할 수 있습니다.",
+                    $"{c.Name}({c.Id})의 2시간 수업 시작 교시가 현재 점심시간 정책과 맞지 않습니다.",
                     d, p,
                     assignment
                         .Where(a => a.CourseId == cid && a.Day == d && a.Period >= p && a.Period < p + len)
@@ -278,27 +290,6 @@ public static class ConflictDetector
                 g.Key.Day,
                 firstRange.Start,
                 g.Select(x => x.Assignment).ToList()));
-        }
-
-        // HC-21: professor unavailable rooms for auto-assigned courses.
-        foreach (var a in assignment)
-        {
-            var c = ResolveCourseForAssignment(a, courses);
-            if (c == null) continue;
-            if (c.FixedRooms.Count > 0) continue;
-            var checkedProfessorIds = new HashSet<string>(StringComparer.Ordinal);
-            foreach (var professorId in DomainHelpers.CourseProfIds(c))
-            {
-                if (!checkedProfessorIds.Add(professorId)) continue;
-                if (!profMap.TryGetValue(professorId, out var prof)) continue;
-                if (!prof.UnavailableRooms.Contains(a.RoomId)) continue;
-
-                list.Add(new ConflictItem(
-                    ConflictType.ProfUnavailableRoomViolation, ConflictSeverity.Error,
-                    $"{c.Name}({c.Id})은 교수 {professorId}의 불가 강의실을 사용할 수 없습니다.",
-                    a.Day, a.Period,
-                    new[] { a }));
-            }
         }
 
         // HC-08: same baseId different sections at same slot
@@ -365,29 +356,6 @@ public static class ConflictDetector
         }
 
         return list;
-    }
-
-    private static IEnumerable<(SolutionAssignment Assignment, Course? Course)> BuildCapacityOccurrences(
-        IReadOnlyList<(SolutionAssignment Assignment, Course? Course)> resolved)
-    {
-        foreach (var group in resolved.GroupBy(x => string.Join(
-                     "\u001f",
-                     x.Assignment.AssignmentId ?? "",
-                     x.Assignment.CourseId,
-                     x.Assignment.Day,
-                     x.Assignment.RoomId), StringComparer.Ordinal))
-        {
-            var rows = group.OrderBy(x => x.Assignment.Period).ToList();
-            var i = 0;
-            while (i < rows.Count)
-            {
-                yield return rows[i];
-                var j = i;
-                while (j + 1 < rows.Count && rows[j + 1].Assignment.Period == rows[j].Assignment.Period + 1)
-                    j++;
-                i = j + 1;
-            }
-        }
     }
 
     private static Course? ResolveCourseForAssignment(

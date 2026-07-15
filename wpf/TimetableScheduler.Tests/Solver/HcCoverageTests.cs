@@ -50,7 +50,7 @@ public class HcCoverageTests
         // R1, R3 must be 0; R2 should be the assigned room (1 occupancy)
         int r2Count = 0;
         for (int d = 0; d < Constants.Days; d++)
-            foreach (var p in Constants.ValidPeriods)
+            foreach (var p in SchedulePolicyRules.CandidateInstructionalPeriods(SchedulePolicy.Default))
             {
                 Assert.Equal(0, solver.Value(build.X[("X-01", d, p, "R1")]));
                 Assert.Equal(0, solver.Value(build.X[("X-01", d, p, "R3")]));
@@ -82,11 +82,11 @@ public class HcCoverageTests
         {
             foreach (var period in Constants.NightPeriods)
                 Assert.Equal(0, solver.Value(build.X[("UG-01", day, period, "R1")]));
-            foreach (var period in Constants.DaytimePeriods)
+            foreach (var period in SchedulePolicyRules.CandidateDaytimePeriods(SchedulePolicy.Default))
                 Assert.Equal(0, solver.Value(build.X[("GR-01", day, period, "R1")]));
         }
 
-        Assert.Contains(Constants.DaytimePeriods, period =>
+        Assert.Contains(SchedulePolicyRules.CandidateDaytimePeriods(SchedulePolicy.Default), period =>
             Enumerable.Range(0, Constants.Days).Any(day => solver.Value(build.Y[("UG-01", day, period)]) == 1));
         Assert.Contains(Constants.NightPeriods, period =>
             Enumerable.Range(0, Constants.Days).Any(day => solver.Value(build.Y[("GR-01", day, period)]) == 1));
@@ -117,7 +117,7 @@ public class HcCoverageTests
 
         var daytimeSlots = courses.Sum(course =>
             Enumerable.Range(0, Constants.Days).Sum(day =>
-                Constants.DaytimePeriods.Sum(period =>
+                SchedulePolicyRules.CandidateDaytimePeriods(SchedulePolicy.Default).Sum(period =>
                     (int)solver.Value(build.Y[(course.Id, day, period)]))));
 
         Assert.Equal(1, AcademicLevelTimePolicy.GraduateDaytimeOverflowSlots(courses));
@@ -137,7 +137,7 @@ public class HcCoverageTests
         var r1Count = 0;
         var r2Count = 0;
         for (int d = 0; d < Constants.Days; d++)
-            foreach (var p in Constants.ValidPeriods)
+            foreach (var p in SchedulePolicyRules.CandidateInstructionalPeriods(SchedulePolicy.Default))
             {
                 r1Count += (int)solver.Value(build.X[("X-01", d, p, "R1")]);
                 r2Count += (int)solver.Value(build.X[("X-01", d, p, "R2")]);
@@ -147,7 +147,7 @@ public class HcCoverageTests
     }
 
     [Fact]
-    public void HC21_ProfessorUnavailableAllRooms_IsInfeasible()
+    public void DeprecatedProfessorUnavailableRooms_AreIgnored()
     {
         var (courses, profs, rooms) = MakeBaseSetup();
         profs[0].UnavailableRooms = rooms.Select(r => r.Id).ToList();
@@ -155,7 +155,7 @@ public class HcCoverageTests
         var build = ModelBuilder.Build(courses, profs, rooms);
         var solver = new CpSolver();
 
-        Assert.Equal(CpSolverStatus.Infeasible, solver.Solve(build.Model));
+        Assert.NotEqual(CpSolverStatus.Infeasible, solver.Solve(build.Model));
     }
 
     [Fact]
@@ -183,7 +183,7 @@ public class HcCoverageTests
         // Find the slot. Both R1 and R2 must be 1 in the same (d, p).
         bool found = false;
         for (int d = 0; d < Constants.Days; d++)
-            foreach (var p in Constants.ValidPeriods)
+            foreach (var p in SchedulePolicyRules.CandidateInstructionalPeriods(SchedulePolicy.Default))
             {
                 var v1 = solver.Value(build.X[("Cap-01", d, p, "R1")]);
                 var v2 = solver.Value(build.X[("Cap-01", d, p, "R2")]);
@@ -217,7 +217,7 @@ public class HcCoverageTests
         var solver = new CpSolver();
         Assert.True(solver.Solve(build.Model) is CpSolverStatus.Feasible or CpSolverStatus.Optimal);
 
-        // y must be 1 at the fixed slot (room is decided by HC-21/HC-14)
+        // y must be 1 at the fixed slot (room is decided by fixed/course room constraints)
         Assert.Equal(1, solver.Value(build.Y[("Y-01", 2, 3)]));
     }
 
@@ -253,7 +253,7 @@ public class HcCoverageTests
 
         // A-01 == B-02 occupancy; A-02 == B-01 occupancy
         for (int d = 0; d < Constants.Days; d++)
-            foreach (var p in Constants.ValidPeriods)
+            foreach (var p in SchedulePolicyRules.CandidateInstructionalPeriods(SchedulePolicy.Default))
             {
                 Assert.Equal(solver.Value(build.Y[("A-01", d, p)]), solver.Value(build.Y[("B-02", d, p)]));
                 Assert.Equal(solver.Value(build.Y[("A-02", d, p)]), solver.Value(build.Y[("B-01", d, p)]));
@@ -341,7 +341,7 @@ public class HcCoverageTests
         // A can only use R2 and B can only use R1.
         string? roomA = null, roomB = null;
         for (int d = 0; d < Constants.Days; d++)
-            foreach (var p in Constants.ValidPeriods)
+            foreach (var p in SchedulePolicyRules.CandidateInstructionalPeriods(SchedulePolicy.Default))
                 foreach (var r in rooms)
                 {
                     if (solver.Value(build.X[("A-01", d, p, r.Id)]) == 1) roomA = r.Id;

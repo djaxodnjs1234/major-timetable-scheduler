@@ -18,10 +18,12 @@ public static class TimetableDiagnostics
         IReadOnlyList<Room> rooms,
         IReadOnlyList<CrossGroup>? crosses = null,
         bool hasUnsavedEdits = false,
-        string? unsavedEditSummary = null)
+        string? unsavedEditSummary = null,
+        SchedulePolicy? schedulePolicy = null)
     {
+        schedulePolicy ??= SchedulePolicy.Default;
         var issues = new List<TimetableDiagnostic>();
-        AddBasicInputErrors(issues, courses, professors, rooms, crosses);
+        AddBasicInputErrors(issues, courses, professors, rooms, crosses, schedulePolicy);
 
         if (hasUnsavedEdits)
         {
@@ -40,10 +42,14 @@ public static class TimetableDiagnostics
         IReadOnlyList<Room> rooms,
         IReadOnlyList<CrossGroup>? crosses = null,
         IReadOnlyList<RetakeScenario>? retakes = null,
-        bool considerRetakeStudents = false)
+        bool considerRetakeStudents = false,
+        SchedulePolicy? schedulePolicy = null)
     {
+        schedulePolicy ??= SchedulePolicy.Default;
         var issues = new List<TimetableDiagnostic>();
-        AddGenerationErrors(issues, courses, professors, rooms, crosses, retakes, considerRetakeStudents);
+        AddGenerationErrors(
+            issues, courses, professors, rooms, crosses, retakes,
+            considerRetakeStudents, schedulePolicy);
         return Distinct(issues);
     }
 
@@ -52,7 +58,8 @@ public static class TimetableDiagnostics
         IReadOnlyList<Course> courses,
         IReadOnlyList<Professor> professors,
         IReadOnlyList<Room> rooms,
-        IReadOnlyList<CrossGroup>? crosses)
+        IReadOnlyList<CrossGroup>? crosses,
+        SchedulePolicy schedulePolicy)
     {
         var professorIds = professors.Select(p => p.Id).ToHashSet(StringComparer.Ordinal);
         var roomIds = rooms.Select(r => r.Id).ToHashSet(StringComparer.Ordinal);
@@ -68,7 +75,7 @@ public static class TimetableDiagnostics
 
             if (course.IsSchoolFixed)
             {
-                AddSchoolFixedShapeErrors(issues, course, "IE");
+                AddSchoolFixedShapeErrors(issues, course, "IE", schedulePolicy);
                 continue;
             }
 
@@ -81,7 +88,8 @@ public static class TimetableDiagnostics
                 if (!professorIds.Contains(pid))
                     Add(issues, "IE-006", $"{courseName} 팀티칭 교수({pid})를 찾을 수 없습니다. 팀티칭 교수를 다시 선택하세요.");
 
-            AddCourseShapeErrors(issues, course, "IE", allowGraduateDaytimeOverflow);
+            AddCourseShapeErrors(
+                issues, course, "IE", allowGraduateDaytimeOverflow, schedulePolicy);
 
             if (rooms.Count == 0)
                 continue;
@@ -112,10 +120,17 @@ public static class TimetableDiagnostics
             Add(issues, "IE-027", "강의실 관리: 강의실이 하나도 없습니다. 시간표 생성을 위해 강의실을 하나 이상 추가하세요.");
 
         AddFixedOverlapInputErrors(issues, schedulableCourses, professors, rooms, crosses);
-        AddRoomAndTimeCandidateInputErrors(issues, schedulableCourses, professors, rooms, allowGraduateDaytimeOverflow);
-        AddSectionAdjacencyErrors(issues, schedulableCourses, professors, "IE-041", inputLocation: true, allowGraduateDaytimeOverflow);
+        AddFlexibleLunchFixedSlotErrors(issues, courses, "IE", schedulePolicy);
+        AddRoomAndTimeCandidateInputErrors(
+            issues, schedulableCourses, professors, rooms,
+            allowGraduateDaytimeOverflow, schedulePolicy);
+        AddSectionAdjacencyErrors(
+            issues, schedulableCourses, professors, "IE-041",
+            inputLocation: true, allowGraduateDaytimeOverflow, schedulePolicy);
         AddCrossInputErrors(issues, schedulableCourses, crosses);
-        AddGradeSlotCapacityErrors(issues, schedulableCourses, crosses, "IE-038", allowGraduateDaytimeOverflow);
+        AddGradeSlotCapacityErrors(
+            issues, schedulableCourses, crosses, "IE-038",
+            allowGraduateDaytimeOverflow, schedulePolicy);
     }
 
     private static void AddGenerationErrors(
@@ -125,13 +140,14 @@ public static class TimetableDiagnostics
         IReadOnlyList<Room> rooms,
         IReadOnlyList<CrossGroup>? crosses,
         IReadOnlyList<RetakeScenario>? retakes,
-        bool considerRetakeStudents)
+        bool considerRetakeStudents,
+        SchedulePolicy schedulePolicy)
     {
         var schedulableCourses = SchoolFixedTimePolicy.SchedulableCourses(courses);
         var allowGraduateDaytimeOverflow =
             AcademicLevelTimePolicy.AllowsGraduateDaytimeOverflow(schedulableCourses, crosses);
         foreach (var course in courses.Where(course => course.IsSchoolFixed))
-            AddSchoolFixedShapeErrors(issues, course, "GE");
+            AddSchoolFixedShapeErrors(issues, course, "GE", schedulePolicy);
 
         foreach (var course in schedulableCourses)
         {
@@ -142,21 +158,25 @@ public static class TimetableDiagnostics
             if (course.IsFixed && course.FixedSlots.Count == 0)
                 Add(issues, "GE-001", $"{courseName} 고정 시간이 비어 있습니다. 시간고정을 해제하거나 시간을 선택하세요.");
 
-            if (course.IsFixed && course.FixedSlots.Any(slot => slot.Period == Constants.LunchPeriod))
-                Add(issues, "GE-002", $"{courseName} 고정 시간이 점심시간 5교시를 포함합니다. 다른 교시로 변경하세요.");
+            var staticLunch = SchedulePolicyRules.StaticLunchPeriod(schedulePolicy);
+            if (course.IsFixed && staticLunch.HasValue
+                && course.FixedSlots.Any(slot => slot.Period == staticLunch.Value))
+                Add(issues, "GE-002", $"{courseName} 고정 시간이 현재 점심시간인 {staticLunch.Value}교시를 포함합니다. 다른 교시로 변경하세요.");
 
-            if (course.IsFixed && course.FixedSlots.Any(slot => !IsAllowedPeriod(course, slot.Period, allowGraduateDaytimeOverflow)))
+            if (course.IsFixed && course.FixedSlots.Any(slot => !IsAllowedPeriod(
+                    course, slot.Period, allowGraduateDaytimeOverflow, schedulePolicy)))
                 Add(issues, "GE-029", $"{courseName} 고정 시간이 수업 가능 시간대와 맞지 않습니다. 대학원 과목은 야간 10~13교시, 학부 과목은 주간 1~9교시(점심 제외)만 선택하세요.");
 
             if (course.BlockStructure.Count > 0 && course.BlockStructure.Sum() != course.HoursPerWeek)
                 Add(issues, "GE-003", $"{courseName} 블록구조 합계가 주당 수업시간과 다릅니다. 블록구조 또는 시수를 수정하세요.");
 
-            if (rooms.Count > 0 && CandidateRooms(course, null, rooms).Count == 0)
+            if (rooms.Count > 0 && CandidateRooms(course, rooms).Count == 0)
                 Add(issues, "GE-004", $"{courseName} 과목에 사용 가능한 강의실이 없습니다. 불가강의실/고정강의실을 수정하세요.");
 
             foreach (var block in EffectiveBlocks(course))
             {
-                if (block > MaxContiguousValidPeriods(course, allowGraduateDaytimeOverflow))
+                if (block > MaxContiguousValidPeriods(
+                        course, allowGraduateDaytimeOverflow, schedulePolicy))
                     Add(issues, "GE-013", $"{courseName} 블록 길이 {block}시간은 하루 안에 배치할 수 없습니다. 블록구조를 수정하세요.");
             }
 
@@ -172,35 +192,43 @@ public static class TimetableDiagnostics
                 if (!professorMap.TryGetValue(pid, out var professor))
                     continue;
 
-                if (rooms.Count > 0 && CandidateRooms(course, professor, rooms).Count == 0)
-                    Add(issues, "GE-005", $"{CourseLabel(course)} / {professor.Name} 조건을 만족하는 강의실이 없습니다. 교수 강의실 조건 또는 과목 불가강의실을 수정하세요.");
-
                 if (course.IsFixed && course.FixedSlots.Any(slot => IsUnavailable(professor, slot)))
                     Add(issues, "GE-006", $"{CourseLabel(course)} 고정 시간이 {professor.Name} 교수의 불가 시간과 겹칩니다. 불가 시간 또는 시간고정을 수정하세요.");
             }
         }
 
         AddFixedOverlapGenerationErrors(issues, schedulableCourses, professors, rooms, crosses);
-        AddTeamTeachingGenerationErrors(issues, schedulableCourses, professors, rooms, allowGraduateDaytimeOverflow);
-        AddSectionAdjacencyErrors(issues, schedulableCourses, professors, "GE-030", inputLocation: false, allowGraduateDaytimeOverflow);
+        AddFlexibleLunchFixedSlotErrors(issues, courses, "GE", schedulePolicy);
+        AddTeamTeachingGenerationErrors(
+            issues, schedulableCourses, professors, rooms,
+            allowGraduateDaytimeOverflow, schedulePolicy);
+        AddSectionAdjacencyErrors(
+            issues, schedulableCourses, professors, "GE-030",
+            inputLocation: false, allowGraduateDaytimeOverflow, schedulePolicy);
         AddCrossGenerationErrors(issues, schedulableCourses, crosses);
         AddGraduateThreeHourBlockCapacityErrors(issues, schedulableCourses, crosses, allowGraduateDaytimeOverflow);
-        AddGradeSlotCapacityErrors(issues, schedulableCourses, crosses, "GE-027", allowGraduateDaytimeOverflow);
-        AddTightGradePackingErrors(issues, schedulableCourses, professors, crosses, allowGraduateDaytimeOverflow);
+        AddGradeSlotCapacityErrors(
+            issues, schedulableCourses, crosses, "GE-027",
+            allowGraduateDaytimeOverflow, schedulePolicy);
+        AddTightGradePackingErrors(
+            issues, schedulableCourses, professors, crosses,
+            allowGraduateDaytimeOverflow, schedulePolicy);
         AddRetakeGenerationErrors(issues, schedulableCourses, crosses, retakes, considerRetakeStudents);
     }
 
     private static void AddSchoolFixedShapeErrors(
         List<TimetableDiagnostic> issues,
         Course course,
-        string prefix)
+        string prefix,
+        SchedulePolicy schedulePolicy)
     {
         var courseName = prefix == "IE" ? InputCourseLocation(course) : CourseLabel(course);
         if (!course.IsFixed || course.FixedSlots.Count == 0)
             Add(issues, $"{prefix}-010", $"{courseName} 학교 고정 과목은 고정 시간이 필요합니다. 시간고정을 켜고 시간을 선택하세요.");
 
-        if (course.FixedSlots.Any(slot => slot.Period == Constants.LunchPeriod))
-            Add(issues, $"{prefix}-011", $"{courseName} 학교 고정 시간에 점심시간 5교시를 포함할 수 없습니다.");
+        var staticLunch = SchedulePolicyRules.StaticLunchPeriod(schedulePolicy);
+        if (staticLunch.HasValue && course.FixedSlots.Any(slot => slot.Period == staticLunch.Value))
+            Add(issues, $"{prefix}-011", $"{courseName} 학교 고정 시간에 현재 점심시간인 {staticLunch.Value}교시를 포함할 수 없습니다.");
 
         if (course.FixedSlots.Count > 0 && course.FixedSlots.Count != course.HoursPerWeek)
             Add(issues, $"{prefix}-012", $"{courseName} 학교 고정 시간 개수가 주당 수업시간과 맞지 않습니다.");
@@ -213,7 +241,8 @@ public static class TimetableDiagnostics
         List<TimetableDiagnostic> issues,
         Course course,
         string prefix,
-        bool allowGraduateDaytimeOverflow)
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy schedulePolicy)
     {
         var courseName = prefix == "IE" ? InputCourseLocation(course) : CourseLabel(course);
         if (AcademicLevelTimePolicy.IsGraduateOverMaxHours(course))
@@ -232,10 +261,12 @@ public static class TimetableDiagnostics
             if (course.FixedSlots.Count == 0)
                 Add(issues, $"{prefix}-010", $"{courseName} 시간고정이 켜졌지만 고정 시간이 비어 있습니다. 시간을 선택하세요.");
 
-            if (course.FixedSlots.Any(slot => slot.Period == Constants.LunchPeriod))
-                Add(issues, $"{prefix}-011", $"{courseName} 고정 시간이 점심시간 5교시를 포함합니다. 다른 교시를 선택하세요.");
+            var staticLunch = SchedulePolicyRules.StaticLunchPeriod(schedulePolicy);
+            if (staticLunch.HasValue && course.FixedSlots.Any(slot => slot.Period == staticLunch.Value))
+                Add(issues, $"{prefix}-011", $"{courseName} 고정 시간이 현재 점심시간인 {staticLunch.Value}교시를 포함합니다. 다른 교시를 선택하세요.");
 
-            if (course.FixedSlots.Any(slot => !IsAllowedPeriod(course, slot.Period, allowGraduateDaytimeOverflow)))
+            if (course.FixedSlots.Any(slot => !IsAllowedPeriod(
+                    course, slot.Period, allowGraduateDaytimeOverflow, schedulePolicy)))
                 Add(issues, $"{prefix}-040", $"{courseName} 고정 시간이 수업 가능 시간대와 맞지 않습니다. 대학원 과목은 야간 10~13교시, 학부 과목은 주간 1~9교시(점심 제외)만 선택하세요.");
 
             if (course.FixedSlots.Count > 0 && course.FixedSlots.Count != course.HoursPerWeek)
@@ -275,6 +306,42 @@ public static class TimetableDiagnostics
                 issues,
                 "IE-014",
                 $"{InputCourseList(conflict.Courses)}: 같은 고정 시간({SlotLabels(new[] { conflict.Slot })})에 배정 가능한 강의실이 부족합니다. 시간고정 또는 강의실 조건을 수정하세요.");
+        }
+    }
+
+    private static void AddFlexibleLunchFixedSlotErrors(
+        List<TimetableDiagnostic> issues,
+        IReadOnlyList<Course> courses,
+        string prefix,
+        SchedulePolicy schedulePolicy)
+    {
+        if (schedulePolicy.LunchMode != LunchPolicyMode.BanOneOfPeriods4And5)
+            return;
+
+        foreach (var day in Enumerable.Range(0, Constants.Days))
+        {
+            var fixedCourses = courses
+                .Where(course => course.IsFixed)
+                .Where(course => course.FixedSlots.Any(slot =>
+                    slot.Day == day && SchedulePolicyRules.IsLunchCandidate(slot.Period)))
+                .ToList();
+            var usedCandidates = fixedCourses
+                .SelectMany(course => course.FixedSlots)
+                .Where(slot => slot.Day == day && SchedulePolicyRules.IsLunchCandidate(slot.Period))
+                .Select(slot => slot.Period)
+                .ToHashSet();
+            if (!usedCandidates.Contains(SchedulePolicyRules.FirstLunchCandidate)
+                || !usedCandidates.Contains(SchedulePolicyRules.SecondLunchCandidate))
+                continue;
+
+            var id = prefix == "IE" ? "IE-043" : "GE-034";
+            var labels = prefix == "IE"
+                ? string.Join(", ", fixedCourses.Select(InputCourseLocation))
+                : string.Join(", ", fixedCourses.Select(CourseLabel));
+            Add(
+                issues,
+                id,
+                $"{DayLabel(day)}요일 4교시와 5교시가 모두 고정되어 점심시간을 정할 수 없습니다. 두 교시 중 하나는 비워야 합니다. 관련 과목: {labels}");
         }
     }
 
@@ -319,7 +386,8 @@ public static class TimetableDiagnostics
         IReadOnlyList<Course> courses,
         IReadOnlyList<Professor> professors,
         IReadOnlyList<Room> rooms,
-        bool allowGraduateDaytimeOverflow)
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy schedulePolicy)
     {
         var professorMap = professors.ToDictionary(p => p.Id, StringComparer.Ordinal);
         foreach (var course in courses)
@@ -329,11 +397,9 @@ public static class TimetableDiagnostics
                 if (!professorMap.TryGetValue(pid, out var professor))
                     continue;
 
-                if (rooms.Count > 0 && CandidateRooms(course, professor, rooms).Count == 0)
-                    Add(issues, "IE-023", $"{InputCourseLocation(course)} / {InputProfessorLocation(professor)}: 조건으로 사용 가능한 강의실이 없습니다. 교수 강의실 조건 또는 과목 불가강의실을 수정하세요.");
-
                 var requiredSlots = RequiredSlotCount(course);
-                var availableSlots = AllowedPeriods(course, allowGraduateDaytimeOverflow)
+                var availableSlots = AllowedPeriods(
+                        course, allowGraduateDaytimeOverflow, schedulePolicy)
                     .SelectMany(period => Enumerable.Range(0, Constants.Days).Select(day => new TimeSlot(day, period)))
                     .Count(slot => !IsUnavailable(professor, slot));
                 if (!course.IsFixed && availableSlots < requiredSlots)
@@ -350,14 +416,13 @@ public static class TimetableDiagnostics
                 if (teachingProfessors.Count >= 2)
                 {
                     var requiredSlots = RequiredSlotCount(course);
-                    var commonSlots = AllowedPeriods(course, allowGraduateDaytimeOverflow)
+                    var commonSlots = AllowedPeriods(
+                            course, allowGraduateDaytimeOverflow, schedulePolicy)
                         .SelectMany(period => Enumerable.Range(0, Constants.Days).Select(day => new TimeSlot(day, period)))
                         .Count(slot => teachingProfessors.All(professor => !IsUnavailable(professor, slot)));
                     if (!course.IsFixed && commonSlots < requiredSlots)
                         Add(issues, "IE-025", $"{InputCourseLocation(course)} / {string.Join(", ", teachingProfessors.Select(InputProfessorLocation))}: 팀티칭 교수들의 공통 가능 시간이 부족합니다. 교수 불가 시간을 조정하세요.");
 
-                    if (rooms.Count > 0 && CommonCandidateRooms(course, teachingProfessors, rooms).Count == 0)
-                        Add(issues, "IE-026", $"{InputCourseLocation(course)} / {string.Join(", ", teachingProfessors.Select(InputProfessorLocation))}: 팀티칭 교수들의 공통 가능 강의실이 없습니다. 교수 강의실 조건을 조정하세요.");
                 }
             }
         }
@@ -368,7 +433,8 @@ public static class TimetableDiagnostics
         IReadOnlyList<Course> courses,
         IReadOnlyList<Professor> professors,
         IReadOnlyList<Room> rooms,
-        bool allowGraduateDaytimeOverflow)
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy schedulePolicy)
     {
         var professorMap = professors.ToDictionary(p => p.Id, StringComparer.Ordinal);
         foreach (var course in courses.Where(c => c.CoteachProfs.Count > 0))
@@ -381,14 +447,13 @@ public static class TimetableDiagnostics
             if (teachingProfessors.Count < 2) continue;
 
             var requiredSlots = RequiredSlotCount(course);
-            var commonSlots = AllowedPeriods(course, allowGraduateDaytimeOverflow)
+            var commonSlots = AllowedPeriods(
+                    course, allowGraduateDaytimeOverflow, schedulePolicy)
                 .SelectMany(period => Enumerable.Range(0, Constants.Days).Select(day => new TimeSlot(day, period)))
                 .Count(slot => teachingProfessors.All(professor => !IsUnavailable(professor, slot)));
             if (!course.IsFixed && commonSlots < requiredSlots)
                 Add(issues, "GE-011", $"{CourseLabel(course)} 팀티칭 교수들의 공통 가능 시간이 부족합니다. 교수 불가 시간을 수정하세요.");
 
-            if (rooms.Count > 0 && CommonCandidateRooms(course, teachingProfessors, rooms).Count == 0)
-                Add(issues, "GE-012", $"{CourseLabel(course)} 팀티칭 교수들의 공통 가능 강의실이 없습니다. 교수 강의실 조건을 수정하세요.");
         }
     }
 
@@ -398,7 +463,8 @@ public static class TimetableDiagnostics
         IReadOnlyList<Professor> professors,
         string id,
         bool inputLocation,
-        bool allowGraduateDaytimeOverflow)
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy schedulePolicy)
     {
         var professorMap = professors.ToDictionary(professor => professor.Id, StringComparer.Ordinal);
         foreach (var sections in GroupByBaseId(courses).Values)
@@ -424,13 +490,17 @@ public static class TimetableDiagnostics
                 var block = firstBlocks[index];
                 if (block == 3) continue;
 
-                var potentialFirst = PotentialBlockStarts(first, block, allowGraduateDaytimeOverflow);
-                var potentialSecond = PotentialBlockStarts(second, block, allowGraduateDaytimeOverflow);
+                var potentialFirst = PotentialBlockStarts(
+                    first, block, allowGraduateDaytimeOverflow, schedulePolicy);
+                var potentialSecond = PotentialBlockStarts(
+                    second, block, allowGraduateDaytimeOverflow, schedulePolicy);
                 if (!HasAdjacentStartPair(potentialFirst, potentialSecond, block))
                     continue;
 
-                var feasibleFirst = FeasibleBlockStarts(first, block, professorMap, allowGraduateDaytimeOverflow);
-                var feasibleSecond = FeasibleBlockStarts(second, block, professorMap, allowGraduateDaytimeOverflow);
+                var feasibleFirst = FeasibleBlockStarts(
+                    first, block, professorMap, allowGraduateDaytimeOverflow, schedulePolicy);
+                var feasibleSecond = FeasibleBlockStarts(
+                    second, block, professorMap, allowGraduateDaytimeOverflow, schedulePolicy);
                 if (feasibleFirst.Count == 0 || feasibleSecond.Count == 0)
                     continue;
                 if (HasAdjacentStartPair(feasibleFirst, feasibleSecond, block))
@@ -521,7 +591,8 @@ public static class TimetableDiagnostics
         IReadOnlyList<Course> courses,
         IReadOnlyList<CrossGroup>? crosses,
         string id,
-        bool allowGraduateDaytimeOverflow)
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy schedulePolicy)
     {
         var baseRequirements = BaseGradeSlotRequirements(courses);
         var requiredByGrade = baseRequirements
@@ -533,7 +604,8 @@ public static class TimetableDiagnostics
 
         foreach (var grade in requiredByGrade.Keys.OrderBy(grade => grade))
         {
-            var capacity = Constants.Days * AllowedPeriods(grade, allowGraduateDaytimeOverflow).Count;
+            var capacity = Constants.Days * DailyCapacity(
+                grade, allowGraduateDaytimeOverflow, schedulePolicy);
             var crossOverlap = crossOverlapByGrade.TryGetValue(grade, out var overlap) ? overlap : 0;
             var requiredSlots = Math.Max(0, requiredByGrade[grade] - crossOverlap);
             if (requiredSlots <= capacity) continue;
@@ -578,7 +650,8 @@ public static class TimetableDiagnostics
         IReadOnlyList<Course> courses,
         IReadOnlyList<Professor> professors,
         IReadOnlyList<CrossGroup>? crosses,
-        bool allowGraduateDaytimeOverflow)
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy schedulePolicy)
     {
         var baseRequirements = BaseGradeSlotRequirements(courses);
         var requiredByGrade = baseRequirements
@@ -589,14 +662,17 @@ public static class TimetableDiagnostics
 
         foreach (var (grade, rawRequired) in requiredByGrade.OrderBy(pair => pair.Key))
         {
-            var capacity = Constants.Days * AllowedPeriods(grade, allowGraduateDaytimeOverflow).Count;
+            var capacity = Constants.Days * DailyCapacity(
+                grade, allowGraduateDaytimeOverflow, schedulePolicy);
             var crossOverlap = crossOverlapByGrade.TryGetValue(grade, out var overlap) ? overlap : 0;
             var requiredSlots = Math.Max(0, rawRequired - crossOverlap);
             if (requiredSlots != capacity)
                 continue;
 
             var gradeCourses = courses.Where(course => course.Grade == grade).ToList();
-            if (gradeCourses.Count == 0 || IsTightGradePackingFeasible(gradeCourses, professorMap, crosses, allowGraduateDaytimeOverflow))
+            if (gradeCourses.Count == 0 || IsTightGradePackingFeasible(
+                    gradeCourses, professorMap, crosses,
+                    allowGraduateDaytimeOverflow, schedulePolicy))
                 continue;
 
             Add(
@@ -610,10 +686,12 @@ public static class TimetableDiagnostics
         IReadOnlyList<Course> gradeCourses,
         IReadOnlyDictionary<string, Professor> professorMap,
         IReadOnlyList<CrossGroup>? crosses,
-        bool allowGraduateDaytimeOverflow)
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy schedulePolicy)
     {
         var model = new CpModel();
-        var periods = AllowedPeriods(gradeCourses[0].Grade, allowGraduateDaytimeOverflow).ToList();
+        var periods = AllowedPeriods(
+            gradeCourses[0].Grade, allowGraduateDaytimeOverflow, schedulePolicy).ToList();
         var slots = Enumerable.Range(0, Constants.Days)
             .SelectMany(day => periods.Select(period => new TimeSlot(day, period)))
             .ToList();
@@ -638,7 +716,9 @@ public static class TimetableDiagnostics
             for (var blockIndex = 0; blockIndex < blocks.Count; blockIndex++)
             {
                 var block = blocks[blockIndex];
-                var startVars = FeasibleBlockStarts(course, block, professorMap, allowGraduateDaytimeOverflow)
+                var startVars = FeasibleBlockStarts(
+                        course, block, professorMap,
+                        allowGraduateDaytimeOverflow, schedulePolicy)
                     .ToDictionary(
                         start => start,
                         start => model.NewBoolVar($"tight_s_{course.Id}_{blockIndex}_{start.Day}_{start.StartPeriod}"));
@@ -679,7 +759,26 @@ public static class TimetableDiagnostics
         AddTightSectionNoOverlap(model, y, gradeCourses, slots);
         AddTightGradeNoOverlap(model, y, gradeCourses, slots, crosses);
         AddTightCross(model, y, gradeCourses, slots, crosses);
-        AddTightSectionBackToBack(model, startsByBlock, gradeCourses, allowGraduateDaytimeOverflow);
+        if (schedulePolicy.LunchMode == LunchPolicyMode.BanOneOfPeriods4And5
+            && periods.Contains(SchedulePolicyRules.FirstLunchCandidate)
+            && periods.Contains(SchedulePolicyRules.SecondLunchCandidate))
+        {
+            for (var day = 0; day < Constants.Days; day++)
+            {
+                var ban4 = model.NewBoolVar($"tight_lunch_ban_{day}_4");
+                var ban5 = model.NewBoolVar($"tight_lunch_ban_{day}_5");
+                model.Add(ban4 + ban5 == 1);
+                foreach (var course in gradeCourses)
+                {
+                    model.Add(y[(course.Id, day, SchedulePolicyRules.FirstLunchCandidate)] + ban4 <= 1);
+                    model.Add(y[(course.Id, day, SchedulePolicyRules.SecondLunchCandidate)] + ban5 <= 1);
+                }
+            }
+        }
+
+        AddTightSectionBackToBack(
+            model, startsByBlock, gradeCourses,
+            allowGraduateDaytimeOverflow, schedulePolicy);
 
         using var solver = new CpSolver
         {
@@ -775,7 +874,8 @@ public static class TimetableDiagnostics
         CpModel model,
         IReadOnlyDictionary<(string CourseId, int BlockIndex), Dictionary<(int Day, int StartPeriod), BoolVar>> startsByBlock,
         IReadOnlyList<Course> courses,
-        bool allowGraduateDaytimeOverflow)
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy schedulePolicy)
     {
         foreach (var group in GroupByBaseId(courses).Values)
         {
@@ -805,8 +905,10 @@ public static class TimetableDiagnostics
                     !startsByBlock.TryGetValue((second.Id, blockIndex), out var secondStarts))
                     continue;
                 if (!HasAdjacentStartPair(
-                        PotentialBlockStarts(first, block, allowGraduateDaytimeOverflow),
-                        PotentialBlockStarts(second, block, allowGraduateDaytimeOverflow),
+                        PotentialBlockStarts(
+                            first, block, allowGraduateDaytimeOverflow, schedulePolicy),
+                        PotentialBlockStarts(
+                            second, block, allowGraduateDaytimeOverflow, schedulePolicy),
                         block))
                     continue;
 
@@ -877,24 +979,11 @@ public static class TimetableDiagnostics
         return byKey.Values.ToList();
     }
 
-    private static IReadOnlyList<Room> CandidateRooms(Course course, Professor? professor, IReadOnlyList<Room> rooms)
+    private static IReadOnlyList<Room> CandidateRooms(Course course, IReadOnlyList<Room> rooms)
     {
         return rooms.Where(room =>
             !course.UnavailableRooms.Contains(room.Id) &&
-            (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)) &&
-            (professor == null || !professor.UnavailableRooms.Contains(room.Id)))
-            .ToList();
-    }
-
-    private static IReadOnlyList<Room> CommonCandidateRooms(
-        Course course,
-        IReadOnlyList<Professor> professors,
-        IReadOnlyList<Room> rooms)
-    {
-        return rooms.Where(room =>
-            !course.UnavailableRooms.Contains(room.Id) &&
-            (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)) &&
-            professors.All(professor => !professor.UnavailableRooms.Contains(room.Id)))
+            (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)))
             .ToList();
     }
 
@@ -1007,8 +1096,7 @@ public static class TimetableDiagnostics
                     continue;
                 }
 
-                professorMap.TryGetValue(course.ProfessorId, out var professor);
-                var candidateRoomIds = CandidateRooms(course, professor, rooms)
+                var candidateRoomIds = CandidateRooms(course, rooms)
                     .Select(room => room.Id)
                     .Distinct(StringComparer.Ordinal)
                     .ToList();
@@ -1194,12 +1282,31 @@ public static class TimetableDiagnostics
         _ => weeklyHours.ToString(),
     };
 
-    private static int MaxContiguousValidPeriods(Course course, bool allowGraduateDaytimeOverflow)
+    private static int MaxContiguousValidPeriods(
+        Course course,
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy schedulePolicy)
+    {
+        var allowed = AllowedPeriods(course, allowGraduateDaytimeOverflow, schedulePolicy);
+        if (schedulePolicy.LunchMode == LunchPolicyMode.BanOneOfPeriods4And5)
+        {
+            return new[]
+                {
+                    SchedulePolicyRules.FirstLunchCandidate,
+                    SchedulePolicyRules.SecondLunchCandidate,
+                }
+                .Select(lunch => MaxContiguous(allowed.Where(period => period != lunch)))
+                .Max();
+        }
+        return MaxContiguous(allowed);
+    }
+
+    private static int MaxContiguous(IEnumerable<int> periods)
     {
         var max = 0;
         var current = 0;
         var previous = 0;
-        foreach (var period in AllowedPeriods(course, allowGraduateDaytimeOverflow))
+        foreach (var period in periods)
         {
             current = period == previous + 1 ? current + 1 : 1;
             max = Math.Max(max, current);
@@ -1208,31 +1315,53 @@ public static class TimetableDiagnostics
         return max;
     }
 
-    private static IReadOnlyList<int> AllowedPeriods(Course course, bool allowGraduateDaytimeOverflow) =>
-        AllowedPeriods(course.Grade, allowGraduateDaytimeOverflow);
+    private static IReadOnlyList<int> AllowedPeriods(
+        Course course,
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy schedulePolicy) =>
+        AllowedPeriods(course.Grade, allowGraduateDaytimeOverflow, schedulePolicy);
 
-    private static IReadOnlyList<int> AllowedPeriods(int grade, bool allowGraduateDaytimeOverflow) =>
-        AcademicLevelTimePolicy.AllowedPeriods(grade, allowGraduateDaytimeOverflow);
+    private static IReadOnlyList<int> AllowedPeriods(
+        int grade,
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy schedulePolicy) =>
+        AcademicLevelTimePolicy.AllowedPeriods(
+            grade, allowGraduateDaytimeOverflow, schedulePolicy);
 
-    private static bool IsAllowedPeriod(Course course, int period, bool allowGraduateDaytimeOverflow) =>
-        AllowedPeriods(course, allowGraduateDaytimeOverflow).Contains(period);
+    private static int DailyCapacity(
+        int grade,
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy schedulePolicy)
+    {
+        var periods = AllowedPeriods(grade, allowGraduateDaytimeOverflow, schedulePolicy);
+        var flexibleLunchConsumesOne =
+            schedulePolicy.LunchMode == LunchPolicyMode.BanOneOfPeriods4And5
+            && periods.Contains(SchedulePolicyRules.FirstLunchCandidate)
+            && periods.Contains(SchedulePolicyRules.SecondLunchCandidate);
+        return periods.Count - (flexibleLunchConsumesOne ? 1 : 0);
+    }
+
+    private static bool IsAllowedPeriod(
+        Course course,
+        int period,
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy schedulePolicy) =>
+        AllowedPeriods(course, allowGraduateDaytimeOverflow, schedulePolicy).Contains(period);
 
     private static HashSet<(int Day, int StartPeriod)> PotentialBlockStarts(
         Course course,
         int block,
-        bool allowGraduateDaytimeOverflow)
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy schedulePolicy)
     {
         var starts = new HashSet<(int Day, int StartPeriod)>();
+        var allowedPeriods = AllowedPeriods(
+            course, allowGraduateDaytimeOverflow, schedulePolicy);
+        var possibleStarts = SchedulePolicyRules.PossibleBlockStarts(
+            schedulePolicy, allowedPeriods, block);
         for (var day = 0; day < Constants.Days; day++)
-            foreach (var start in AllowedPeriods(course, allowGraduateDaytimeOverflow))
-            {
-                if (block == 2 && !Constants.Len2StartPeriods.Contains(start))
-                    continue;
-
-                var periods = Enumerable.Range(start, block).ToList();
-                if (periods.All(period => AllowedPeriods(course, allowGraduateDaytimeOverflow).Contains(period)))
-                    starts.Add((day, start));
-            }
+            foreach (var start in possibleStarts)
+                starts.Add((day, start));
         return starts;
     }
 
@@ -1240,9 +1369,11 @@ public static class TimetableDiagnostics
         Course course,
         int block,
         IReadOnlyDictionary<string, Professor> professorMap,
-        bool allowGraduateDaytimeOverflow)
+        bool allowGraduateDaytimeOverflow,
+        SchedulePolicy schedulePolicy)
     {
-        var starts = PotentialBlockStarts(course, block, allowGraduateDaytimeOverflow);
+        var starts = PotentialBlockStarts(
+            course, block, allowGraduateDaytimeOverflow, schedulePolicy);
         var courseProfessors = DomainHelpers.CourseProfIds(course)
             .Select(id => professorMap.TryGetValue(id, out var professor) ? professor : null)
             .Where(professor => professor != null)
