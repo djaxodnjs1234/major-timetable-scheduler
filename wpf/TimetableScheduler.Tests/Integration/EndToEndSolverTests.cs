@@ -86,6 +86,7 @@ public class EndToEndSolverTests
             UseSc01 = true,
             UseSc02 = true,
             UseSc03 = true,
+            UseSc04 = true,
         };
 
         var result = DiverseSolver.Solve(
@@ -100,7 +101,8 @@ public class EndToEndSolverTests
             Assert.InRange(r.Score.Sc01, 0, 1);
             Assert.InRange(r.Score.Sc02, 0, 1);
             Assert.InRange(r.Score.Sc03, 0, 1);
-            Assert.InRange(r.Score.Total, 0, 3);
+            Assert.InRange(r.Score.Sc04, 0, 1);
+            Assert.InRange(r.Score.Total, 0, 4);
         });
 
         // Best score first

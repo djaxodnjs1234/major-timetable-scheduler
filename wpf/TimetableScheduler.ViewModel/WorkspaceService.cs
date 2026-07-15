@@ -360,6 +360,7 @@ public sealed class WorkspaceService
         HoursPerWeek = src.HoursPerWeek,
         CourseType = src.CourseType,
         ProfessorId = src.ProfessorId,
+        ExpectedEnrollment = src.ExpectedEnrollment,
         Section = src.Section,
         Department = src.Department,
         FixedRooms = new List<string>(src.FixedRooms),

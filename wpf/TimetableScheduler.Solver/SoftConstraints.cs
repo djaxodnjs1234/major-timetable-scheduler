@@ -31,6 +31,11 @@ public static class SoftConstraints
     // SC-03 최적값보다 허용할 추가 블록 간격 위반 과목 수.
     public static readonly int Sc03SlackAbs = 0;
 
+    // SC-04: penalize non-fixed first-period classes above this weekly count per professor.
+    public static readonly int Sc04FirstPeriod = 1;
+    public static readonly int Sc04FirstPeriodThreshold = 2;
+    public static readonly int Sc04SlackAbs = 0;
+
     public static LinearExpr Sc01PenaltyTerm(
         XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms)
     {
@@ -135,5 +140,53 @@ public static class SoftConstraints
         }
 
         return pairPenalties.Count > 0 ? LinearExpr.Sum(pairPenalties) : LinearExpr.Constant(0);
+    }
+
+    public static LinearExpr Sc04PenaltyTerm(
+        CpModel model, XDict x, IReadOnlyList<Course> courses, IReadOnlyList<Room> rooms)
+    {
+        var coursesByProf = new Dictionary<string, List<Course>>();
+        foreach (var c in courses)
+        {
+            if (c.IsFixed) continue;
+            foreach (var pid in DomainHelpers.CourseProfIds(c))
+            {
+                if (string.IsNullOrEmpty(pid)) continue;
+                if (!coursesByProf.TryGetValue(pid, out var list))
+                    coursesByProf[pid] = list = new List<Course>();
+                list.Add(c);
+            }
+        }
+
+        if (coursesByProf.Count == 0) return LinearExpr.Constant(0);
+
+        int overCap = Constants.Days - Sc04FirstPeriodThreshold;
+        if (overCap <= 0) return LinearExpr.Constant(0);
+
+        var excessTerms = new List<IntVar>();
+        foreach (var (pid, profCourses) in coursesByProf)
+        {
+            var firstPeriodUsed = new List<BoolVar>();
+            for (int d = 0; d < Constants.Days; d++)
+            {
+                var cells = new List<BoolVar>();
+                foreach (var c in profCourses)
+                    foreach (var r in rooms)
+                        cells.Add(x[(c.Id, d, Sc04FirstPeriod, r.Id)]);
+
+                var used = model.NewBoolVar($"sc04_used_{pid}_{d}");
+                if (cells.Count > 0)
+                    model.AddMaxEquality(used, cells);
+                else
+                    model.Add(used == 0);
+                firstPeriodUsed.Add(used);
+            }
+
+            var excess = model.NewIntVar(0, overCap, $"sc04_excess_{pid}");
+            model.Add(excess >= LinearExpr.Sum(firstPeriodUsed) - Sc04FirstPeriodThreshold);
+            excessTerms.Add(excess);
+        }
+
+        return excessTerms.Count > 0 ? LinearExpr.Sum(excessTerms) : LinearExpr.Constant(0);
     }
 }

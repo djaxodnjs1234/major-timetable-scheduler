@@ -47,6 +47,7 @@ public sealed class SqliteRepository
         ClearDeprecatedProfessorUnavailableRooms(conn);
         MigrateLegacyProfessorRoomWhitelistRemoved(conn);
         MigrateRoomMetadata(conn);
+        MigrateCourseExpectedEnrollment(conn);
         MigrateCoursePkIfNeeded(conn);
         MigrateSavedTimetableSnapshot(conn);
         MigrateSavedTimetableLunchPeriods(conn);
@@ -150,6 +151,15 @@ public sealed class SqliteRepository
             conn.Execute("ALTER TABLE Rooms ADD COLUMN IsImportedFromExcel INTEGER NOT NULL DEFAULT 0");
     }
 
+    private static void MigrateCourseExpectedEnrollment(SqliteConnection conn)
+    {
+        var columns = conn.Query("PRAGMA table_info(Courses)")
+            .Select(row => (string)row.name)
+            .ToHashSet(StringComparer.OrdinalIgnoreCase);
+        if (!columns.Contains("ExpectedEnrollment"))
+            conn.Execute("ALTER TABLE Courses ADD COLUMN ExpectedEnrollment INTEGER NULL");
+    }
+
     private static void MigrateCoursePkIfNeeded(SqliteConnection conn)
     {
         var ddl = conn.QueryFirstOrDefault<string>(
@@ -160,7 +170,7 @@ public sealed class SqliteRepository
         conn.Execute("CREATE TABLE Courses_v2 (" +
             "Id TEXT NOT NULL, Name TEXT NOT NULL, Grade INTEGER NOT NULL," +
             "HoursPerWeek INTEGER NOT NULL, CourseType TEXT NOT NULL," +
-            "ProfessorId TEXT NOT NULL, Section INTEGER NOT NULL DEFAULT 1," +
+            "ProfessorId TEXT NOT NULL, ExpectedEnrollment INTEGER NULL, Section INTEGER NOT NULL DEFAULT 1," +
             "Department TEXT NOT NULL, FixedRoomsJson TEXT NOT NULL," +
             "UnavailableRoomsJson TEXT NOT NULL DEFAULT '[]'," +
             "BlockStructureJson TEXT NOT NULL, IsFixed INTEGER NOT NULL," +
@@ -170,10 +180,10 @@ public sealed class SqliteRepository
             "CoteachProfsJson TEXT NOT NULL," +
             "PRIMARY KEY (Id, Section))");
         conn.Execute(@"INSERT OR IGNORE INTO Courses_v2
-            (Id,Name,Grade,HoursPerWeek,CourseType,ProfessorId,Section,Department,
+            (Id,Name,Grade,HoursPerWeek,CourseType,ProfessorId,ExpectedEnrollment,Section,Department,
              FixedRoomsJson,UnavailableRoomsJson,BlockStructureJson,IsFixed,FixedSlotsJson,
              IsSchoolFixed,SchoolFixedTargetGrade,CoteachProfsJson)
-            SELECT Id,Name,Grade,HoursPerWeek,CourseType,ProfessorId,Section,Department,
+            SELECT Id,Name,Grade,HoursPerWeek,CourseType,ProfessorId,ExpectedEnrollment,Section,Department,
                    FixedRoomsJson,UnavailableRoomsJson,BlockStructureJson,IsFixed,FixedSlotsJson,
                    IsSchoolFixed,SchoolFixedTargetGrade,CoteachProfsJson
             FROM Courses");
@@ -213,10 +223,10 @@ public sealed class SqliteRepository
         foreach (var c in data.Courses)
             conn.Execute(@"INSERT INTO Courses
                 (Id,Name,Grade,HoursPerWeek,CourseType,ProfessorId,Section,Department,
-                 FixedRoomsJson,UnavailableRoomsJson,BlockStructureJson,IsFixed,FixedSlotsJson,
+                 ExpectedEnrollment,FixedRoomsJson,UnavailableRoomsJson,BlockStructureJson,IsFixed,FixedSlotsJson,
                  IsSchoolFixed,SchoolFixedTargetGrade,CoteachProfsJson)
                 VALUES (@Id,@Name,@Grade,@HoursPerWeek,@CourseType,@ProfessorId,@Section,@Department,
-                 @FixedRoomsJson,@UnavailableRoomsJson,@BlockStructureJson,@IsFixed,@FixedSlotsJson,
+                 @ExpectedEnrollment,@FixedRoomsJson,@UnavailableRoomsJson,@BlockStructureJson,@IsFixed,@FixedSlotsJson,
                  @IsSchoolFixed,@SchoolFixedTargetGrade,@CoteachProfsJson)",
                 FromCourse(c), tx);
 
@@ -422,6 +432,7 @@ public sealed class SqliteRepository
         public int HoursPerWeek { get; set; }
         public string CourseType { get; set; } = "";
         public string ProfessorId { get; set; } = "";
+        public int? ExpectedEnrollment { get; set; }
         public int Section { get; set; }
         public string Department { get; set; } = "";
         public string FixedRoomsJson { get; set; } = "[]";
@@ -456,6 +467,7 @@ public sealed class SqliteRepository
         HoursPerWeek = r.HoursPerWeek,
         CourseType = r.CourseType,
         ProfessorId = r.ProfessorId,
+        ExpectedEnrollment = r.ExpectedEnrollment,
         Section = r.Section,
         Department = r.Department,
         FixedRooms = JsonSerializer.Deserialize<List<string>>(r.FixedRoomsJson) ?? new(),
@@ -471,7 +483,7 @@ public sealed class SqliteRepository
     private static object FromCourse(Course c) => new
     {
         c.Id, c.Name, c.Grade, c.HoursPerWeek, c.CourseType, c.ProfessorId,
-        c.Section, c.Department,
+        c.Section, c.Department, c.ExpectedEnrollment,
         FixedRoomsJson = JsonSerializer.Serialize(c.FixedRooms),
         UnavailableRoomsJson = JsonSerializer.Serialize(c.UnavailableRooms),
         BlockStructureJson = JsonSerializer.Serialize(c.BlockStructure),

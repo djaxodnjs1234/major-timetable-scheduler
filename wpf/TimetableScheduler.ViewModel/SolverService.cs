@@ -88,6 +88,7 @@ public class SolverService
             HoursPerWeek = source.HoursPerWeek,
             CourseType = source.CourseType,
             ProfessorId = source.ProfessorId,
+            ExpectedEnrollment = source.ExpectedEnrollment,
             Section = source.Section,
             Department = source.Department,
             FixedRooms = source.FixedRooms.ToList(),

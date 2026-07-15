@@ -77,7 +77,7 @@ public class ManualEditViewModelTests : IDisposable
 
     private RankedSolution MakeSolution(params SolutionAssignment[] assignments)
     {
-        var score = new SolutionScore(1, 1, 1, 3);
+        var score = new SolutionScore(1, 1, 1, 1, 4);
         return new RankedSolution(assignments.ToList(), score);
     }
 

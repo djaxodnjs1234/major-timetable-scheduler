@@ -58,7 +58,7 @@ public class ResultsViewModelTests : IDisposable
         {
             new RankedSolution(
                 new[] { new SolutionAssignment("C-01", 0, 1, "R1") },
-                new SolutionScore(0, 0, 0, 0)),
+                new SolutionScore(0, 0, 0, 0, 0)),
         };
 
         vm.SetSolutions(ranked, snapshot);
@@ -113,7 +113,7 @@ public class ResultsViewModelTests : IDisposable
         {
             new RankedSolution(
                 new[] { new SolutionAssignment("GR-01", 0, 1, "R1") },
-                new SolutionScore(0, 0, 0, 0)),
+                new SolutionScore(0, 0, 0, 0, 0)),
         };
 
         vm.SetSolutions(ranked, snapshot);

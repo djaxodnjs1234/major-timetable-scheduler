@@ -1880,7 +1880,7 @@ public class CourseGroupsTests : IDisposable
         vm.LoadForExistingTimetable(saved);
         vm.RankedResults.Add(new RankedSolution(
             new List<SolutionAssignment> { new("A-01", 0, 1, "R1") },
-            new SolutionScore(0, 0, 0, 0)));
+            new SolutionScore(0, 0, 0, 0, 0)));
         vm.IsSolveComplete = true;
 
         var item = vm.CourseGroups.Single(group => group.BaseId == "A");

@@ -42,6 +42,7 @@ public class DiverseSolverTests
         Assert.Null(result.Sc01Bound);
         Assert.Null(result.Sc02Bound);
         Assert.Null(result.Sc03Bound);
+        Assert.Null(result.Sc04Bound);
 
         // each solution must have exactly hours_per_week assignments per course
         foreach (var sol in result.Solutions)
@@ -73,6 +74,67 @@ public class DiverseSolverTests
             Assert.True(penalty <= result.Sc01Bound.Value,
                 $"penalty {penalty} exceeds bound {result.Sc01Bound}");
         }
+    }
+
+    [Fact]
+    public void Sc04Enabled_ProducesBoundAndExcludesFixedCourses()
+    {
+        var courses = new List<Course>
+        {
+            new()
+            {
+                Id = "FIX-01",
+                Name = "Fixed",
+                Grade = 1,
+                HoursPerWeek = 1,
+                ProfessorId = "P1",
+                IsFixed = true,
+                FixedSlots = new List<TimeSlot> { new(0, SoftConstraints.Sc04FirstPeriod) },
+                BlockStructure = new List<int> { 1 },
+            },
+            new() { Id = "A-01", Name = "A", Grade = 1, HoursPerWeek = 1, ProfessorId = "P1", BlockStructure = new List<int> { 1 } },
+            new() { Id = "B-01", Name = "B", Grade = 1, HoursPerWeek = 1, ProfessorId = "P1", BlockStructure = new List<int> { 1 } },
+            new() { Id = "C-01", Name = "C", Grade = 1, HoursPerWeek = 1, ProfessorId = "P1", BlockStructure = new List<int> { 1 } },
+        };
+        var profs = new List<Professor>
+        {
+            new()
+            {
+                Id = "P1",
+                Name = "P1",
+                UnavailableSlots = Constants.Periods
+                    .Where(period => period != SoftConstraints.Sc04FirstPeriod)
+                    .SelectMany(period => Enumerable.Range(0, Constants.Days).Select(day => new TimeSlot(day, period)))
+                    .ToList(),
+            },
+        };
+        var rooms = new List<Room> { new() { Id = "R1", Name = "R1" } };
+        var opts = new DiverseSolverOptions
+        {
+            UseSc04 = true,
+            TotalSolutions = 1,
+            TimeLimitSec = 20,
+            PerSolveTimeSec = 2,
+        };
+
+        var result = DiverseSolver.Solve(courses, profs, rooms, opts);
+
+        Assert.True(result.Status is "OPTIMAL" or "FEASIBLE", result.Status);
+        Assert.True(result.Sc04Bound.HasValue);
+        var sc04Bound = result.Sc04Bound.GetValueOrDefault();
+        Assert.Equal(1, sc04Bound);
+        var solution = Assert.Single(result.Solutions);
+        var courseMap = courses.ToDictionary(c => c.Id);
+        var nonFixedFirstPeriods = solution
+            .Where(a => a.Period == SoftConstraints.Sc04FirstPeriod)
+            .Where(a => courseMap.TryGetValue(a.CourseId, out var c) && !c.IsFixed)
+            .Select(a => (a.Day, a.CourseId))
+            .Distinct()
+            .Count();
+        var penalty = Math.Max(0, nonFixedFirstPeriods - SoftConstraints.Sc04FirstPeriodThreshold);
+
+        Assert.Equal(sc04Bound, penalty);
+        Assert.Contains(solution, a => a.CourseId == "FIX-01" && a.Period == SoftConstraints.Sc04FirstPeriod);
     }
 
     [Fact]

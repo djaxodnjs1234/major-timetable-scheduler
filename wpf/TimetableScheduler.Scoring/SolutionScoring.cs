@@ -3,7 +3,13 @@ using TimetableScheduler.Solver;
 
 namespace TimetableScheduler.Scoring;
 
-public sealed record SolutionScore(double Sc01, double Sc02, double Sc03, double Total);
+public sealed record SolutionScore(double Sc01, double Sc02, double Sc03, double Sc04, double Total)
+{
+    public SolutionScore(double sc01, double sc02, double sc03, double total)
+        : this(sc01, sc02, sc03, 1.0, total)
+    {
+    }
+}
 
 public sealed record RankedSolution(
     IReadOnlyList<SolutionAssignment> Assignment,
@@ -15,10 +21,10 @@ public static class SolutionScoring
     public static readonly int Sc01RawDenominator = 20;
 
     public static readonly IReadOnlyDictionary<string, double> ScWeights =
-        new Dictionary<string, double> { ["SC01"] = 1, ["SC02"] = 1, ["SC03"] = 1 };
+        new Dictionary<string, double> { ["SC01"] = 1, ["SC02"] = 1, ["SC03"] = 1, ["SC04"] = 1 };
 
     public static readonly IReadOnlyDictionary<string, double> ScPenaltyPower =
-        new Dictionary<string, double> { ["SC01"] = 1, ["SC02"] = 1, ["SC03"] = 1 };
+        new Dictionary<string, double> { ["SC01"] = 1, ["SC02"] = 1, ["SC03"] = 1, ["SC04"] = 1 };
 
     public static double Sc01SpecialSlots(IReadOnlyList<SolutionAssignment> assignment)
     {
@@ -124,6 +130,51 @@ public static class SolutionScoring
         _ => 0.0,
     };
 
+    public static double Sc04FirstPeriodLimit(
+        IReadOnlyList<SolutionAssignment> assignment,
+        IReadOnlyList<Course> courses,
+        IReadOnlyList<Professor> professors)
+    {
+        if (professors.Count == 0) return 1.0;
+
+        var courseMap = courses.ToDictionary(c => c.Id);
+        var eligibleProfIds = courses
+            .Where(c => !c.IsFixed)
+            .SelectMany(DomainHelpers.CourseProfIds)
+            .Where(pid => !string.IsNullOrEmpty(pid))
+            .ToHashSet();
+        if (eligibleProfIds.Count == 0) return 1.0;
+
+        var firstPeriodByProf = new Dictionary<string, HashSet<(int Day, string CourseId)>>();
+        foreach (var a in assignment.Where(a => a.Period == SoftConstraints.Sc04FirstPeriod))
+        {
+            if (!courseMap.TryGetValue(a.CourseId, out var c)) continue;
+            if (c.IsFixed) continue;
+
+            foreach (var pid in DomainHelpers.CourseProfIds(c))
+            {
+                if (string.IsNullOrEmpty(pid)) continue;
+                if (!eligibleProfIds.Contains(pid)) continue;
+                if (!firstPeriodByProf.TryGetValue(pid, out var set))
+                    firstPeriodByProf[pid] = set = new HashSet<(int, string)>();
+                set.Add((a.Day, a.CourseId));
+            }
+        }
+
+        int overCap = Constants.Days - SoftConstraints.Sc04FirstPeriodThreshold;
+        if (overCap <= 0) return 1.0;
+
+        int totalExcess = eligibleProfIds.Sum(pid =>
+            Math.Max(
+                0,
+                (firstPeriodByProf.TryGetValue(pid, out var set) ? set.Count : 0)
+                    - SoftConstraints.Sc04FirstPeriodThreshold));
+        if (totalExcess == 0) return 1.0;
+
+        int maxPossible = eligibleProfIds.Count * overCap;
+        return 1.0 - (double)totalExcess / Math.Max(1, maxPossible);
+    }
+
     public static SolutionScore Score(
         IReadOnlyList<SolutionAssignment> assignment,
         IReadOnlyList<Course> courses,
@@ -132,11 +183,13 @@ public static class SolutionScoring
         double sc01 = Sc01SpecialSlots(assignment);
         double sc02 = Sc02ProfConcentration(assignment, professors, courses);
         double sc03 = Sc03MinGap(assignment, courses);
+        double sc04 = Sc04FirstPeriodLimit(assignment, courses, professors);
         double total =
             ScWeights["SC01"] * Math.Pow(sc01, ScPenaltyPower["SC01"])
             + ScWeights["SC02"] * Math.Pow(sc02, ScPenaltyPower["SC02"])
-            + ScWeights["SC03"] * Math.Pow(sc03, ScPenaltyPower["SC03"]);
-        return new SolutionScore(sc01, sc02, sc03, total);
+            + ScWeights["SC03"] * Math.Pow(sc03, ScPenaltyPower["SC03"])
+            + ScWeights["SC04"] * Math.Pow(sc04, ScPenaltyPower["SC04"]);
+        return new SolutionScore(sc01, sc02, sc03, sc04, total);
     }
 
     public static IReadOnlyList<RankedSolution> Rank(
