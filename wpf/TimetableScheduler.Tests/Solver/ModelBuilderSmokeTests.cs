@@ -180,7 +180,7 @@ public class ModelBuilderSmokeTests
     }
 
     [Fact]
-    public void Len2BlockStartsAt_1_3_6_or_8_HC19()
+    public void Len2BlockStartsAtAnyConsecutiveNonLunchPeriod_HC19()
     {
         var courses = new List<Course>
         {
@@ -203,6 +203,6 @@ public class ModelBuilderSmokeTests
             foreach (var p in SchedulePolicyRules.CandidateInstructionalPeriods(SchedulePolicy.Default))
                 if (solver.Value(build.X[("X-01", d, p, "R1")]) == 1 && p < startPeriod)
                     startPeriod = p;
-        Assert.Contains(startPeriod, new[] { 1, 3, 6, 8 });
+        Assert.Contains(startPeriod, new[] { 1, 2, 3, 6, 7, 8 });
     }
 }

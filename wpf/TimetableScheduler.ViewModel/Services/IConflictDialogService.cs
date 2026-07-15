@@ -45,14 +45,17 @@ public sealed record ValidationCheckItem(
     int ErrorCount,
     int WarningCount,
     string Detail = "",
-    IReadOnlyList<ConflictItem>? Conflicts = null)
+    IReadOnlyList<ConflictItem>? Conflicts = null,
+    string Tooltip = "")
 {
     public IReadOnlyList<ConflictItem> DetailConflicts => Conflicts ?? Array.Empty<ConflictItem>();
 
     public string TierTitle => "전체 검증";
 
+    public string CountText => ErrorCount > 0 ? $"{ErrorCount}건" : "";
+
     public string StatusText =>
-        IsNormal ? "정상" : ErrorCount > 0 ? "비정상" : "주의";
+        IsNormal ? "정상" : "비정상";
 }
 
 public sealed record ConflictSelectionContext(

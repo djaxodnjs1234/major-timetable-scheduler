@@ -311,7 +311,7 @@ public class ConflictDetectorTests
     }
 
     [Fact]
-    public void Len2BlockWrongStart_DetectsConflict()
+    public void Len2BlockConsecutiveStart_DoesNotDetectBlockStartConflict()
     {
         var courses = new List<Course>
         {
@@ -321,6 +321,22 @@ public class ConflictDetectorTests
         {
             new("X", 0, 2, "R1"),
             new("X", 0, 3, "R1"),
+        };
+        var conflicts = ConflictDetector.Detect(assignment, courses);
+        Assert.DoesNotContain(conflicts, c => c.Type == ConflictType.BlockStartViolation);
+    }
+
+    [Fact]
+    public void Len2BlockThroughStaticLunch_DetectsConflict()
+    {
+        var courses = new List<Course>
+        {
+            new() { Id = "X", Name = "X", HoursPerWeek = 2, BlockStructure = new List<int> { 2 } },
+        };
+        var assignment = new List<SolutionAssignment>
+        {
+            new("X", 0, 4, "R1"),
+            new("X", 0, 5, "R1"),
         };
         var conflicts = ConflictDetector.Detect(assignment, courses);
         Assert.Contains(conflicts, c => c.Type == ConflictType.BlockStartViolation);

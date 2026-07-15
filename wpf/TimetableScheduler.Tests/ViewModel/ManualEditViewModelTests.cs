@@ -106,24 +106,174 @@ public class ManualEditViewModelTests : IDisposable
         var checks = Assert.Single(_dialog.ValidationCheckCalls);
         var roomCheck = Assert.Single(checks, check => check.Name == "강의실 중복");
         var professorCheck = Assert.Single(checks, check => check.Name == "교수 중복");
+        Assert.All(checks, check => Assert.Equal(0, check.WarningCount));
+        Assert.All(checks, check => Assert.False(string.IsNullOrWhiteSpace(check.Tooltip)));
         Assert.Equal(ValidationCheckTier.Critical, roomCheck.Tier);
         Assert.Equal(ValidationCheckTier.Critical, professorCheck.Tier);
         Assert.False(roomCheck.IsNormal);
+        Assert.Equal("비정상", roomCheck.StatusText);
+        Assert.Equal(
+            "비정상",
+            new ValidationCheckItem("주의도 비정상", ValidationCheckTier.Important, false, 0, 1).StatusText);
         Assert.True(roomCheck.ErrorCount > 0);
-        Assert.Contains(roomCheck.DetailConflicts, conflict => conflict.Type == ConflictType.RoomConflict);
+        Assert.DoesNotContain("Error", roomCheck.Detail);
+        Assert.DoesNotContain("Warning", roomCheck.Detail);
+        Assert.Equal("", roomCheck.Detail);
+        Assert.Equal("1건", roomCheck.CountText);
+        Assert.Contains("같은 강의실", roomCheck.Tooltip);
+        var roomConflict = Assert.Single(roomCheck.DetailConflicts, conflict => conflict.Type == ConflictType.RoomConflict);
+        Assert.Equal("강의실1 / 테스트 A분반, 충돌 A분반", roomConflict.Description);
+        Assert.DoesNotContain("월", roomConflict.Description);
+        Assert.DoesNotContain("교시", roomConflict.Description);
         Assert.False(professorCheck.IsNormal);
         Assert.True(professorCheck.ErrorCount > 0);
-        Assert.Contains(professorCheck.DetailConflicts, conflict => conflict.Type == ConflictType.ProfessorConflict);
-        Assert.Contains(checks, check => check.Name == "교수 불가능 시간");
-        Assert.Contains(checks, check => check.Name == "고정 시간 위반");
-        Assert.Contains(checks, check => check.Name == "교수 강의실 일관성");
+        var professorConflict = Assert.Single(professorCheck.DetailConflicts, conflict => conflict.Type == ConflictType.ProfessorConflict);
+        Assert.Equal("교수 / 테스트 A분반, 충돌 A분반", professorConflict.Description);
+        Assert.DoesNotContain("월", professorConflict.Description);
+        Assert.DoesNotContain("교시", professorConflict.Description);
+        Assert.DoesNotContain("Error", vm.StatusMessage);
+        Assert.DoesNotContain("Warning", vm.StatusMessage);
+        Assert.Contains("에러", vm.StatusMessage);
+        Assert.Contains(checks, check => check.Name == "교수 불가시간");
+        Assert.Contains(checks, check => check.Name == "고정시간 이탈");
+        Assert.Contains(checks, check => check.Name == "강의실 불일치");
         Assert.Contains(checks, check => check.Name == "시간대 위반");
-        Assert.DoesNotContain(checks, check => check.Name == "과목 불가 강의실");
+        Assert.Contains(checks, check => check.Name == "재수강생 고려");
+        Assert.Contains(checks, check => check.Name == "교과목별 동일 강의실");
+        Assert.Contains(checks, check => check.Name == "과목 불가강의실");
         Assert.DoesNotContain(checks, check => check.Name == "교수 불가 강의실");
-        Assert.DoesNotContain(checks, check => check.Name == "점심시간 배치");
-        Assert.DoesNotContain(checks, check => check.Name == "고정 강의실 위반");
-        Assert.DoesNotContain(checks, check => check.Name == "블록 시작 교시");
+        Assert.Contains(checks, check => check.Name == "점심시간 배치");
+        Assert.Contains(checks, check => check.Name == "고정 강의실 위반");
+        Assert.Contains(checks, check => check.Name == "블록 시작 교시");
         Assert.Contains(checks, check => check.IsNormal);
+    }
+
+    [Fact]
+    public void ValidateAll_IncludesRetakeConsiderationCheck()
+    {
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        _ws.AddProfessor(new Professor { Id = "P3", Name = "교수3" });
+        _ws.AddProfessor(new Professor { Id = "P4", Name = "교수4" });
+        _ws.AddRoom(new Room { Id = "R3", Name = "강의실3" });
+        _ws.AddCourse(new Course
+        {
+            Id = "RET-01",
+            Name = "재수강과목",
+            Grade = 2,
+            HoursPerWeek = 1,
+            CourseType = "전필",
+            ProfessorId = "P2",
+            Section = 1,
+        });
+        _ws.AddCourse(new Course
+        {
+            Id = "RET-02",
+            Name = "재수강과목",
+            Grade = 2,
+            HoursPerWeek = 1,
+            CourseType = "전필",
+            ProfessorId = "P3",
+            Section = 2,
+        });
+        _ws.AddCourse(new Course
+        {
+            Id = "MAJ-01",
+            Name = "현재학년전필",
+            Grade = 3,
+            HoursPerWeek = 1,
+            CourseType = "전필",
+            ProfessorId = "P4",
+            Section = 1,
+        });
+        _ws.AddRetake(new RetakeScenario { CurrentGrade = 3, RetakeBaseId = "RET" });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment(
+                "RET-01", 0, 1, "R1",
+                AssignmentId("RET-01", 1, "P2", "재수강과목", 0, 0, 1, "R1")),
+            new SolutionAssignment(
+                "RET-02", 0, 1, "R2",
+                AssignmentId("RET-02", 2, "P3", "재수강과목", 1, 0, 1, "R2")),
+            new SolutionAssignment(
+                "MAJ-01", 0, 1, "R3",
+                AssignmentId("MAJ-01", 1, "P4", "현재학년전필", 2, 0, 1, "R3"))));
+
+        Assert.DoesNotContain(vm.Conflicts, item => item.Conflict.Type == ConflictType.RetakeConflict);
+
+        vm.ValidateAllCommand.Execute(null);
+
+        var checks = Assert.Single(_dialog.ValidationCheckCalls);
+        var retakeCheck = Assert.Single(checks, check => check.Name == "재수강생 고려");
+        Assert.False(retakeCheck.IsNormal);
+        Assert.Equal(2, retakeCheck.ErrorCount);
+        var conflicts = retakeCheck.DetailConflicts
+            .Where(item => item.Type == ConflictType.RetakeConflict)
+            .OrderBy(item => item.Description, StringComparer.Ordinal)
+            .ToList();
+        Assert.Equal(2, conflicts.Count);
+        Assert.All(conflicts, conflict =>
+        {
+            Assert.StartsWith("재수강 대상:", conflict.Description);
+            Assert.Contains("\n겹치는 전필:", conflict.Description);
+            Assert.Contains("현재학년전필 A분반", conflict.Description);
+            Assert.DoesNotContain("현재 학년 전필:", conflict.Description);
+            Assert.DoesNotContain("재수강생 고려", conflict.Description);
+            Assert.DoesNotContain("에러", conflict.Description);
+            Assert.DoesNotContain("안전 분반", conflict.Description);
+        });
+        Assert.Contains(conflicts, conflict => conflict.Description.Contains("재수강과목 A분반", StringComparison.Ordinal));
+        Assert.Contains(conflicts, conflict => conflict.Description.Contains("재수강과목 B분반", StringComparison.Ordinal));
+        Assert.All(conflicts, conflict => Assert.Single(
+            conflict.Assignments ?? Array.Empty<SolutionAssignment>(),
+            assignment => assignment.CourseId.StartsWith("RET-", StringComparison.Ordinal)));
+    }
+
+    [Fact]
+    public void ValidateAll_IncludesCourseRoomConsistencyCheck()
+    {
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "교수2" });
+        _ws.AddProfessor(new Professor { Id = "P3", Name = "교수3" });
+        _ws.AddCourse(new Course
+        {
+            Id = "ROOM-01",
+            Name = "강의실일관성",
+            Grade = 2,
+            HoursPerWeek = 1,
+            CourseType = "전선",
+            ProfessorId = "P2",
+            Section = 1,
+        });
+        _ws.AddCourse(new Course
+        {
+            Id = "ROOM-02",
+            Name = "강의실일관성",
+            Grade = 2,
+            HoursPerWeek = 1,
+            CourseType = "전선",
+            ProfessorId = "P3",
+            Section = 2,
+        });
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment(
+                "ROOM-01", 0, 1, "R1",
+                AssignmentId("ROOM-01", 1, "P2", "강의실일관성", 0, 0, 1, "R1")),
+            new SolutionAssignment(
+                "ROOM-02", 1, 1, "R2",
+                AssignmentId("ROOM-02", 2, "P3", "강의실일관성", 1, 1, 1, "R2"))));
+
+        Assert.DoesNotContain(vm.Conflicts, item => item.Conflict.Type == ConflictType.CourseRoomInconsistent);
+
+        vm.ValidateAllCommand.Execute(null);
+
+        var checks = Assert.Single(_dialog.ValidationCheckCalls);
+        var roomCheck = Assert.Single(checks, check => check.Name == "교과목별 동일 강의실");
+        Assert.False(roomCheck.IsNormal);
+        var conflict = Assert.Single(roomCheck.DetailConflicts, item => item.Type == ConflictType.CourseRoomInconsistent);
+        Assert.Contains("강의실1", conflict.Description);
+        Assert.Contains("강의실2", conflict.Description);
+        Assert.Contains("강의실일관성 A분반", conflict.Description);
+        Assert.Contains("강의실일관성 B분반", conflict.Description);
     }
 
     private SavedTimetableRecord MakeSavedRecordWithManualCross(
@@ -3032,7 +3182,7 @@ public class ManualEditViewModelTests : IDisposable
         Assert.DoesNotContain(conflict.Type.ToString(), conflict.DisplayTitle);
         Assert.DoesNotContain(conflict.Type.ToString(), conflict.DisplayDescription);
         Assert.DoesNotContain("HC-", conflict.DisplayDescription);
-        Assert.Contains("강의실 시간 중복", conflict.DisplayDescription);
+        Assert.Contains("강의실 중복", conflict.DisplayDescription);
     }
 
     [Fact]
@@ -6300,7 +6450,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void FixedSelectedCourse_MovesAndShowsOriginalFixedTimeWarning()
+    public void FixedSelectedCourse_MovesAndShowsOriginalFixedTimeError()
     {
         var vm = _sp.GetRequiredService<ManualEditViewModel>();
         _ws.UpdateCourse(new Course
@@ -6324,12 +6474,56 @@ public class ManualEditViewModelTests : IDisposable
 
         Assert.Contains(vm.Grid.Cells, c => c.Day == 1 && c.Period == 1 && c.Assignment.CourseId == "X-01");
         var panelItem = Assert.Single(vm.ConflictGroups.Where(c => c.Type == ConflictType.FixedTimeViolation));
+        var reasonLine = Assert.Single(panelItem.Lines.Where(line => line.Label == "사유:"));
+        Assert.Equal("고정시간 이탈 / 원래 고정위치: 월 1~2시", reasonLine.Text);
+        Assert.DoesNotContain("교시", reasonLine.Text);
         var detail = Assert.Single(panelItem.DetailConflicts);
-        Assert.Equal(ConflictSeverity.Warning, detail.Severity);
+        Assert.Equal(ConflictSeverity.Error, detail.Severity);
         Assert.Contains("원래 고정시간", detail.Description);
         Assert.Contains("월 1~2교시", detail.Description);
         Assert.Contains("현재 위치: 화 1~2교시", detail.Description);
         Assert.True(vm.ValidateBeforeExport());
+    }
+
+    [Fact]
+    public void FixedSplitCourse_OnlyMovedOneHourBlockShowsFixedTimeViolation()
+    {
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        _ws.UpdateCourse(new Course
+        {
+            Id = "X-01",
+            Name = "FixedSplit",
+            Grade = 2,
+            HoursPerWeek = 3,
+            ProfessorId = "P1",
+            BlockStructure = new List<int> { 2, 1 },
+            IsFixed = true,
+            FixedSlots = new List<TimeSlot> { new(0, 1), new(0, 2), new(1, 3) },
+        });
+        _ws.AddProfessor(new Professor { Id = "P2", Name = "Professor2" });
+        _ws.AddCourse(new Course
+        {
+            Id = "Y-01",
+            Name = "OtherGrade",
+            Grade = 3,
+            HoursPerWeek = 1,
+            ProfessorId = "P2",
+        });
+
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1", AssignmentId("X-01", 1, "P1", "FixedSplit", 0, 0, 1, "R1")),
+            new SolutionAssignment("X-01", 0, 2, "R1", AssignmentId("X-01", 1, "P1", "FixedSplit", 0, 0, 1, "R1")),
+            new SolutionAssignment("X-01", 2, 1, "R1", AssignmentId("X-01", 1, "P1", "FixedSplit", 1, 2, 1, "R1")),
+            new SolutionAssignment("Y-01", 0, 1, "R2", AssignmentId("Y-01", 1, "P2", "OtherGrade", 0, 0, 1, "R2"))));
+
+        var panelItem = Assert.Single(vm.ConflictGroups.Where(c => c.Type == ConflictType.FixedTimeViolation));
+        var detail = Assert.Single(panelItem.DetailConflicts);
+        var assignment = Assert.Single(detail.Assignments!);
+        Assert.Equal("X-01", assignment.CourseId);
+        Assert.Equal(2, assignment.Day);
+        Assert.Equal(1, assignment.Period);
+        Assert.DoesNotContain(panelItem.RelatedAssignments, a => a.CourseId == "Y-01");
+        Assert.DoesNotContain(panelItem.RelatedAssignments, a => a.CourseId == "X-01" && a.Day == 0);
     }
 
     [Fact]
@@ -7870,7 +8064,7 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
-    public void ManualCrossHover_TwoHourInvalidStartPeriod_BlocksWithReason()
+    public void ManualCrossHover_TwoHourConsecutiveStartPeriod_Allows()
     {
         var vm = BuildProgrammingApplicationTwoHourVm(targetStartPeriod: 2);
         var source = ProgrammingApplicationCell(vm, "P10");
@@ -7879,8 +8073,7 @@ public class ManualEditViewModelTests : IDisposable
 
         var state = vm.EvaluateCrossHover(target.Day, target.Period, target.Grade, target.SubColumnIdx, target.Assignment);
 
-        Assert.False(state.CanCreate);
-        Assert.Contains("2시간 수업", state.Reason);
+        Assert.True(state.CanCreate, state.Reason);
     }
 
     [Fact]

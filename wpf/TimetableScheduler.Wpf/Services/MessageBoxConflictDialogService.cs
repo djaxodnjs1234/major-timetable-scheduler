@@ -1,6 +1,7 @@
 using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
+using TimetableScheduler.Domain;
 using TimetableScheduler.Solver;
 using TimetableScheduler.ViewModel;
 using TimetableScheduler.ViewModel.Services;
@@ -319,14 +320,10 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
     {
         var accent = check.IsNormal
             ? Color.FromRgb(0x1B, 0x7F, 0x3A)
-            : check.ErrorCount > 0
-                ? Color.FromRgb(0xBA, 0x1A, 0x1A)
-                : Color.FromRgb(0xB7, 0x79, 0x1F);
+            : Color.FromRgb(0xBA, 0x1A, 0x1A);
         var background = check.IsNormal
             ? Color.FromRgb(0xF1, 0xFA, 0xF3)
-            : check.ErrorCount > 0
-                ? Color.FromRgb(0xFF, 0xF8, 0xF8)
-                : Color.FromRgb(0xFF, 0xF8, 0xE1);
+            : Color.FromRgb(0xFF, 0xF8, 0xF8);
         var accentBrush = new SolidColorBrush(accent);
 
         var header = new Grid();
@@ -334,12 +331,28 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         header.ColumnDefinitions.Add(new ColumnDefinition { Width = GridLength.Auto });
 
         var textPanel = new StackPanel();
-        textPanel.Children.Add(new TextBlock
+        var titlePanel = new StackPanel
+        {
+            Orientation = Orientation.Horizontal,
+        };
+        titlePanel.Children.Add(new TextBlock
         {
             Text = check.Name,
             FontWeight = FontWeights.SemiBold,
             TextWrapping = TextWrapping.Wrap,
         });
+        if (!string.IsNullOrWhiteSpace(check.CountText))
+        {
+            titlePanel.Children.Add(new TextBlock
+            {
+                Text = check.CountText,
+                Foreground = Brushes.Gray,
+                FontSize = 12,
+                Margin = new Thickness(8, 1, 0, 0),
+                VerticalAlignment = VerticalAlignment.Center,
+            });
+        }
+        textPanel.Children.Add(titlePanel);
         if (!string.IsNullOrWhiteSpace(check.Detail))
         {
             textPanel.Children.Add(new TextBlock
@@ -362,7 +375,8 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         };
         Grid.SetColumn(status, 1);
         header.Children.Add(textPanel);
-        header.Children.Add(status);
+        if (check.IsNormal)
+            header.Children.Add(status);
 
         FrameworkElement child = check.IsNormal
             ? header
@@ -375,6 +389,7 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
             BorderThickness = new Thickness(4, 1, 1, 1),
             Padding = new Thickness(10, 7, 10, 7),
             Margin = new Thickness(0, 0, 0, 6),
+            ToolTip = string.IsNullOrWhiteSpace(check.Tooltip) ? null : check.Tooltip,
             Child = child,
         };
     }
@@ -409,7 +424,7 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         else
         {
             foreach (var conflict in check.DetailConflicts)
-                details.Children.Add(BuildConflictBlock(conflict, null));
+                details.Children.Add(BuildConflictBlock(conflict, null, locationFirst: true));
         }
 
         return new Expander
@@ -437,14 +452,13 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         };
     }
 
-    private Border BuildConflictBlock(ConflictItem conflict, ConflictSelectionContext? selection)
+    private Border BuildConflictBlock(
+        ConflictItem conflict,
+        ConflictSelectionContext? selection,
+        bool locationFirst = false)
     {
-        var accent = conflict.Severity == ConflictSeverity.Warning
-            ? Color.FromRgb(0xB7, 0x79, 0x1F)
-            : Color.FromRgb(0xBA, 0x1A, 0x1A);
-        var bg = conflict.Severity == ConflictSeverity.Warning
-            ? Color.FromRgb(0xFF, 0xF8, 0xE1)
-            : Color.FromRgb(0xFF, 0xF8, 0xF8);
+        var accent = Color.FromRgb(0xBA, 0x1A, 0x1A);
+        var bg = Color.FromRgb(0xFF, 0xF8, 0xF8);
         var accentBrush = new SolidColorBrush(accent);
 
         var stack = new StackPanel();
@@ -458,24 +472,37 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
                 .Select(assignment => (SolutionAssignment?)assignment)
                 .FirstOrDefault();
 
-        if (selected is SolutionAssignment selectedAssignment)
-            AddCourseLine("선택한 수업:", selectedAssignment, selection);
+        if (locationFirst)
+        {
+            AddLine("위치:", BuildConflictLocationText(conflict, assignments, selection), accentBrush, FontWeights.SemiBold);
+            AddLine("사유:", BuildReasonLabel(conflict), accentBrush, FontWeights.SemiBold);
+            foreach (var line in conflict.Description.Split(
+                         new[] { "\r\n", "\n" },
+                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                AddLine("상세:", line, accentBrush, FontWeights.Normal);
+        }
+        else
+        {
+            if (selected is SolutionAssignment selectedAssignment)
+                AddCourseLine("선택한 수업:", selectedAssignment, selection, includeLocation: true);
 
-        foreach (var assignment in assignments.Where(assignment =>
-                     selected is not SolutionAssignment selectedRow
-                     || AssignmentIdentity(assignment) != AssignmentIdentity(selectedRow)))
-            AddCourseLine(selected == null ? "관련 수업:" : "충돌 상대:", assignment, null);
+            foreach (var assignment in assignments.Where(assignment =>
+                         selected is not SolutionAssignment selectedRow
+                         || AssignmentIdentity(assignment) != AssignmentIdentity(selectedRow)))
+                AddCourseLine(selected == null ? "관련 수업:" : "충돌 상대:", assignment, null, includeLocation: true);
 
-        AddLine("사유:", KoreanLabel(conflict.Type), accentBrush, FontWeights.SemiBold);
-        foreach (var line in conflict.Description.Split(
-                     new[] { "\r\n", "\n" },
-                     StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
-            AddLine("상세:", line, accentBrush, FontWeights.Normal);
+            AddLine("사유:", BuildReasonLabel(conflict), accentBrush, FontWeights.SemiBold);
+            foreach (var line in conflict.Description.Split(
+                         new[] { "\r\n", "\n" },
+                         StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries))
+                AddLine("상세:", line, accentBrush, FontWeights.Normal);
+        }
 
         void AddCourseLine(
             string role,
             SolutionAssignment assignment,
-            ConflictSelectionContext? selectedContext)
+            ConflictSelectionContext? selectedContext,
+            bool includeLocation)
         {
             var course = _workspace.ExpandedCourses.FirstOrDefault(c =>
                 string.Equals(c.Id, assignment.CourseId, StringComparison.Ordinal));
@@ -485,18 +512,29 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
             var location = ResolveConflictLocation(conflict, assignment, selectedContext);
             var day = selectedContext?.Day ?? assignment.Day;
             var period = selectedContext?.Period ?? assignment.Period;
+            var courseText = $"{course.Name} {course.SectionLabel}분반";
+            if (!includeLocation)
+            {
+                AddLine(
+                    role,
+                    courseText,
+                    GradeToBrushConverter.BrushFor(course.Grade),
+                    FontWeights.SemiBold);
+                return;
+            }
+
             if (location.StartPeriod <= location.EndPeriod)
             {
                 AddLine(
                     role,
-                    $"{DayName(location.Day)} {FormatPeriodRange(location.StartPeriod, location.EndPeriod)} / {course.Name} {course.SectionLabel}분반",
+                    $"{DayName(location.Day)} {FormatPeriodRange(location.StartPeriod, location.EndPeriod)} / {courseText}",
                     GradeToBrushConverter.BrushFor(course.Grade),
                     FontWeights.SemiBold);
                 return;
             }
             AddLine(
                 role,
-                $"{course.Name} {course.SectionLabel}분반 / {DayName(day)} {period}교시",
+                $"{courseText} / {DayName(day)} {period}교시",
                 GradeToBrushConverter.BrushFor(course.Grade),
                 FontWeights.SemiBold);
         }
@@ -575,6 +613,26 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
         return (day, periods[0], periods[^1]);
     }
 
+    private static string BuildConflictLocationText(
+        ConflictItem conflict,
+        IReadOnlyList<SolutionAssignment> assignments,
+        ConflictSelectionContext? selection)
+    {
+        var locations = assignments
+            .Select(assignment => ResolveConflictLocation(conflict, assignment, selection))
+            .OrderBy(location => location.Day)
+            .ThenBy(location => location.StartPeriod)
+            .ThenBy(location => location.EndPeriod)
+            .Select(location => $"{DayName(location.Day)} {FormatPeriodRange(location.StartPeriod, location.EndPeriod)}")
+            .Distinct(StringComparer.Ordinal)
+            .ToList();
+
+        if (locations.Count > 0)
+            return string.Join(", ", locations);
+
+        return $"{DayName(conflict.Day)} {conflict.Period}교시";
+    }
+
     private static string FormatPeriodRange(int startPeriod, int endPeriod) =>
         startPeriod == endPeriod
             ? $"{startPeriod}교시"
@@ -592,19 +650,95 @@ public sealed class MessageBoxConflictDialogService : IConflictDialogService
 
     private static string KoreanLabel(ConflictType type) => type switch
     {
-        ConflictType.RoomConflict => "강의실 시간 중복",
-        ConflictType.ProfessorConflict => "교수 시간 중복",
+        ConflictType.RoomConflict => "강의실 중복",
+        ConflictType.ProfessorConflict => "교수 중복",
         ConflictType.ProfUnavailable => "교수 불가시간",
         ConflictType.LunchConflict => "점심시간 배치",
-        ConflictType.SectionConflict => "분반 시간 중복",
-        ConflictType.GradeConflict => "학년 시간 중복",
+        ConflictType.SectionConflict => "분반 중복",
+        ConflictType.GradeConflict => "학년 중복",
         ConflictType.FixedRoomViolation => "고정 강의실 위반",
         ConflictType.CourseUnavailableRoomViolation => "불가 강의실 위반",
-        ConflictType.FixedTimeViolation => "고정 시간 위반",
+        ConflictType.FixedTimeViolation => "고정시간 이탈",
         ConflictType.BlockStartViolation => "블록 시작 교시",
-        ConflictType.SameCourseSameDayConflict => "같은 요일 중복 배치",
-        ConflictType.ProfRoomInconsistent => "교수 강의실 일관성",
-        ConflictType.AcademicLevelTimeBandViolation => "학위과정 시간대 위반",
+        ConflictType.SameCourseSameDayConflict => "같은 요일 중복",
+        ConflictType.ProfRoomInconsistent => "강의실 불일치",
+        ConflictType.AcademicLevelTimeBandViolation => "시간대 위반",
+        ConflictType.RetakeConflict => "재수강생 고려",
+        ConflictType.CourseRoomInconsistent => "교과목별 동일 강의실",
         _ => "제약조건 위반",
     };
+
+    private string BuildReasonLabel(ConflictItem conflict)
+    {
+        var label = KoreanLabel(conflict.Type);
+        if (conflict.Type != ConflictType.FixedTimeViolation)
+            return label;
+
+        var fixedPosition = BuildOriginalFixedPositionText(conflict);
+        return string.IsNullOrWhiteSpace(fixedPosition)
+            ? label
+            : $"{label} / 원래 고정위치: {fixedPosition}";
+    }
+
+    private string BuildOriginalFixedPositionText(ConflictItem conflict)
+    {
+        foreach (var assignment in conflict.Assignments ?? Array.Empty<SolutionAssignment>())
+        {
+            var course = ResolveCourseForAssignment(assignment);
+            if (course?.FixedSlots.Count > 0)
+                return FormatFixedPositionSlots(course.FixedSlots);
+        }
+
+        return "";
+    }
+
+    private Course? ResolveCourseForAssignment(SolutionAssignment assignment)
+    {
+        var candidates = _workspace.ExpandedCourses
+            .Where(course => string.Equals(course.Id, assignment.CourseId, StringComparison.Ordinal))
+            .ToList();
+        return candidates.Count == 1
+            ? candidates[0]
+            : candidates.FirstOrDefault(course =>
+                course.FixedRooms.Any(room => string.Equals(room, assignment.RoomId, StringComparison.Ordinal)));
+    }
+
+    private static string FormatFixedPositionSlots(IEnumerable<TimeSlot> slots)
+    {
+        var labels = new List<string>();
+        foreach (var dayGroup in slots
+                     .GroupBy(slot => slot.Day)
+                     .OrderBy(group => group.Key))
+        {
+            var periods = dayGroup
+                .Select(slot => slot.Period)
+                .Distinct()
+                .OrderBy(period => period)
+                .ToList();
+            if (periods.Count == 0)
+                continue;
+
+            var start = periods[0];
+            var end = periods[0];
+            foreach (var period in periods.Skip(1))
+            {
+                if (period == end + 1)
+                {
+                    end = period;
+                    continue;
+                }
+
+                labels.Add($"{DayName(dayGroup.Key)} {FormatFixedPositionPeriodRange(start, end)}");
+                start = period;
+                end = period;
+            }
+
+            labels.Add($"{DayName(dayGroup.Key)} {FormatFixedPositionPeriodRange(start, end)}");
+        }
+
+        return string.Join(", ", labels);
+    }
+
+    private static string FormatFixedPositionPeriodRange(int startPeriod, int endPeriod) =>
+        startPeriod == endPeriod ? $"{startPeriod}시" : $"{startPeriod}~{endPeriod}시";
 }

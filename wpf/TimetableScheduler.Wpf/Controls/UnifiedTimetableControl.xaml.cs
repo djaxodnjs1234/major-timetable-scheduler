@@ -131,6 +131,13 @@ public partial class UnifiedTimetableControl : UserControl
             typeof(UnifiedTimetableControl),
             new PropertyMetadata(80.0, OnLayoutMetricsChanged));
 
+    public static readonly DependencyProperty ConnectorScaleProperty =
+        DependencyProperty.Register(
+            nameof(ConnectorScale),
+            typeof(double),
+            typeof(UnifiedTimetableControl),
+            new PropertyMetadata(1.0, OnConnectorScaleChanged));
+
     public double PeriodRowMinHeight
     {
         get => (double)GetValue(PeriodRowMinHeightProperty);
@@ -147,6 +154,12 @@ public partial class UnifiedTimetableControl : UserControl
     {
         get => (double)GetValue(DayColumnWidthProperty);
         set => SetValue(DayColumnWidthProperty, value);
+    }
+
+    public double ConnectorScale
+    {
+        get => (double)GetValue(ConnectorScaleProperty);
+        set => SetValue(ConnectorScaleProperty, value);
     }
 
     public bool EnableCrossHover { get; set; }
@@ -171,6 +184,12 @@ public partial class UnifiedTimetableControl : UserControl
     private CellClickedEventArgs? _activeBadgeTarget;
     private HoverBadgeKind _activeBadgeKind;
     private bool _activeBadgeIsDrag;
+    private Canvas? _conflictConnectorCanvas;
+    private IReadOnlyList<ConflictConnector> _conflictConnectorModels = Array.Empty<ConflictConnector>();
+    private IReadOnlyDictionary<UnifiedCellKey, Border> _conflictConnectorBlockBorders =
+        new Dictionary<UnifiedCellKey, Border>();
+    private string _conflictConnectorGeometrySignature = "";
+    private bool _conflictConnectorRedrawQueued;
 
     internal bool HasActiveHoverBadgeForTests => _activeBadgeTarget != null;
     internal bool HasDragSourceForTests => _dragSource != null;
@@ -206,6 +225,12 @@ public partial class UnifiedTimetableControl : UserControl
             control.Rebuild(vm);
     }
 
+    private static void OnConnectorScaleChanged(DependencyObject d, DependencyPropertyChangedEventArgs e)
+    {
+        if (d is UnifiedTimetableControl control)
+            control.QueueConflictConnectorRedraw(force: true);
+    }
+
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         if (e.OldValue is UnifiedTimetableViewModel oldVm)
@@ -226,6 +251,7 @@ public partial class UnifiedTimetableControl : UserControl
     {
         ClearAllCrossSwapBadges();
         ClearStaleDragState();
+        ResetConflictConnectorOverlayState();
         RootGrid.Children.Clear();
         RootGrid.RowDefinitions.Clear();
         RootGrid.ColumnDefinitions.Clear();
@@ -425,6 +451,8 @@ public partial class UnifiedTimetableControl : UserControl
         {
             IsHitTestVisible = false,
             ClipToBounds = false,
+            SnapsToDevicePixels = true,
+            UseLayoutRounding = true,
         };
         Grid.SetRow(canvas, 0);
         Grid.SetColumn(canvas, 0);
@@ -432,46 +460,134 @@ public partial class UnifiedTimetableControl : UserControl
         Grid.SetColumnSpan(canvas, RootGrid.ColumnDefinitions.Count);
         Panel.SetZIndex(canvas, 55);
         RootGrid.Children.Add(canvas);
+        _conflictConnectorCanvas = canvas;
+        _conflictConnectorModels = vm.ConflictConnectors;
+        _conflictConnectorBlockBorders = blockBorders;
+        RootGrid.SizeChanged += OnConflictConnectorLayoutChanged;
+        LayoutUpdated += OnConflictConnectorLayoutUpdated;
 
+        QueueConflictConnectorRedraw(force: true);
+    }
+
+    private void ResetConflictConnectorOverlayState()
+    {
+        RootGrid.SizeChanged -= OnConflictConnectorLayoutChanged;
+        LayoutUpdated -= OnConflictConnectorLayoutUpdated;
+        _conflictConnectorCanvas = null;
+        _conflictConnectorModels = Array.Empty<ConflictConnector>();
+        _conflictConnectorBlockBorders = new Dictionary<UnifiedCellKey, Border>();
+        _conflictConnectorGeometrySignature = "";
+        _conflictConnectorRedrawQueued = false;
+    }
+
+    private void OnConflictConnectorLayoutChanged(object sender, SizeChangedEventArgs e) =>
+        QueueConflictConnectorRedraw();
+
+    private void OnConflictConnectorLayoutUpdated(object? sender, EventArgs e) =>
+        QueueConflictConnectorRedraw();
+
+    public void RefreshConflictConnectors() =>
+        QueueConflictConnectorRedraw(force: true);
+
+    private void QueueConflictConnectorRedraw(bool force = false)
+    {
+        if (_conflictConnectorCanvas == null)
+            return;
+
+        if (force)
+            _conflictConnectorGeometrySignature = "";
+        if (_conflictConnectorRedrawQueued)
+            return;
+
+        _conflictConnectorRedrawQueued = true;
         Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(() =>
         {
-            if (!RootGrid.Children.Contains(canvas))
-                return;
-
-            foreach (var connector in vm.ConflictConnectors)
-            {
-                if (!blockBorders.TryGetValue(connector.Source, out var source)
-                    || !blockBorders.TryGetValue(connector.Target, out var target)
-                    || source.ActualWidth <= 0
-                    || target.ActualWidth <= 0)
-                    continue;
-
-                var start = source.TranslatePoint(
-                    new Point(source.ActualWidth - 5, source.ActualHeight - 7),
-                    canvas);
-                var end = target.TranslatePoint(
-                    new Point(target.ActualWidth - 5, target.ActualHeight - 7),
-                    canvas);
-                var horizontalOffset = Math.Clamp(Math.Abs(end.X - start.X) * 0.25, 16, 50);
-                var lift = Math.Clamp(Math.Abs(end.Y - start.Y) * 0.18 + 12, 12, 38);
-                var direction = end.X >= start.X ? 1 : -1;
-                var pathFigure = new PathFigure { StartPoint = start, IsClosed = false };
-                pathFigure.Segments.Add(new BezierSegment(
-                    new Point(start.X + horizontalOffset * direction, start.Y - lift),
-                    new Point(end.X - horizontalOffset * direction, end.Y - lift),
-                    end,
-                    true));
-                var geometry = new PathGeometry(new[] { pathFigure });
-                canvas.Children.Add(new System.Windows.Shapes.Path
-                {
-                    Data = geometry,
-                    Stroke = MoveBlockedBorder,
-                    StrokeThickness = 1.25,
-                    Opacity = 0.72,
-                    ToolTip = connector.Label,
-                });
-            }
+            _conflictConnectorRedrawQueued = false;
+            RedrawConflictConnectors();
         }));
+    }
+
+    private void RedrawConflictConnectors()
+    {
+        var canvas = _conflictConnectorCanvas;
+        if (canvas == null || !RootGrid.Children.Contains(canvas))
+            return;
+
+        var paths = new List<(System.Windows.Shapes.Path Path, string Signature)>();
+        foreach (var connector in _conflictConnectorModels)
+        {
+            if (!TryBuildConflictConnectorPath(connector, canvas, out var path, out var signature))
+                continue;
+            paths.Add((path, signature));
+        }
+
+        var nextSignature = string.Join(";", paths.Select(item => item.Signature));
+        if (nextSignature == _conflictConnectorGeometrySignature
+            && canvas.Children.Count == paths.Count)
+        {
+            return;
+        }
+
+        canvas.Children.Clear();
+        foreach (var (path, _) in paths)
+            canvas.Children.Add(path);
+        _conflictConnectorGeometrySignature = nextSignature;
+    }
+
+    private bool TryBuildConflictConnectorPath(
+        ConflictConnector connector,
+        Canvas canvas,
+        out System.Windows.Shapes.Path path,
+        out string signature)
+    {
+        path = new System.Windows.Shapes.Path();
+        signature = "";
+
+        if (!_conflictConnectorBlockBorders.TryGetValue(connector.Source, out var source)
+            || !_conflictConnectorBlockBorders.TryGetValue(connector.Target, out var target)
+            || source.ActualWidth <= 0
+            || target.ActualWidth <= 0)
+            return false;
+
+        var start = source.TranslatePoint(
+            new Point(source.ActualWidth - 5, source.ActualHeight - 7),
+            canvas);
+        var end = target.TranslatePoint(
+            new Point(target.ActualWidth - 5, target.ActualHeight - 7),
+            canvas);
+        var horizontalOffset = Math.Clamp(Math.Abs(end.X - start.X) * 0.25, 16, 50);
+        var lift = Math.Clamp(Math.Abs(end.Y - start.Y) * 0.18 + 12, 12, 38);
+        var direction = end.X >= start.X ? 1 : -1;
+        var pathFigure = new PathFigure { StartPoint = start, IsClosed = false };
+        pathFigure.Segments.Add(new BezierSegment(
+            new Point(start.X + horizontalOffset * direction, start.Y - lift),
+            new Point(end.X - horizontalOffset * direction, end.Y - lift),
+            end,
+            true));
+        var geometry = new PathGeometry(new[] { pathFigure });
+        var strokeThickness = 1.25 / Math.Clamp(ConnectorScale, 0.25, 4.0);
+        path = new System.Windows.Shapes.Path
+        {
+            Data = geometry,
+            Stroke = MoveBlockedBorder,
+            StrokeThickness = strokeThickness,
+            StrokeStartLineCap = PenLineCap.Round,
+            StrokeEndLineCap = PenLineCap.Round,
+            StrokeLineJoin = PenLineJoin.Round,
+            SnapsToDevicePixels = true,
+            Opacity = 0.72,
+            ToolTip = connector.Label,
+        };
+        signature = string.Join(
+            ":",
+            connector.Source,
+            connector.Target,
+            Math.Round(start.X, 2),
+            Math.Round(start.Y, 2),
+            Math.Round(end.X, 2),
+            Math.Round(end.Y, 2),
+            Math.Round(strokeThickness, 3));
+        return true;
     }
 
     private void AddSelectedOverlay(int row, int column, int rowSpan)

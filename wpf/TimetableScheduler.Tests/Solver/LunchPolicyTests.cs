@@ -21,25 +21,25 @@ public class LunchPolicyTests
         var flexible = new SchedulePolicy { LunchMode = LunchPolicyMode.BanOneOfPeriods4And5 };
 
         Assert.Equal(
-            new[] { 1, 3, 5, 7 },
+            new[] { 1, 2, 3, 4, 5, 6, 7, 8 },
             SchedulePolicyRules.PossibleBlockStarts(
                 none,
                 SchedulePolicyRules.CandidateDaytimePeriods(none),
                 2));
         Assert.Equal(
-            new[] { 1, 3, 6, 8 },
+            new[] { 1, 2, 3, 6, 7, 8 },
             SchedulePolicyRules.PossibleBlockStarts(
                 ban5,
                 SchedulePolicyRules.CandidateDaytimePeriods(ban5),
                 2));
         Assert.Equal(
-            new[] { 1, 5, 7 },
+            new[] { 1, 2, 5, 6, 7, 8 },
             SchedulePolicyRules.PossibleBlockStarts(
                 ban4,
                 SchedulePolicyRules.CandidateDaytimePeriods(ban4),
                 2));
         Assert.Equal(
-            new[] { 1, 3, 5, 6, 7, 8 },
+            new[] { 1, 2, 3, 5, 6, 7, 8 },
             SchedulePolicyRules.PossibleBlockStarts(
                 flexible,
                 SchedulePolicyRules.CandidateDaytimePeriods(flexible),

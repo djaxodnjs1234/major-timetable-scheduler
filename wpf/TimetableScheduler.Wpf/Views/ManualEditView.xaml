@@ -173,7 +173,8 @@
                             <TabItem Header="통합 시간표">
                                 <DockPanel>
                                     <ctrl:UnifiedTimetableControl x:Name="GridControl"
-                                                              DataContext="{Binding Grid}">
+                                                              DataContext="{Binding Grid}"
+                                                              ConnectorScale="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:ManualEditView}}}">
                                         <ctrl:UnifiedTimetableControl.LayoutTransform>
                                             <ScaleTransform ScaleX="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:ManualEditView}}}"
                                                             ScaleY="{Binding Zoom.Scale, RelativeSource={RelativeSource AncestorType={x:Type views:ManualEditView}}}" />
@@ -547,11 +548,6 @@
                                                                 <TextBlock.Style>
                                                                     <Style TargetType="{x:Type TextBlock}">
                                                                         <Setter Property="Foreground" Value="#BA1A1A" />
-                                                                        <Style.Triggers>
-                                                                            <DataTrigger Binding="{Binding Severity}" Value="Warning">
-                                                                                <Setter Property="Foreground" Value="#B7791F" />
-                                                                            </DataTrigger>
-                                                                        </Style.Triggers>
                                                                     </Style>
                                                                 </TextBlock.Style>
                                                             </TextBlock>
@@ -565,12 +561,6 @@
                                                             <Style TargetType="{x:Type Border}">
                                                                 <Setter Property="BorderBrush" Value="#BA1A1A" />
                                                                 <Setter Property="Background" Value="#FFF8F8" />
-                                                                <Style.Triggers>
-                                                                    <DataTrigger Binding="{Binding Severity}" Value="Warning">
-                                                                        <Setter Property="BorderBrush" Value="#B7791F" />
-                                                                        <Setter Property="Background" Value="#FFF8E1" />
-                                                                    </DataTrigger>
-                                                                </Style.Triggers>
                                                             </Style>
                                                         </Border.Style>
                                                         <StackPanel>
@@ -591,22 +581,28 @@
                                                                                 <TextBlock.Style>
                                                                                     <Style TargetType="{x:Type TextBlock}">
                                                                                         <Setter Property="Foreground" Value="#BA1A1A" />
-                                                                                        <Style.Triggers>
-                                                                                            <DataTrigger Binding="{Binding DataContext.Severity, RelativeSource={RelativeSource AncestorType={x:Type Expander}}}" Value="Warning">
-                                                                                                <Setter Property="Foreground" Value="#B7791F" />
-                                                                                            </DataTrigger>
-                                                                                        </Style.Triggers>
                                                                                     </Style>
                                                                                 </TextBlock.Style>
                                                                             </TextBlock>
                                                                             <TextBlock Text="{Binding Text}"
                                                                                        Grid.Column="1"
                                                                                        FontSize="11"
-                                                                                       Foreground="{Binding Grade, Converter={StaticResource GradeToBrush}}"
-                                                                                       FontWeight="SemiBold"
                                                                                        TextWrapping="Wrap"
                                                                                        Margin="0,1,0,0"
-                                                                                       Visibility="{Binding IsCourse, Converter={StaticResource BoolToVisibility}}" />
+                                                                                       Visibility="{Binding IsCourse, Converter={StaticResource BoolToVisibility}}">
+                                                                                <TextBlock.Style>
+                                                                                    <Style TargetType="{x:Type TextBlock}">
+                                                                                        <Setter Property="Foreground" Value="#111827" />
+                                                                                        <Setter Property="FontWeight" Value="SemiBold" />
+                                                                                        <Style.Triggers>
+                                                                                            <DataTrigger Binding="{Binding Label}" Value="관련 수업:">
+                                                                                                <Setter Property="Foreground" Value="#6B7280" />
+                                                                                                <Setter Property="FontWeight" Value="Normal" />
+                                                                                            </DataTrigger>
+                                                                                        </Style.Triggers>
+                                                                                    </Style>
+                                                                                </TextBlock.Style>
+                                                                            </TextBlock>
                                                                             <TextBlock Text="{Binding Text}"
                                                                                        Grid.Column="1"
                                                                                        FontSize="11"
@@ -616,11 +612,6 @@
                                                                                 <TextBlock.Style>
                                                                                     <Style TargetType="{x:Type TextBlock}">
                                                                                         <Setter Property="Foreground" Value="#BA1A1A" />
-                                                                                        <Style.Triggers>
-                                                                                            <DataTrigger Binding="{Binding DataContext.Severity, RelativeSource={RelativeSource AncestorType={x:Type Expander}}}" Value="Warning">
-                                                                                                <Setter Property="Foreground" Value="#B7791F" />
-                                                                                            </DataTrigger>
-                                                                                        </Style.Triggers>
                                                                                     </Style>
                                                                                 </TextBlock.Style>
                                                                             </TextBlock>
@@ -747,8 +738,9 @@
                                                        FontSize="10"
                                                        Foreground="#666"
                                                        Margin="0,0,0,3" />
-                                            <TextBox Text="{Binding NewBlockRowSpan, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                                     Padding="6,4" />
+                                            <ComboBox ItemsSource="{Binding ManualBlockWeeklyHourOptions}"
+                                                      SelectedItem="{Binding NewBlockRowSpan, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
+                                                      Padding="6,4" />
                                         </StackPanel>
                                         <StackPanel Grid.Column="2">
                                             <TextBlock Text="강의실"

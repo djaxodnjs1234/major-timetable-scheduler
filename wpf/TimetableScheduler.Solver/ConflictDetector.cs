@@ -18,6 +18,8 @@ public enum ConflictType
     ProfRoomInconsistent,
     SameCourseSameDayConflict,
     AcademicLevelTimeBandViolation,
+    RetakeConflict,
+    CourseRoomInconsistent,
 }
 
 public sealed record ConflictItem(
@@ -117,12 +119,38 @@ public static class ConflictDetector
         // HC-13: fixed courses must stay on their exact fixed slots.
         foreach (var c in courses.Where(c => c.IsFixed && !c.IsSchoolFixed))
         {
-            var actual = assignment
+            var courseAssignments = assignment
                 .Where(a => ReferenceEquals(ResolveCourseForAssignment(a, courses), c))
+                .ToList();
+            var actual = courseAssignments
                 .Select(a => new TimeSlot(a.Day, a.Period))
                 .Distinct()
                 .ToHashSet();
             var expected = c.FixedSlots.ToHashSet();
+            if (actual.SetEquals(expected))
+                continue;
+
+            var extraGroups = courseAssignments
+                .Where(a => !expected.Contains(new TimeSlot(a.Day, a.Period)))
+                .GroupBy(a => (a.Day, a.Period))
+                .OrderBy(g => g.Key.Day)
+                .ThenBy(g => g.Key.Period)
+                .ToList();
+            if (extraGroups.Count > 0)
+            {
+                foreach (var group in extraGroups)
+                {
+                    list.Add(new ConflictItem(
+                        ConflictType.FixedTimeViolation, ConflictSeverity.Error,
+                        $"{c.Name}({c.Id})은 고정 시간표를 벗어날 수 없습니다.",
+                        group.Key.Day,
+                        group.Key.Period,
+                        group.DistinctBy(AssignmentConflictIdentity).ToList()));
+                }
+
+                continue;
+            }
+
             if (!actual.SetEquals(expected))
             {
                 list.Add(new ConflictItem(
@@ -198,7 +226,7 @@ public static class ConflictDetector
                 new[] { a }));
         }
 
-        // HC-19: length-2 blocks must start at 1/3/6/8.
+        // HC-19: length-2 blocks must start at a consecutive non-lunch span.
         var runs = TimetableRuns.ComputeRuns(assignment);
         foreach (var c in courses)
         {
@@ -218,7 +246,10 @@ public static class ConflictDetector
                     c.Grade, allowGraduateDaytimeOverflow, schedulePolicy);
                 if (lunchPeriodsByDay.TryGetValue(d, out var lunchPeriod))
                     allowedPeriods = allowedPeriods.Where(period => period != lunchPeriod).ToArray();
-                var allowedStarts = SchedulePolicyRules.DeriveTwoHourStarts(allowedPeriods);
+                var allowedStarts = SchedulePolicyRules.PossibleBlockStarts(
+                    schedulePolicy,
+                    allowedPeriods,
+                    2);
                 if (allowedStarts.Contains(p)) continue;
                 list.Add(new ConflictItem(
                     ConflictType.BlockStartViolation, ConflictSeverity.Error,

@@ -153,8 +153,7 @@ public static class SchedulePolicyRules
             .Where(start => Enumerable.Range(start, blockLength).All(allowed.Contains));
         if (blockLength == 2)
         {
-            var twoHourStarts = DeriveTwoHourStarts(allowedPeriods).ToHashSet();
-            starts = starts.Where(twoHourStarts.Contains);
+            starts = starts.Where(start => start + 1 != SchedulePeriods.FirstNightPeriod);
         }
         return starts.Distinct().OrderBy(start => start).ToArray();
     }

@@ -43,12 +43,13 @@ public class LunchPolicyViewModelTests
     }
 
     [Theory]
-    [InlineData(LunchPolicyMode.None)]
-    [InlineData(LunchPolicyMode.BanPeriod4)]
-    [InlineData(LunchPolicyMode.BanPeriod5)]
-    [InlineData(LunchPolicyMode.BanOneOfPeriods4And5)]
-    public void FixedTwoHourEditor_IgnoresLunchPolicyStartRestrictions(
-        LunchPolicyMode mode)
+    [InlineData(LunchPolicyMode.None, "1,2,3,4,5,6,7,8")]
+    [InlineData(LunchPolicyMode.BanPeriod4, "1,2,5,6,7,8")]
+    [InlineData(LunchPolicyMode.BanPeriod5, "1,2,3,6,7,8")]
+    [InlineData(LunchPolicyMode.BanOneOfPeriods4And5, "1,2,3,5,6,7,8")]
+    public void FixedTwoHourEditor_UsesLunchPolicyStartRestrictions(
+        LunchPolicyMode mode,
+        string expectedPeriodsCsv)
     {
         var entry = new BlockSlotEntry
         {
@@ -56,8 +57,57 @@ public class LunchPolicyViewModelTests
             IsGraduate = false,
             SchedulePolicy = new SchedulePolicy { LunchMode = mode },
         };
+        var expectedPeriods = expectedPeriodsCsv.Split(',').Select(int.Parse).ToArray();
 
-        Assert.Equal(new[] { 1, 2, 3, 4, 5, 6, 7, 8 }, entry.PeriodOptions.Select(option => option.Period));
+        Assert.Equal(expectedPeriods, entry.PeriodOptions.Select(option => option.Period));
+    }
+
+    [Theory]
+    [InlineData(LunchPolicyMode.BanPeriod4, 4)]
+    [InlineData(LunchPolicyMode.BanPeriod5, 5)]
+    public void TimeSlotPicker_StaticLunchModeDisablesOnlyThatPeriod(
+        LunchPolicyMode mode,
+        int lunchPeriod)
+    {
+        var target = new List<TimeSlot>();
+        var picker = new TimeSlotPickerViewModel(
+            target,
+            schedulePolicy: new SchedulePolicy { LunchMode = mode });
+
+        picker.Toggle(0, lunchPeriod);
+        picker.Toggle(0, lunchPeriod == 4 ? 5 : 4);
+
+        Assert.True(picker.CellAt(0, lunchPeriod).IsLunch);
+        Assert.False(picker.CellAt(0, lunchPeriod).IsSelected);
+        Assert.DoesNotContain(new TimeSlot(0, lunchPeriod), target);
+        Assert.Contains(new TimeSlot(0, lunchPeriod == 4 ? 5 : 4), target);
+    }
+
+    [Fact]
+    public void FixedEditor_CoercesExistingStartThatNoLongerMatchesLunchPolicy()
+    {
+        var section = new Course
+        {
+            Id = "C-01",
+            Name = "C",
+            Grade = 1,
+            HoursPerWeek = 2,
+            BlockStructure = new List<int> { 2 },
+            IsFixed = true,
+            FixedSlots = new List<TimeSlot> { new(0, 4), new(0, 5) },
+        };
+        var item = new CourseGroupItem
+        {
+            BaseId = "C",
+            Sections = new List<Course> { section },
+        };
+
+        var editor = FixedSlotEditorViewModel.Build(item, isFixed: true, FlexiblePolicy);
+        var entry = editor.SectionEditors.Single().BlockEntries.Single();
+
+        Assert.DoesNotContain(4, entry.PeriodOptions.Select(option => option.Period));
+        Assert.Equal(1, entry.SelectedPeriod);
+        Assert.Equal(new List<TimeSlot> { new(0, 4), new(0, 5) }, section.FixedSlots);
     }
 
     [Fact]

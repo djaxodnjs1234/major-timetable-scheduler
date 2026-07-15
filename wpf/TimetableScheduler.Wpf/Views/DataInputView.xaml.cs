@@ -424,6 +424,8 @@ public partial class DataInputView : UserControl
             UpdateCourseSharedSelectionSource(courseTypeCombo);
         if (expander != null)
             UpdateSectionProfessorSelectionSources(expander);
+        if (expander?.FindName("IsFixedCheckBox") is CheckBox isFixedCheckBox)
+            BindingOperations.GetBindingExpression(isFixedCheckBox, CheckBox.IsCheckedProperty)?.UpdateSource();
 
         var rep = item.Sections[0];
         if (rep.BlockStructure.Count > 0 && rep.BlockStructure.Sum() != rep.HoursPerWeek)
@@ -437,14 +439,12 @@ public partial class DataInputView : UserControl
             return;
         }
 
-        // Flush fixed slot editor values back to sections before save
+        // Flush fixed slot editor values back to sections before validation and save.
         var editorCtrl = expander != null ? FindDescendant<FixedSlotEditorControl>(expander) : null;
-        var candidateFixedSlots = editorCtrl?.DataContext is FixedSlotEditorViewModel pendingEditorVm
-            ? pendingEditorVm.SectionEditors
-                .Select(sectionEditor => (IReadOnlyList<TimeSlot>)sectionEditor.ToFixedSlots())
-                .ToList()
-            : null;
-        var overlap = Vm.FindFixedTimeOverlap(item, candidateFixedSlots);
+        if (editorCtrl?.DataContext is FixedSlotEditorViewModel editorVm)
+            editorVm.ApplyTo(item);
+
+        var overlap = Vm.FindFixedTimeOverlap(item);
         if (overlap != null)
         {
             var dayName = overlap.Day switch
@@ -466,7 +466,7 @@ public partial class DataInputView : UserControl
                 MessageBoxImage.Warning);
             return;
         }
-        var schoolFixedOverlap = Vm.FindSchoolFixedTimeOverlapWarning(item, candidateFixedSlots);
+        var schoolFixedOverlap = Vm.FindSchoolFixedTimeOverlapWarning(item);
         if (schoolFixedOverlap != null)
         {
             var dayName = schoolFixedOverlap.Day switch
@@ -489,10 +489,6 @@ public partial class DataInputView : UserControl
                 MessageBoxImage.Warning);
             if (result != MessageBoxResult.Yes)
                 return;
-        }
-        if (editorCtrl?.DataContext is FixedSlotEditorViewModel editorVm)
-        {
-            editorVm.ApplyTo(item);
         }
         if (item.IsFixedIndividual)
             Vm.SaveSectionCommand.Execute(item);

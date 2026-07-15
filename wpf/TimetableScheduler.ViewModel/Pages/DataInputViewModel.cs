@@ -2291,7 +2291,7 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     }
 
     private static string InfeasibleFallbackMessage() =>
-        "INFEASIBLE: GE-025: 정확한 충돌 원인은 자동으로 특정하지 못했습니다. 수정 후보: 시간 고정, 교수 불가시간, 불가 강의실, 고정 강의실, Cross, 재수강 조건을 하나씩 줄인 뒤 다시 생성해 보세요.";
+        "INFEASIBLE: GE-025: 해를 찾지 못했습니다. 대부분 시간 고정, 교수 불가시간, 불가 강의실, 고정 강의실, Cross, 재수강 조건이 너무 빡빡할 때 발생합니다. 수정 후보: 시간 고정 해제, 교수 불가시간 축소, 불가/고정 강의실 완화, Cross/재수강 조건 축소 후 다시 생성해 보세요.";
 
     private IReadOnlyList<string> GetUnsavedEditLabels() =>
         CourseGroups.Where(item => item.IsEditing)
@@ -2440,11 +2440,11 @@ public sealed partial class DataInputViewModel : PageViewModelBase
     private static string NoSolutionMessageWithId(string status) =>
         status == "MODEL_INVALID"
             ? "GE-023: 모델이 유효하지 않습니다. 입력 데이터 참조와 조건을 점검해 주세요."
-            : $"GE-024: 해를 찾지 못했습니다({status}). 불가 시간, 불가 강의실, 시간 고정, Cross 설정을 줄이거나 제한 시간을 늘려보세요.";
+            : $"GE-024: 시스템/솔버 상태 때문에 해를 확정하지 못했습니다({status}). 입력을 저장한 뒤 다시 시도하거나 제한 시간을 늘려보세요. 반복되면 입력 데이터와 로그를 확인해 주세요.";
 
     private string UnknownMessage() =>
         "전체 생성 제한 시간 안에 해를 찾거나 불가능함을 확정하지 못했습니다. 제한 시간을 늘려 다시 시도해 보세요.";
 
     private string NoSolutionMessage(string status) =>
-        $"해를 찾지 못했습니다({status}). 불가 시간, 불가 강의실, 시간 고정, Cross 설정을 줄이거나 제한 시간을 늘려보세요.";
+        $"시스템/솔버 상태 때문에 해를 확정하지 못했습니다({status}). 입력을 저장한 뒤 다시 시도하거나 제한 시간을 늘려보세요.";
 }

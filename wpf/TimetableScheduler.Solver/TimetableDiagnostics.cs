@@ -170,7 +170,7 @@ public static class TimetableDiagnostics
             if (course.BlockStructure.Count > 0 && course.BlockStructure.Sum() != course.HoursPerWeek)
                 Add(issues, "GE-003", $"{courseName} 블록구조 합계가 주당 수업시간과 다릅니다. 블록구조 또는 시수를 수정하세요.");
 
-            if (rooms.Count > 0 && CandidateRooms(course, null, rooms).Count == 0)
+            if (rooms.Count > 0 && CandidateRooms(course, rooms).Count == 0)
                 Add(issues, "GE-004", $"{courseName} 과목에 사용 가능한 강의실이 없습니다. 불가강의실/고정강의실을 수정하세요.");
 
             foreach (var block in EffectiveBlocks(course))
@@ -191,9 +191,6 @@ public static class TimetableDiagnostics
             {
                 if (!professorMap.TryGetValue(pid, out var professor))
                     continue;
-
-                if (rooms.Count > 0 && CandidateRooms(course, professor, rooms).Count == 0)
-                    Add(issues, "GE-005", $"{CourseLabel(course)} / {professor.Name} 조건을 만족하는 강의실이 없습니다. 교수 강의실 조건 또는 과목 불가강의실을 수정하세요.");
 
                 if (course.IsFixed && course.FixedSlots.Any(slot => IsUnavailable(professor, slot)))
                     Add(issues, "GE-006", $"{CourseLabel(course)} 고정 시간이 {professor.Name} 교수의 불가 시간과 겹칩니다. 불가 시간 또는 시간고정을 수정하세요.");
@@ -400,9 +397,6 @@ public static class TimetableDiagnostics
                 if (!professorMap.TryGetValue(pid, out var professor))
                     continue;
 
-                if (rooms.Count > 0 && CandidateRooms(course, professor, rooms).Count == 0)
-                    Add(issues, "IE-023", $"{InputCourseLocation(course)} / {InputProfessorLocation(professor)}: 조건으로 사용 가능한 강의실이 없습니다. 교수 강의실 조건 또는 과목 불가강의실을 수정하세요.");
-
                 var requiredSlots = RequiredSlotCount(course);
                 var availableSlots = AllowedPeriods(
                         course, allowGraduateDaytimeOverflow, schedulePolicy)
@@ -429,8 +423,6 @@ public static class TimetableDiagnostics
                     if (!course.IsFixed && commonSlots < requiredSlots)
                         Add(issues, "IE-025", $"{InputCourseLocation(course)} / {string.Join(", ", teachingProfessors.Select(InputProfessorLocation))}: 팀티칭 교수들의 공통 가능 시간이 부족합니다. 교수 불가 시간을 조정하세요.");
 
-                    if (rooms.Count > 0 && CommonCandidateRooms(course, teachingProfessors, rooms).Count == 0)
-                        Add(issues, "IE-026", $"{InputCourseLocation(course)} / {string.Join(", ", teachingProfessors.Select(InputProfessorLocation))}: 팀티칭 교수들의 공통 가능 강의실이 없습니다. 교수 강의실 조건을 조정하세요.");
                 }
             }
         }
@@ -462,8 +454,6 @@ public static class TimetableDiagnostics
             if (!course.IsFixed && commonSlots < requiredSlots)
                 Add(issues, "GE-011", $"{CourseLabel(course)} 팀티칭 교수들의 공통 가능 시간이 부족합니다. 교수 불가 시간을 수정하세요.");
 
-            if (rooms.Count > 0 && CommonCandidateRooms(course, teachingProfessors, rooms).Count == 0)
-                Add(issues, "GE-012", $"{CourseLabel(course)} 팀티칭 교수들의 공통 가능 강의실이 없습니다. 교수 강의실 조건을 수정하세요.");
         }
     }
 
@@ -989,18 +979,7 @@ public static class TimetableDiagnostics
         return byKey.Values.ToList();
     }
 
-    private static IReadOnlyList<Room> CandidateRooms(Course course, Professor? professor, IReadOnlyList<Room> rooms)
-    {
-        return rooms.Where(room =>
-            !course.UnavailableRooms.Contains(room.Id) &&
-            (course.FixedRooms.Count == 0 || course.FixedRooms.Contains(room.Id)))
-            .ToList();
-    }
-
-    private static IReadOnlyList<Room> CommonCandidateRooms(
-        Course course,
-        IReadOnlyList<Professor> professors,
-        IReadOnlyList<Room> rooms)
+    private static IReadOnlyList<Room> CandidateRooms(Course course, IReadOnlyList<Room> rooms)
     {
         return rooms.Where(room =>
             !course.UnavailableRooms.Contains(room.Id) &&
@@ -1117,8 +1096,7 @@ public static class TimetableDiagnostics
                     continue;
                 }
 
-                professorMap.TryGetValue(course.ProfessorId, out var professor);
-                var candidateRoomIds = CandidateRooms(course, professor, rooms)
+                var candidateRoomIds = CandidateRooms(course, rooms)
                     .Select(room => room.Id)
                     .Distinct(StringComparer.Ordinal)
                     .ToList();

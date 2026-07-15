@@ -217,7 +217,7 @@ public class HcCoverageTests
         var solver = new CpSolver();
         Assert.True(solver.Solve(build.Model) is CpSolverStatus.Feasible or CpSolverStatus.Optimal);
 
-        // y must be 1 at the fixed slot (room is decided by HC-21/HC-14)
+        // y must be 1 at the fixed slot (room is decided by fixed/course room constraints)
         Assert.Equal(1, solver.Value(build.Y[("Y-01", 2, 3)]));
     }
 

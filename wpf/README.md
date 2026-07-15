@@ -76,10 +76,10 @@ TimetableScheduler.Tests       xUnit 회귀 테스트
 | 18 | SC-03으로 이동: 블록 페어 요일 차 선호 | soft |
 | 19 | 점심 정책의 연속 가능 구간에서 2시간 블록 시작 교시 계산 | blocks |
 | 20 | 같은 과목 블록들 다른 요일 | blocks |
-| 21 | 자동 배정 과목의 교수 강의실 조건 | blocks |
+| 21 | 삭제됨: 교수 불가 강의실 미사용 | - |
 | 22 | 자동 배정 과목의 공통 강의실 | blocks |
 
-강의실 정책: 과목 `FixedRooms`가 있으면 과목 설정이 교수 강의실 조건보다 우선하며, 여러 방이면 모두 동시 점유한다. `FixedRooms`가 없는 자동 과목만 담당 교수의 허용/불가 강의실 조건을 따른다. 자동 배정 과목은 같은 과목의 모든 블록과 분반에서 공통 강의실을 사용하지만, 같은 교수의 서로 다른 과목을 한 방으로 강제하지는 않는다.
+강의실 정책: 과목 `FixedRooms`가 있으면 그 방을 사용하며, 여러 방이면 모두 동시 점유한다. `FixedRooms`가 없는 자동 과목은 과목 불가 강의실을 제외한 후보 중에서 배정된다. 자동 배정 과목은 같은 과목의 모든 블록과 분반에서 공통 강의실을 사용하지만, 같은 교수의 서로 다른 과목을 한 방으로 강제하지는 않는다.
 
 Cross 대응 분반이 공통 고정 강의실을 사용하면 같은 시간에 같은 방을 점유하게 되므로 Cross 추가를 차단한다(`IE-039`). 기존 저장 데이터에서 같은 조건은 생성 전 진단으로 표시한다(`GE-028`).
 
@@ -114,7 +114,7 @@ Cross 대응 분반이 공통 고정 강의실을 사용하면 같은 시간에 
 
 좌측 사이드바 (Resource Explorer) — 교수/교과목/강의실/솔버 nav.
 
-- **교수 깊은 편집**: 불가 강의실 체크리스트 + 불가 시간 5×9 토글 그리드
+- **교수 깊은 편집**: 불가 시간 5×9 토글 그리드
 - **교과목 깊은 편집**: IsFixed, 불가 강의실 체크리스트, FixedSlots 5×9, BlockStructure CSV, CoteachProfs 체크리스트
 - **강의실 깊은 편집**: 실습실 여부 + 허용 인원 수
 - **xlsx 가져오기** 버튼
@@ -139,7 +139,7 @@ Cross 대응 분반이 공통 고정 강의실을 사용하면 같은 시간에 
 
 - exe 위치부터 위로 8단계까지 `개설강좌 편람.xlsx` 탐색 → 자동 임포트 (DB 비었을 때만)
 - 모든 CRUD는 즉시 SQLite 영속 (`WorkspaceService.Persist`)
-- List 필드 (FixedRooms, BlockStructure, FixedSlots, UnavailableSlots, Professor.UnavailableRooms, CoteachProfs, BaseIds)는 JSON 컬럼
+- List 필드 (FixedRooms, Course.UnavailableRooms, BlockStructure, FixedSlots, UnavailableSlots, CoteachProfs, BaseIds)는 JSON 컬럼
 
 ## Python ↔ C# 차이
 

@@ -51,6 +51,27 @@ public class ManualEditFreedomTests
             item.DetailConflicts.Any(conflict => conflict.Type == ConflictType.ProfessorConflict));
         Assert.Contains(viewModel.ConflictGroups, item =>
             item.DetailConflicts.Any(conflict => conflict.Type == ConflictType.RoomConflict));
+        var panelGroup = viewModel.ConflictGroups.First(item =>
+            item.DetailConflicts.Any(conflict => conflict.Type == ConflictType.ProfessorConflict)
+            && item.DetailConflicts.Any(conflict => conflict.Type == ConflictType.RoomConflict));
+        var reasonLines = panelGroup.Lines.Where(line => line.Label == "사유:").ToList();
+        Assert.Contains(reasonLines, line => line.Text == "강의실 중복");
+        Assert.Contains(reasonLines, line => line.Text == "교수 중복");
+        Assert.All(reasonLines, line =>
+        {
+            Assert.DoesNotContain("—", line.Text);
+            Assert.DoesNotContain("교시", line.Text);
+            Assert.DoesNotContain("블럭", line.Text);
+        });
+        var courseLines = panelGroup.Lines
+            .Where(line => line.Label is "위반 블럭:" or "관련 수업:")
+            .ToList();
+        Assert.NotEmpty(courseLines);
+        Assert.All(courseLines, line =>
+        {
+            Assert.DoesNotContain("교시", line.Text);
+            Assert.DoesNotContain(" / ", line.Text);
+        });
         Assert.Contains(viewModel.Grid.ConflictConnectors, connector => connector.Label == "교수 중복");
         Assert.Contains(viewModel.Grid.ConflictConnectors, connector => connector.Label == "강의실 중복");
     }
@@ -116,13 +137,16 @@ public class ManualEditFreedomTests
         viewModel.ValidateAllCommand.Execute(null);
 
         var checks = Assert.Single(dialog.ValidationCheckCalls);
-        Assert.DoesNotContain(
-            checks.SelectMany(check => check.DetailConflicts),
+        var courseUnavailableCheck = Assert.Single(checks, check => check.Name == "과목 불가강의실");
+        Assert.False(courseUnavailableCheck.IsNormal);
+        Assert.Contains("사용할 수 없", courseUnavailableCheck.Tooltip);
+        Assert.Contains(
+            courseUnavailableCheck.DetailConflicts,
             conflict => conflict.Type == ConflictType.CourseUnavailableRoomViolation);
     }
 
     [Fact]
-    public void FixedCourse_CanMove_AndShowsOriginalFixedSlotAsWarning()
+    public void FixedCourse_CanMove_AndShowsOriginalFixedSlotAsError()
     {
         var fixedCourse = Course("A-01", 1, "P1");
         fixedCourse.IsFixed = true;
@@ -148,8 +172,11 @@ public class ManualEditFreedomTests
         Assert.True(moved);
         var panelItem = Assert.Single(viewModel.ConflictGroups.Where(item =>
             item.Type == ConflictType.FixedTimeViolation));
+        var reasonLine = Assert.Single(panelItem.Lines.Where(line => line.Label == "사유:"));
+        Assert.Equal("고정시간 이탈 / 원래 고정위치: 월 1시", reasonLine.Text);
+        Assert.DoesNotContain("교시", reasonLine.Text);
         var panelConflict = Assert.Single(panelItem.DetailConflicts);
-        Assert.Equal(ConflictSeverity.Warning, panelConflict.Severity);
+        Assert.Equal(ConflictSeverity.Error, panelConflict.Severity);
         Assert.Contains("원래 고정시간", panelConflict.Description);
         Assert.Contains("월 1교시", panelConflict.Description);
         Assert.Contains("현재 위치: 월 2교시", panelConflict.Description);
@@ -160,10 +187,24 @@ public class ManualEditFreedomTests
         viewModel.ValidateAllCommand.Execute(null);
 
         var checks = Assert.Single(dialog.ValidationCheckCalls);
-        Assert.DoesNotContain(checks, check => check.Name == "고정 시간 위반");
-        Assert.DoesNotContain(
-            checks.SelectMany(check => check.DetailConflicts),
+        var fixedTimeCheck = Assert.Single(checks, check => check.Name == "고정시간 이탈");
+        Assert.DoesNotContain("Error", fixedTimeCheck.Detail);
+        Assert.DoesNotContain("Warning", fixedTimeCheck.Detail);
+        Assert.DoesNotContain("주의", fixedTimeCheck.Detail);
+        Assert.Equal("", fixedTimeCheck.Detail);
+        Assert.Equal("1건", fixedTimeCheck.CountText);
+        Assert.True(fixedTimeCheck.ErrorCount > 0);
+        Assert.Equal(0, fixedTimeCheck.WarningCount);
+        Assert.DoesNotContain("Error", viewModel.StatusMessage);
+        Assert.DoesNotContain("Warning", viewModel.StatusMessage);
+        Assert.DoesNotContain("주의", viewModel.StatusMessage);
+        Assert.Contains("에러", viewModel.StatusMessage);
+        var validationConflict = Assert.Single(
+            fixedTimeCheck.DetailConflicts,
             conflict => conflict.Type == ConflictType.FixedTimeViolation);
+        Assert.Equal("원래 고정위치: 월 1시", validationConflict.Description);
+        Assert.DoesNotContain("고정 시간표", validationConflict.Description);
+        Assert.DoesNotContain("교시", validationConflict.Description);
     }
 
     [Fact]
@@ -262,7 +303,7 @@ public class ManualEditFreedomTests
             cell.Assignment.CourseId == "A-01" && cell.Period == 3);
         Assert.Contains(viewModel.Conflicts, item =>
             item.Conflict.Type == ConflictType.FixedTimeViolation
-            && item.Conflict.Severity == ConflictSeverity.Warning);
+            && item.Conflict.Severity == ConflictSeverity.Error);
     }
 
     [Fact]
@@ -542,9 +583,9 @@ public class ManualEditFreedomTests
         viewModel.NewBlockRowSpan = 3;
         viewModel.NewBlockRoomName = "새강의실";
         Assert.False(viewModel.IsNewBlockStructureEnabled);
-        Assert.Contains("2,1", viewModel.NewBlockStructureOptions);
+        Assert.Equal(new[] { "1+2", "3" }, viewModel.NewBlockStructureOptions);
         viewModel.IsNewBlockStructureEnabled = true;
-        viewModel.NewBlockStructureText = "2,1";
+        viewModel.NewBlockStructureText = "1+2";
         viewModel.NewBlockSectionCount = 2;
         viewModel.AddManualBlockToStagingCommand.Execute(null);
 
@@ -571,7 +612,7 @@ public class ManualEditFreedomTests
         viewModel.NewBlockGrade = 2;
         viewModel.NewBlockRowSpan = 3;
         viewModel.NewBlockRoomName = "새강의실";
-        viewModel.NewBlockStructureText = "2,1";
+        viewModel.NewBlockStructureText = "1+2";
         viewModel.NewBlockSectionCount = 15;
 
         Assert.Equal(9, viewModel.NewBlockSectionCount);
@@ -586,6 +627,24 @@ public class ManualEditFreedomTests
 
         Assert.Equal(9, viewModel.StagedBlocks.Count);
         Assert.All(viewModel.StagedBlocks, block => Assert.Equal(3, block.RowSpan));
+    }
+
+    [Fact]
+    public void ManualBlockAdd_WeeklyHoursAndBlockStructureOptionsMatchDataInput()
+    {
+        var viewModel = Create(
+            Array.Empty<Course>(),
+            Array.Empty<SolutionAssignment>());
+
+        Assert.Equal(new[] { 1, 2, 3, 4, 5 }, viewModel.ManualBlockWeeklyHourOptions);
+
+        viewModel.NewBlockRowSpan = 5;
+        Assert.Equal(
+            DataInputViewModel.GenerateBlockStructureOptions(5),
+            viewModel.NewBlockStructureOptions);
+
+        viewModel.NewBlockRowSpan = 6;
+        Assert.Equal(5, viewModel.NewBlockRowSpan);
     }
 
     [Fact]
@@ -953,8 +1012,11 @@ public class ManualEditFreedomTests
             dialog: dialog);
 
         var panelItem = Assert.Single(viewModel.ConflictGroups.Where(item => item.Type == ConflictType.ProfUnavailable));
+        var reasonLine = Assert.Single(panelItem.Lines.Where(line => line.Label == "사유:"));
         var panelConflict = Assert.Single(panelItem.DetailConflicts);
 
+        Assert.Equal("교수 불가시간 / P1", reasonLine.Text);
+        Assert.DoesNotContain("교시", reasonLine.Text);
         Assert.Equal(3, panelConflict.Assignments?.Count);
         Assert.Contains("1~3", panelConflict.Description);
 
@@ -966,7 +1028,49 @@ public class ManualEditFreedomTests
         var validationConflict = Assert.Single(professorUnavailableCheck.DetailConflicts);
 
         Assert.Equal(3, validationConflict.Assignments?.Count);
-        Assert.Contains("1~3", validationConflict.Description);
+        Assert.Contains("P1", validationConflict.Description);
+        Assert.DoesNotContain("1~3", validationConflict.Description);
+    }
+
+    [Fact]
+    public void ProfessorUnavailable_CoteachShowsOnlyUnavailableProfessor()
+    {
+        var course = Course("A-01", 1, "P1");
+        course.CoteachProfs.Add("P2");
+        var dialog = new CapturingConflictDialogService();
+        var viewModel = Create(
+            new[] { course },
+            new[] { new SolutionAssignment("A-01", 0, 1, "R1", "A") },
+            professors: new[]
+            {
+                new Professor { Id = "P1", Name = "가능교수" },
+                new Professor
+                {
+                    Id = "P2",
+                    Name = "불가교수",
+                    UnavailableSlots = new List<TimeSlot> { new(0, 1) },
+                },
+            },
+            dialog: dialog);
+
+        var panelItem = Assert.Single(viewModel.ConflictGroups.Where(item => item.Type == ConflictType.ProfUnavailable));
+        var reasonLine = Assert.Single(panelItem.Lines.Where(line => line.Label == "사유:"));
+        var panelConflict = Assert.Single(panelItem.DetailConflicts);
+
+        Assert.Equal("교수 불가시간 / 불가교수", reasonLine.Text);
+        Assert.Contains("불가교수", panelConflict.Description);
+        Assert.DoesNotContain("가능교수", reasonLine.Text);
+        Assert.DoesNotContain("가능교수", panelConflict.Description);
+
+        viewModel.ValidateAllCommand.Execute(null);
+
+        var checks = Assert.Single(dialog.ValidationCheckCalls);
+        var professorUnavailableCheck = checks.Single(check =>
+            check.DetailConflicts.Any(conflict => conflict.Type == ConflictType.ProfUnavailable));
+        var validationConflict = Assert.Single(professorUnavailableCheck.DetailConflicts);
+
+        Assert.Contains("불가교수", validationConflict.Description);
+        Assert.DoesNotContain("가능교수", validationConflict.Description);
     }
 
     private static ManualEditViewModel Create(

@@ -118,6 +118,27 @@ public class DataInputViewTests
     }
 
     [Fact]
+    public void CourseGroupSave_AppliesFixedSlotEditorBeforeOverlapValidation()
+    {
+        var source = File.ReadAllText(FindDataInputViewCodeBehind());
+        var methodStart = source.IndexOf("private void OnCourseGroupSaveClick", StringComparison.Ordinal);
+        Assert.True(methodStart >= 0);
+
+        var nextMethodStart = source.IndexOf("private static bool IsCourseSaveWarning", methodStart, StringComparison.Ordinal);
+        Assert.True(nextMethodStart > methodStart);
+
+        var methodBody = source[methodStart..nextMethodStart];
+        var updateFixedCheckIndex = methodBody.IndexOf("CheckBox.IsCheckedProperty)?.UpdateSource()", StringComparison.Ordinal);
+        var applyIndex = methodBody.IndexOf("editorVm.ApplyTo(item);", StringComparison.Ordinal);
+        var overlapIndex = methodBody.IndexOf("Vm.FindFixedTimeOverlap(item)", StringComparison.Ordinal);
+
+        Assert.True(updateFixedCheckIndex >= 0);
+        Assert.True(applyIndex > updateFixedCheckIndex);
+        Assert.True(overlapIndex > applyIndex);
+        Assert.DoesNotContain("candidateFixedSlots", methodBody);
+    }
+
+    [Fact]
     public void GenerationSettings_ExposeOnlyTheTotalTimeLimit()
     {
         var xaml = File.ReadAllText(FindDataInputViewXaml());
