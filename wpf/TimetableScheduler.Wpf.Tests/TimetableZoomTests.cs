@@ -78,6 +78,39 @@ public class TimetableZoomTests
     }
 
     [Fact]
+    public void ManualEditStatusLog_IsHeightLimitedAndScrollable()
+    {
+        var xaml = File.ReadAllText(FindWpfSource("Views", "ManualEditView.xaml"));
+        var bindingIndex = xaml.IndexOf("Text=\"{Binding StatusMessage}\"", StringComparison.Ordinal);
+
+        Assert.True(bindingIndex >= 0);
+
+        var snippetStart = Math.Max(0, bindingIndex - 260);
+        var snippetLength = Math.Min(520, xaml.Length - snippetStart);
+        var snippet = xaml.Substring(snippetStart, snippetLength);
+        Assert.Contains("<ScrollViewer MaxHeight=\"96\"", snippet);
+        Assert.Contains("VerticalScrollBarVisibility=\"Auto\"", snippet);
+    }
+
+    [Fact]
+    public void ManualEditStagedBlocks_AppearBeforeScrollableAddForm()
+    {
+        var xaml = File.ReadAllText(FindWpfSource("Views", "ManualEditView.xaml"));
+        var stagedBlocksIndex = xaml.IndexOf("x:Name=\"StagedBlocksHost\"", StringComparison.Ordinal);
+        var addFormIndex = xaml.IndexOf("Command=\"{Binding AddManualBlockToStagingCommand}\"", StringComparison.Ordinal);
+
+        Assert.True(stagedBlocksIndex >= 0);
+        Assert.True(addFormIndex > stagedBlocksIndex);
+
+        var snippetStart = Math.Max(0, stagedBlocksIndex - 420);
+        var snippetLength = Math.Min(720, xaml.Length - snippetStart);
+        var snippet = xaml.Substring(snippetStart, snippetLength);
+        Assert.Contains("MinHeight=\"72\"", snippet);
+        Assert.Contains("MaxHeight=\"112\"", snippet);
+        Assert.Contains("Visibility=\"{Binding HasStagedBlocks", snippet);
+    }
+
+    [Fact]
     public void ManualEditConstraintPanel_DoesNotUseWarningYellow()
     {
         var xaml = File.ReadAllText(FindWpfSource("Views", "ManualEditView.xaml"));

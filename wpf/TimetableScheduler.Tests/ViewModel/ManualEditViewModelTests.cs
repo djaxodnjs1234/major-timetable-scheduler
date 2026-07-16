@@ -8476,6 +8476,42 @@ public class ManualEditViewModelTests : IDisposable
     }
 
     [Fact]
+    public void ManualBlockAdd_SaveSnapshot_PreservesExistingCourseDatabaseFields()
+    {
+        var sourceCourse = _ws.Courses.Single(c => c.Id == "X-01");
+        sourceCourse.CourseType = "MajorRequired";
+        sourceCourse.Department = "ComputerScience";
+        sourceCourse.ExpectedEnrollment = 42;
+        sourceCourse.UnavailableRooms = new List<string> { "R2" };
+        sourceCourse.BlockStructure = new List<int> { 2 };
+
+        var vm = _sp.GetRequiredService<ManualEditViewModel>();
+        vm.LoadFromSolution(MakeSolution(
+            new SolutionAssignment("X-01", 0, 1, "R1"),
+            new SolutionAssignment("X-01", 0, 2, "R1")));
+        vm.NewBlockCourseName = "ExtraCourse";
+        vm.NewBlockProfessorName = "ExtraProfessor";
+        vm.NewBlockGrade = 3;
+        vm.NewBlockRowSpan = 1;
+        vm.NewBlockRoomName = "ExtraRoom";
+        vm.AddManualBlockToStagingCommand.Execute(null);
+
+        vm.SelectedStagedBlock = Assert.Single(vm.StagedBlocks);
+        Assert.True(vm.HandleStagedBlockDrop(1, 1, 3, 0), vm.StatusMessage);
+        vm.SaveName = "manual-block-preserves-db-fields";
+        vm.SaveTimetableCommand.Execute(null);
+
+        var saved = Assert.Single(_ws.SavedTimetables.Where(t => t.Name == "manual-block-preserves-db-fields"));
+        var snapshot = System.Text.Json.JsonSerializer.Deserialize<AppData>(saved.SnapshotJson!)!;
+        var savedCourse = snapshot.Courses.Single(c => c.Id == "X-01");
+        Assert.Equal("MajorRequired", savedCourse.CourseType);
+        Assert.Equal("ComputerScience", savedCourse.Department);
+        Assert.Equal(42, savedCourse.ExpectedEnrollment);
+        Assert.Equal(new[] { "R2" }, savedCourse.UnavailableRooms);
+        Assert.Equal(new[] { 2 }, savedCourse.BlockStructure);
+    }
+
+    [Fact]
     public void SaveSnapshot_PreservesScreenTwoCourseDetailFixedRoomAfterImmediateSync()
     {
         var main = _sp.GetRequiredService<MainWindowViewModel>();

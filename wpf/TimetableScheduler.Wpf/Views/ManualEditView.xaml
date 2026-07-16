@@ -254,9 +254,13 @@
 
                 <Border Grid.Row="2" Background="White" BorderBrush="#DDD" BorderThickness="1"
                     Padding="12,8" Margin="0,8,0,0">
-                    <TextBlock Text="{Binding StatusMessage}"
-                           Foreground="#444"
-                           TextWrapping="Wrap" />
+                    <ScrollViewer MaxHeight="96"
+                                  VerticalScrollBarVisibility="Auto"
+                                  HorizontalScrollBarVisibility="Disabled">
+                        <TextBlock Text="{Binding StatusMessage}"
+                               Foreground="#444"
+                               TextWrapping="Wrap" />
+                    </ScrollViewer>
                 </Border>
             </Grid>
 
@@ -680,7 +684,21 @@
                                     FontWeight="Bold"
                                     Margin="0,0,0,6" />
 
-                            <Border Grid.Row="1"
+                            <Grid Grid.Row="1"
+                                  MinHeight="72"
+                                  Visibility="{Binding HasStagedBlocks, Converter={StaticResource BoolToVisibility}}">
+                                <ScrollViewer MaxHeight="112"
+                                              VerticalScrollBarVisibility="Auto"
+                                              HorizontalScrollBarVisibility="Disabled">
+                                    <StackPanel x:Name="StagedBlocksHost"
+                                                HorizontalAlignment="Stretch" />
+                                </ScrollViewer>
+                            </Grid>
+
+                            <ScrollViewer Grid.Row="3"
+                                          VerticalScrollBarVisibility="Auto"
+                                          HorizontalScrollBarVisibility="Disabled">
+                                <Border
                                     Background="White"
                                     BorderBrush="#E1E5EC"
                                     BorderThickness="1"
@@ -796,16 +814,8 @@
                                                Margin="0,6,0,0"
                                                Visibility="{Binding HasManualBlockStatusMessage, Converter={StaticResource BoolToVisibility}}" />
                                 </StackPanel>
-                            </Border>
-
-                            <Grid Grid.Row="3">
-                                <ScrollViewer VerticalScrollBarVisibility="Auto"
-                                              HorizontalScrollBarVisibility="Disabled"
-                                              Visibility="{Binding HasStagedBlocks, Converter={StaticResource BoolToVisibility}}">
-                                    <StackPanel x:Name="StagedBlocksHost"
-                                                HorizontalAlignment="Stretch" />
-                                </ScrollViewer>
-                            </Grid>
+                                </Border>
+                            </ScrollViewer>
                         </Grid>
                     </Border>
                 </Grid>

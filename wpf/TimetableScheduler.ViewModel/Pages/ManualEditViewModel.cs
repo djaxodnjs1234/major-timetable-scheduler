@@ -18,6 +18,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
     private const string SchoolFixedDisplayCourseMarker = "__school_fixed__";
     private const string ManualBlockCourseIdPrefix = "manual-block-";
     private const int ManualBlockMaxWeeklyHours = 5;
+    private static readonly string ManualBlockDefaultCourseType = new Course().CourseType;
     private const string OneHourAboveTwoHourBlockedReason =
         "같은 과목·같은 분반의 1시간 수업 바로 아래에는 2시간 이상 블록을 배치할 수 없습니다.";
     private const string CrossDisplayColumnBlockedReason =
@@ -3410,8 +3411,22 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         return normalizedRoomId;
     }
 
-    private List<Course> BuildSaveSnapshotCourses() =>
-        _sessionData?.Courses.Select(CloneCourse).ToList() ?? new List<Course>();
+    private List<Course> BuildSaveSnapshotCourses()
+    {
+        var courses = _sessionData?.Courses.Select(CloneCourse).ToList() ?? new List<Course>();
+        foreach (var course in courses.Where(IsManualBlockCourse))
+            EnsureManualBlockCourseType(course);
+        return courses;
+    }
+
+    private static bool IsManualBlockCourse(Course course) =>
+        course.Id.StartsWith(ManualBlockCourseIdPrefix, StringComparison.Ordinal);
+
+    private static void EnsureManualBlockCourseType(Course course)
+    {
+        if (string.IsNullOrWhiteSpace(course.CourseType))
+            course.CourseType = ManualBlockDefaultCourseType;
+    }
 
     private static AppData? CloneAppData(AppData? src) =>
         src == null
@@ -3434,6 +3449,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
         HoursPerWeek = src.HoursPerWeek,
         CourseType = src.CourseType,
         ProfessorId = src.ProfessorId,
+        ExpectedEnrollment = src.ExpectedEnrollment,
         Section = src.Section,
         Department = src.Department,
         FixedRooms = new List<string>(src.FixedRooms),
@@ -5061,7 +5077,7 @@ public sealed partial class ManualEditViewModel : PageViewModelBase
                 Name = courseName,
                 Grade = NormalizeManualBlockGrade(NewBlockGrade),
                 HoursPerWeek = totalHours,
-                CourseType = "",
+                CourseType = ManualBlockDefaultCourseType,
                 ProfessorId = professorId,
                 Section = section,
                 Department = "",

@@ -6,6 +6,9 @@ namespace TimetableScheduler.ViewModel.Pages;
 
 internal static class SavedTimetableSnapshotResolver
 {
+    private const string ManualBlockCourseIdPrefix = "manual-block-";
+    private static readonly string ManualBlockDefaultCourseType = new Course().CourseType;
+
     public static AppData Resolve(string? snapshotJson)
     {
         if (string.IsNullOrWhiteSpace(snapshotJson))
@@ -14,7 +17,11 @@ internal static class SavedTimetableSnapshotResolver
         try
         {
             var snapshot = JsonSerializer.Deserialize<AppData>(snapshotJson);
-            return IsValid(snapshot) ? snapshot! : AppData.Empty();
+            if (!IsValid(snapshot))
+                return AppData.Empty();
+
+            RepairLegacyManualBlockCourses(snapshot!);
+            return snapshot!;
         }
         catch (JsonException)
         {
@@ -32,6 +39,20 @@ internal static class SavedTimetableSnapshotResolver
 
     private static bool IsValidCourse(Course course) =>
         course.IsSchoolFixed
+        || IsManualBlockCourse(course)
         || (!string.IsNullOrWhiteSpace(course.ProfessorId)
             && !string.IsNullOrWhiteSpace(course.CourseType));
+
+    private static bool IsManualBlockCourse(Course course) =>
+        course.Id.StartsWith(ManualBlockCourseIdPrefix, StringComparison.Ordinal)
+        && !string.IsNullOrWhiteSpace(course.ProfessorId);
+
+    private static void RepairLegacyManualBlockCourses(AppData snapshot)
+    {
+        foreach (var course in snapshot.Courses.Where(IsManualBlockCourse))
+        {
+            if (string.IsNullOrWhiteSpace(course.CourseType))
+                course.CourseType = ManualBlockDefaultCourseType;
+        }
+    }
 }

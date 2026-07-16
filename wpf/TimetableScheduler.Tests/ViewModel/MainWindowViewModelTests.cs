@@ -313,6 +313,62 @@ public class MainWindowViewModelTests : IDisposable
     }
 
     [Fact]
+    public void ManualBlockAddSave_ReloadsInputSessionWithoutDroppingSnapshotData()
+    {
+        var main = _sp.GetRequiredService<MainWindowViewModel>();
+        var workspace = _sp.GetRequiredService<WorkspaceService>();
+        workspace.AddProfessor(new Professor { Id = "P1", Name = "Professor One" });
+        workspace.AddRoom(new Room { Id = "R1", Name = "Room One" });
+        workspace.AddRoom(new Room { Id = "R2", Name = "Room Two" });
+        workspace.AddCourse(new Course
+        {
+            Id = "X-01",
+            Name = "Original Course",
+            Grade = 2,
+            HoursPerWeek = 2,
+            CourseType = "MajorRequired",
+            ProfessorId = "P1",
+            ExpectedEnrollment = 42,
+            Department = "ComputerScience",
+            UnavailableRooms = new List<string> { "R2" },
+            BlockStructure = new List<int> { 2 },
+        });
+        var record = workspace.SaveTimetable(
+            "manual-block-save",
+            new[]
+            {
+                new SolutionAssignment("X-01", 0, 1, "R1"),
+                new SolutionAssignment("X-01", 0, 2, "R1"),
+            },
+            snapshot: workspace.Snapshot());
+
+        main.Selection.EditCommand.Execute(record);
+        main.Manual.NewBlockCourseName = "ExtraCourse";
+        main.Manual.NewBlockProfessorName = "ExtraProfessor";
+        main.Manual.NewBlockGrade = 3;
+        main.Manual.NewBlockRowSpan = 1;
+        main.Manual.NewBlockRoomName = "ExtraRoom";
+        main.Manual.AddManualBlockToStagingCommand.Execute(null);
+        main.Manual.SelectedStagedBlock = Assert.Single(main.Manual.StagedBlocks);
+        Assert.True(main.Manual.HandleStagedBlockDrop(1, 1, 3, 0), main.Manual.StatusMessage);
+
+        main.Manual.SaveTimetableCommand.Execute(null);
+
+        Assert.IsType<TimetableSelectionViewModel>(main.CurrentPage);
+        var original = Assert.Single(main.Input.Workspace.Courses.Where(course => course.Id == "X-01"));
+        Assert.Equal("MajorRequired", original.CourseType);
+        Assert.Equal("ComputerScience", original.Department);
+        Assert.Equal(42, original.ExpectedEnrollment);
+        Assert.Equal(new[] { "R2" }, original.UnavailableRooms);
+        Assert.Equal(new[] { 2 }, original.BlockStructure);
+        var manualCourse = Assert.Single(main.Input.Workspace.Courses.Where(course =>
+            course.Id.StartsWith("manual-block-", StringComparison.Ordinal)));
+        Assert.False(string.IsNullOrWhiteSpace(manualCourse.CourseType));
+        Assert.Contains(main.Input.Workspace.Professors, professor => professor.Name == "ExtraProfessor");
+        Assert.Contains(main.Input.Workspace.Rooms, room => room.Name == "ExtraRoom");
+    }
+
+    [Fact]
     public void SaveCopy_SchoolFixedOnlySnapshot_RemainsVisibleInSelectionPreview()
     {
         var main = _sp.GetRequiredService<MainWindowViewModel>();
